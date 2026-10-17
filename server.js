@@ -1673,11 +1673,23 @@ app.use((req, res) => {
 });
 
 // Start Server
-db.initDb().then(() => {
-  app.listen(PORT, () => {
+db.initDb().then(async () => {
+  // Check if database needs seeding (e.g. fresh cloud deployment)
+  try {
+    const userCheck = db.get('SELECT COUNT(*) as count FROM users;');
+    if (!userCheck || userCheck.count === 0) {
+      console.log('No users found in database. Running initial seed...');
+      const { runSeed } = require('./seed');
+      await runSeed();
+    }
+  } catch (seedErr) {
+    console.warn('Auto-seed check error:', seedErr.message);
+  }
+
+  app.listen(PORT, '0.0.0.0', () => {
     console.log(`===========================================================`);
     console.log(` UPPCL Social Media Cell Complaint Management System`);
-    console.log(` Server running at: http://localhost:${PORT}`);
+    console.log(` Server running on port: ${PORT} (0.0.0.0)`);
     console.log(` Environment: ${process.env.NODE_ENV || 'production'}`);
     console.log(` System Time (IST): ${getIstTimestamp()}`);
     console.log(`===========================================================`);
