@@ -1,0 +1,238 @@
+﻿[
+    {
+        "Discom":  "PURVANCHAL VIDYUT VITRAN NIGAM",
+        "Zone":  "AZAMGARH",
+        "OfficerName":  "ASHUTOSH SRIVASTAVA",
+        "Mobile":  "9415801234"
+    },
+    {
+        "Discom":  "PURVANCHAL VIDYUT VITRAN NIGAM",
+        "Zone":  "BASTI",
+        "OfficerName":  "SHIV KUMAR SAROJ",
+        "Mobile":  "9450963898"
+    },
+    {
+        "Discom":  "PURVANCHAL VIDYUT VITRAN NIGAM",
+        "Zone":  "GORAKHPUR 1",
+        "OfficerName":  "ASHU KALIA",
+        "Mobile":  "9415343333"
+    },
+    {
+        "Discom":  "PURVANCHAL VIDYUT VITRAN NIGAM",
+        "Zone":  "MIRZAPUR",
+        "OfficerName":  "J P N SINGH",
+        "Mobile":  "9450963509"
+    },
+    {
+        "Discom":  "PURVANCHAL VIDYUT VITRAN NIGAM",
+        "Zone":  "PRAYAGRAJ 1",
+        "OfficerName":  "PRAMOD KUMAR SINGH",
+        "Mobile":  "9450964444"
+    },
+    {
+        "Discom":  "PURVANCHAL VIDYUT VITRAN NIGAM",
+        "Zone":  "VARANASI 1",
+        "OfficerName":  "ANAND PRAKASH",
+        "Mobile":  "9415301234"
+    },
+    {
+        "Discom":  "PURVANCHAL VIDYUT VITRAN NIGAM",
+        "Zone":  "VARANASI 2",
+        "OfficerName":  "MUKESH KUMAR",
+        "Mobile":  "7755803330"
+    },
+    {
+        "Discom":  "PASHCHIMANCHAL VIDYUT VITRAN NIGAM LTD.",
+        "Zone":  "BULANDSHAHAR",
+        "OfficerName":  "Er.A K JAISWAL",
+        "Mobile":  "9193302000"
+    },
+    {
+        "Discom":  "PASHCHIMANCHAL VIDYUT VITRAN NIGAM LTD.",
+        "Zone":  "GAJRAULA",
+        "OfficerName":  "Er. ARUN KUMAR SHRIVASTAV",
+        "Mobile":  "9193300101"
+    },
+    {
+        "Discom":  "PASHCHIMANCHAL VIDYUT VITRAN NIGAM LTD.",
+        "Zone":  "GHAZIABAD- 1",
+        "OfficerName":  "Er. NEERAJ SWAROOP",
+        "Mobile":  "9193320000"
+    },
+    {
+        "Discom":  "PASHCHIMANCHAL VIDYUT VITRAN NIGAM LTD.",
+        "Zone":  "GHAZIABAD- 2",
+        "OfficerName":  [
+                            [
+
+                            ]
+                        ],
+        "Mobile":  "9193320012"
+    },
+    {
+        "Discom":  "PASHCHIMANCHAL VIDYUT VITRAN NIGAM LTD.",
+        "Zone":  "GHAZIABAD- 3",
+        "OfficerName":  [
+                            [
+
+                            ]
+                        ],
+        "Mobile":  "9193320014"
+    },
+    {
+        "Discom":  "PASHCHIMANCHAL VIDYUT VITRAN NIGAM LTD.",
+        "Zone":  "MEERUT- 1",
+        "OfficerName":  "Er. DHEERAJ SINHA",
+        "Mobile":  "9412749200"
+    },
+    {
+        "Discom":  "PASHCHIMANCHAL VIDYUT VITRAN NIGAM LTD.",
+        "Zone":  "MEERUT- 2",
+        "OfficerName":  "Er. RAJVENDRA",
+        "Mobile":  "9412749200"
+    },
+    {
+        "Discom":  "PASHCHIMANCHAL VIDYUT VITRAN NIGAM LTD.",
+        "Zone":  "MORADABAD",
+        "OfficerName":  "Er R.K. BANSAL",
+        "Mobile":  "9193300100"
+    },
+    {
+        "Discom":  "PASHCHIMANCHAL VIDYUT VITRAN NIGAM LTD.",
+        "Zone":  "MUZAFFARNAGAR",
+        "OfficerName":  "PAWAN KUMAR AGARWAL",
+        "Mobile":  "9193330900"
+    },
+    {
+        "Discom":  "PASHCHIMANCHAL VIDYUT VITRAN NIGAM LTD.",
+        "Zone":  "NOIDA",
+        "OfficerName":  "Er. Rajeev Mohan",
+        "Mobile":  "9193330101"
+    },
+    {
+        "Discom":  "PASHCHIMANCHAL VIDYUT VITRAN NIGAM LTD.",
+        "Zone":  "SAHARANPUR",
+        "OfficerName":  "Er. A.K Atry",
+        "Mobile":  "9193330800"
+    },
+    {
+        "Discom":  "MADHYANCHAL VIDYUT VITRAN NIGAM",
+        "Zone":  "AMAUSI",
+        "OfficerName":  "Rajat Juneja",
+        "Mobile":  "9415901415"
+    },
+    {
+        "Discom":  "MADHYANCHAL VIDYUT VITRAN NIGAM",
+        "Zone":  "AYODHYA",
+        "OfficerName":  "Harish Bansal",
+        "Mobile":  "9450504000"
+    },
+    {
+        "Discom":  "MADHYANCHAL VIDYUT VITRAN NIGAM",
+        "Zone":  "BAREILLY-1",
+        "OfficerName":  "Rajeev Kumar Sharma",
+        "Mobile":  "9415901630"
+    },
+    {
+        "Discom":  "MADHYANCHAL VIDYUT VITRAN NIGAM",
+        "Zone":  "BAREILLY-2",
+        "OfficerName":  "Anil Kumar Tiwari",
+        "Mobile":  "8005026209"
+    },
+    {
+        "Discom":  "MADHYANCHAL VIDYUT VITRAN NIGAM",
+        "Zone":  "DEVIPATAN",
+        "OfficerName":  "Deepak Agarwal",
+        "Mobile":  "9415901511"
+    },
+    {
+        "Discom":  "MADHYANCHAL VIDYUT VITRAN NIGAM",
+        "Zone":  "GOMTI NAGAR",
+        "OfficerName":  "ASHISH ASTHANA",
+        "Mobile":  "8004912190"
+    },
+    {
+        "Discom":  "MADHYANCHAL VIDYUT VITRAN NIGAM",
+        "Zone":  "JANKIPURAM",
+        "OfficerName":  "Suneel Kapoor",
+        "Mobile":  "9415901286"
+    },
+    {
+        "Discom":  "MADHYANCHAL VIDYUT VITRAN NIGAM",
+        "Zone":  "LUCKNOW CENTRAL",
+        "OfficerName":  "Ravi Kumar Agrwal",
+        "Mobile":  "9450099907"
+    },
+    {
+        "Discom":  "MADHYANCHAL VIDYUT VITRAN NIGAM",
+        "Zone":  "RAEBARELI",
+        "OfficerName":  "Rajiv Kumar Singh",
+        "Mobile":  "9415901234"
+    },
+    {
+        "Discom":  "MADHYANCHAL VIDYUT VITRAN NIGAM",
+        "Zone":  "SITAPUR",
+        "OfficerName":  "Vivek Asthana",
+        "Mobile":  "9415900351"
+    },
+    {
+        "Discom":  "KANPUR ELECTRICTY SUPPLY COMPANY",
+        "Zone":  "KANPUR CITY",
+        "OfficerName":  "ER. SANJAY AGARWAL",
+        "Mobile":  "9839104999"
+    },
+    {
+        "Discom":  "DAKSHINANCHAL VIDYUT VITRAN NIGAM",
+        "Zone":  "AGRA",
+        "OfficerName":  "Er. R K gupta",
+        "Mobile":  "9193304000"
+    },
+    {
+        "Discom":  "DAKSHINANCHAL VIDYUT VITRAN NIGAM",
+        "Zone":  "ALIGARH",
+        "OfficerName":  "Er. Ved Prakash",
+        "Mobile":  "9412756523"
+    },
+    {
+        "Discom":  "DAKSHINANCHAL VIDYUT VITRAN NIGAM",
+        "Zone":  "BANDA",
+        "OfficerName":  "Er.Sunil Kapoor",
+        "Mobile":  "9415909214"
+    },
+    {
+        "Discom":  "DAKSHINANCHAL VIDYUT VITRAN NIGAM",
+        "Zone":  "ETAH",
+        "OfficerName":  "Er. Sandeep Pandey",
+        "Mobile":  "9412282787"
+    },
+    {
+        "Discom":  "DAKSHINANCHAL VIDYUT VITRAN NIGAM",
+        "Zone":  "FIROZABAD",
+        "OfficerName":  "Er.Sangeeta Saxena",
+        "Mobile":  "9193304000"
+    },
+    {
+        "Discom":  "DAKSHINANCHAL VIDYUT VITRAN NIGAM",
+        "Zone":  "JHANSI",
+        "OfficerName":  "Er. Parthiv Kumar Singh",
+        "Mobile":  "9415909500"
+    },
+    {
+        "Discom":  "DAKSHINANCHAL VIDYUT VITRAN NIGAM",
+        "Zone":  "KANPUR 1",
+        "OfficerName":  "Er. Aslam Hussain",
+        "Mobile":  "9415909001"
+    },
+    {
+        "Discom":  "DAKSHINANCHAL VIDYUT VITRAN NIGAM",
+        "Zone":  "KANPUR 2",
+        "OfficerName":  "Ram Prakash",
+        "Mobile":  "9415901130"
+    },
+    {
+        "Discom":  "DAKSHINANCHAL VIDYUT VITRAN NIGAM",
+        "Zone":  "MATHURA",
+        "OfficerName":  "Er. Praduman Tripati",
+        "Mobile":  "9193303000"
+    }
+]

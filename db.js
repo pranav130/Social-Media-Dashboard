@@ -1,0 +1,375 @@
+const initSqlJs = require('sql.js');
+const fs = require('fs');
+const path = require('path');
+
+const DB_DIR = path.join(__dirname, 'data');
+const DB_PATH = path.join(DB_DIR, 'uppcl_smc.db');
+
+let dbInstance = null;
+let SQL = null;
+let saveTimeout = null;
+
+function getDbInstance() {
+  if (!dbInstance) {
+    throw new Error('Database not initialized. Call initDb() first.');
+  }
+  return dbInstance;
+}
+
+function saveToDiskSync() {
+  if (!dbInstance) return;
+  try {
+    if (!fs.existsSync(DB_DIR)) {
+      fs.mkdirSync(DB_DIR, { recursive: true });
+    }
+    const data = dbInstance.export();
+    const buffer = Buffer.from(data);
+    fs.writeFileSync(DB_PATH, buffer);
+  } catch (err) {
+    console.error('Error saving SQLite DB to disk:', err);
+  }
+}
+
+function scheduleSave() {
+  if (saveTimeout) clearTimeout(saveTimeout);
+  saveTimeout = setTimeout(() => {
+    saveToDiskSync();
+  }, 100);
+}
+
+async function initDb() {
+  if (dbInstance) return dbInstance;
+  SQL = await initSqlJs();
+
+  if (fs.existsSync(DB_PATH)) {
+    try {
+      const fileBuffer = fs.readFileSync(DB_PATH);
+      dbInstance = new SQL.Database(fileBuffer);
+      console.log('Loaded existing database from:', DB_PATH);
+    } catch (e) {
+      console.warn('Failed to load existing DB file, creating a fresh one:', e.message);
+      dbInstance = new SQL.Database();
+    }
+  } else {
+    dbInstance = new SQL.Database();
+    console.log('Created fresh SQLite database in memory');
+  }
+
+  // Create tables and schema
+  createSchema();
+  saveToDiskSync();
+  return dbInstance;
+}
+
+function createSchema() {
+  const schemaSql = `
+    CREATE TABLE IF NOT EXISTS users (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      username TEXT UNIQUE NOT NULL,
+      password_hash TEXT NOT NULL,
+      full_name TEXT NOT NULL,
+      email TEXT,
+      role TEXT NOT NULL,
+      discom_name TEXT,
+      designation TEXT,
+      mobile TEXT,
+      is_active INTEGER DEFAULT 1,
+      created_at TEXT,
+      updated_at TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS discoms (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      code TEXT UNIQUE NOT NULL,
+      name TEXT NOT NULL,
+      short_name TEXT NOT NULL,
+      headquarters TEXT,
+      is_active INTEGER DEFAULT 1
+    );
+
+    CREATE TABLE IF NOT EXISTS districts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      discom_name TEXT NOT NULL,
+      is_active INTEGER DEFAULT 1
+    );
+
+    CREATE TABLE IF NOT EXISTS social_platforms (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      code TEXT UNIQUE NOT NULL,
+      name TEXT NOT NULL,
+      icon TEXT,
+      is_active INTEGER DEFAULT 1
+    );
+
+    CREATE TABLE IF NOT EXISTS x_hierarchy (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      sr_no TEXT,
+      hierarchy_level TEXT NOT NULL,
+      discom_name TEXT,
+      district_name TEXT,
+      handle_name TEXT NOT NULL,
+      account_url TEXT NOT NULL,
+      parent_handle TEXT,
+      is_monitored INTEGER DEFAULT 0,
+      is_active INTEGER DEFAULT 1,
+      remarks TEXT,
+      created_at TEXT,
+      updated_at TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS facebook_handles (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      sr_no TEXT,
+      discom_name TEXT,
+      district_name TEXT,
+      fb_handle_name TEXT,
+      fb_url TEXT,
+      is_monitored INTEGER DEFAULT 0,
+      is_active INTEGER DEFAULT 1
+    );
+
+    CREATE TABLE IF NOT EXISTS nodal_officers (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      discom_name TEXT NOT NULL,
+      district_name TEXT NOT NULL,
+      officer_name TEXT,
+      designation TEXT NOT NULL,
+      mobile TEXT NOT NULL,
+      email TEXT,
+      twitter_handle TEXT,
+      facebook_url TEXT,
+      is_active INTEGER DEFAULT 1,
+      created_at TEXT,
+      updated_at TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS jurisdiction_org (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      discom_name TEXT NOT NULL,
+      zone_name TEXT NOT NULL,
+      circle_name TEXT,
+      division_name TEXT,
+      officer_name TEXT,
+      mobile TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS complaint_categories (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT UNIQUE NOT NULL,
+      code TEXT,
+      sla_hours INTEGER DEFAULT 48,
+      is_active INTEGER DEFAULT 1
+    );
+
+    CREATE TABLE IF NOT EXISTS complaint_subcategories (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      category_id INTEGER NOT NULL,
+      name TEXT NOT NULL,
+      is_active INTEGER DEFAULT 1
+    );
+
+    CREATE TABLE IF NOT EXISTS complaints (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      complaint_no TEXT UNIQUE NOT NULL,
+      received_at TEXT NOT NULL,
+      platform TEXT NOT NULL,
+      monitored_account TEXT NOT NULL,
+      hierarchy_handle_id INTEGER,
+      hierarchy_handle_name TEXT,
+      is_tagged INTEGER DEFAULT 1,
+      consumer_name TEXT,
+      consumer_handle TEXT,
+      consumer_profile_url TEXT,
+      post_url TEXT,
+      complaint_text TEXT NOT NULL,
+      category_name TEXT NOT NULL,
+      subcategory_name TEXT,
+      discom_name TEXT NOT NULL,
+      district_name TEXT NOT NULL,
+      zone_name TEXT,
+      circle_name TEXT,
+      division_name TEXT,
+      subdivision_name TEXT,
+      consumer_account_no TEXT,
+      consumer_mobile TEXT,
+      priority TEXT NOT NULL DEFAULT 'Normal',
+      current_status TEXT NOT NULL DEFAULT 'New',
+      assigned_operator_id INTEGER,
+      assigned_operator_name TEXT,
+      assigned_nodal_officer_id INTEGER,
+      assigned_nodal_officer_name TEXT,
+      assigned_nodal_officer_mobile TEXT,
+      forwarding_date TEXT,
+      forwarding_channel TEXT,
+      forwarding_ref_no TEXT,
+      forwarding_remarks TEXT,
+      expected_response_date TEXT,
+      is_overdue INTEGER DEFAULT 0,
+      escalation_level INTEGER DEFAULT 0,
+      escalation_reason TEXT,
+      discom_response_date TEXT,
+      discom_action_taken TEXT,
+      discom_evidence_url TEXT,
+      discom_reported_by TEXT,
+      closure_date TEXT,
+      closure_verified_by TEXT,
+      closure_verification_notes TEXT,
+      closure_satisfaction_status TEXT,
+      duplicate_of_complaint_id INTEGER,
+      invalid_reason TEXT,
+      reopen_reason TEXT,
+      last_action_date TEXT,
+      created_by TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS complaint_timeline (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      complaint_id INTEGER NOT NULL,
+      action_type TEXT NOT NULL,
+      old_status TEXT,
+      new_status TEXT,
+      user_id INTEGER,
+      user_name TEXT NOT NULL,
+      user_role TEXT NOT NULL,
+      remarks TEXT,
+      metadata_json TEXT,
+      created_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS complaint_forwarding_logs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      complaint_id INTEGER NOT NULL,
+      forwarded_by TEXT NOT NULL,
+      forwarded_to_officer TEXT NOT NULL,
+      discom_name TEXT NOT NULL,
+      district_name TEXT,
+      channel TEXT NOT NULL,
+      ref_no TEXT,
+      remarks TEXT,
+      expected_response_date TEXT,
+      created_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS complaint_followup_logs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      complaint_id INTEGER NOT NULL,
+      followed_up_by TEXT NOT NULL,
+      officer_contacted TEXT NOT NULL,
+      channel TEXT NOT NULL,
+      remarks TEXT NOT NULL,
+      next_followup_date TEXT,
+      created_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS complaint_escalation_logs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      complaint_id INTEGER NOT NULL,
+      escalated_by TEXT NOT NULL,
+      escalation_level INTEGER NOT NULL,
+      escalated_to TEXT NOT NULL,
+      reason TEXT NOT NULL,
+      remarks TEXT,
+      created_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS complaint_evidence (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      complaint_id INTEGER NOT NULL,
+      file_name TEXT NOT NULL,
+      file_path TEXT NOT NULL,
+      file_type TEXT,
+      file_size INTEGER,
+      uploaded_by TEXT NOT NULL,
+      notes TEXT,
+      created_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS system_settings (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      key TEXT UNIQUE NOT NULL,
+      value TEXT NOT NULL,
+      description TEXT,
+      updated_at TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS audit_logs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER,
+      username TEXT NOT NULL,
+      user_role TEXT NOT NULL,
+      action TEXT NOT NULL,
+      entity_type TEXT NOT NULL,
+      entity_id TEXT,
+      details TEXT,
+      ip_address TEXT,
+      created_at TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_comp_status ON complaints(current_status);
+    CREATE INDEX IF NOT EXISTS idx_comp_discom ON complaints(discom_name);
+    CREATE INDEX IF NOT EXISTS idx_comp_district ON complaints(district_name);
+    CREATE INDEX IF NOT EXISTS idx_comp_priority ON complaints(priority);
+    CREATE INDEX IF NOT EXISTS idx_comp_rec_at ON complaints(received_at);
+    CREATE INDEX IF NOT EXISTS idx_comp_post_url ON complaints(post_url);
+    CREATE INDEX IF NOT EXISTS idx_timeline_comp ON complaint_timeline(complaint_id);
+    CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_logs(created_at);
+  `;
+  dbInstance.run(schemaSql);
+}
+
+function normalizeParams(params) {
+  if (!params) return [];
+  return params.map(p => (p === undefined ? null : p));
+}
+
+function query(sql, params = []) {
+  const db = getDbInstance();
+  const stmt = db.prepare(sql);
+  const safeParams = normalizeParams(params);
+  if (safeParams.length) stmt.bind(safeParams);
+  const rows = [];
+  while (stmt.step()) {
+    rows.push(stmt.getAsObject());
+  }
+  stmt.free();
+  return rows;
+}
+
+function get(sql, params = []) {
+  const rows = query(sql, params);
+  return rows.length > 0 ? rows[0] : null;
+}
+
+function run(sql, params = []) {
+  const db = getDbInstance();
+  const safeParams = normalizeParams(params);
+  db.run(sql, safeParams);
+  const res = db.exec('SELECT last_insert_rowid() AS id, changes() AS changes;');
+  const lastInsertRowid = res[0] && res[0].values[0] ? res[0].values[0][0] : 0;
+  const changes = res[0] && res[0].values[0] ? res[0].values[0][1] : 0;
+  scheduleSave();
+  return { lastInsertRowid, changes };
+}
+
+function exec(sql) {
+  const db = getDbInstance();
+  db.run(sql);
+  scheduleSave();
+}
+
+function flush() {
+  saveToDiskSync();
+}
+
+module.exports = {
+  initDb,
+  query,
+  get,
+  run,
+  exec,
+  flush,
+  getDbInstance
+};

@@ -1,0 +1,815 @@
+﻿[
+    {
+        "SrNo":  "1",
+        "Discom":  "PUVVNL",
+        "District":  "AZAMGARH",
+        "FbHandle":  "https://www.facebook.com/puvvnlazamgarh",
+        "TwitterHandle":  "https://x.com/puvvnl_azamgarh?s=20",
+        "NodalDesignation":  "SE",
+        "NodalMobile":  "9453047800"
+    },
+    {
+        "SrNo":  "2",
+        "Discom":  "PUVVNL",
+        "District":  "BHADOHI",
+        "FbHandle":  "https://www.facebook.com/search/top/?q=%20Puvvnl%20Bhadohi%20",
+        "TwitterHandle":  "https://twitter.com/puvvnlbhadohi",
+        "NodalDesignation":  "SE",
+        "NodalMobile":  "8004932072"
+    },
+    {
+        "SrNo":  "3",
+        "Discom":  "PUVVNL",
+        "District":  "BALLIA",
+        "FbHandle":  "https://www.facebook.com/profile.php?id=100084330656758",
+        "TwitterHandle":  "https://twitter.com/puvvnlballia",
+        "NodalDesignation":  "SE",
+        "NodalMobile":  "8004932174"
+    },
+    {
+        "SrNo":  "4",
+        "Discom":  "PUVVNL",
+        "District":  "BASTI",
+        "FbHandle":  "https://www.facebook.com/profile.php?id=61579044394644",
+        "TwitterHandle":  "https://x.com/Puvvnlbast",
+        "NodalDesignation":  "SE",
+        "NodalMobile":  "9415204000"
+    },
+    {
+        "SrNo":  "5",
+        "Discom":  "PUVVNL",
+        "District":  "CHANDAULI",
+        "FbHandle":  "https://www.facebook.com/profile.php?id=100026573741542",
+        "TwitterHandle":  "https://twitter.com/puvvnlchandauli",
+        "NodalDesignation":  "SE",
+        "NodalMobile":  "9532276978"
+    },
+    {
+        "SrNo":  "6",
+        "Discom":  "PUVVNL",
+        "District":  "DEORIA",
+        "FbHandle":  "https://www.facebook.com/search/top/?q=Puvvnl%20Deoria",
+        "TwitterHandle":  "PuVVNL Deoria (@puvvnldeoria) / X",
+        "NodalDesignation":  "SE",
+        "NodalMobile":  "9415205000"
+    },
+    {
+        "SrNo":  "7",
+        "Discom":  "PUVVNL",
+        "District":  "FATEHPUR",
+        "FbHandle":  "https://www.facebook.com/seedcfatehpur",
+        "TwitterHandle":  "https://twitter.com/puvvnlfatehpur",
+        "NodalDesignation":  "SE",
+        "NodalMobile":  "9415343456"
+    },
+    {
+        "SrNo":  "8",
+        "Discom":  "PUVVNL",
+        "District":  "GHAZIPUR",
+        "FbHandle":  "https://www.facebook.com/profile.php?id=61578992166752",
+        "TwitterHandle":  "https://x.com/PuvvnlGzp57770?s=20",
+        "NodalDesignation":  "SE",
+        "NodalMobile":  "9450963517"
+    },
+    {
+        "SrNo":  "9",
+        "Discom":  "PUVVNL",
+        "District":  "GORAKHPUR",
+        "FbHandle":  "https://www.facebook.com/profile.php?id=100082246027107",
+        "TwitterHandle":  "https://twitter.com/puvvnlgorakhpur",
+        "NodalDesignation":  "EE",
+        "NodalMobile":  "9415343333 (CE)ttt9450688777"
+    },
+    {
+        "SrNo":  "10",
+        "Discom":  "PUVVNL",
+        "District":  "JAUNPUR",
+        "FbHandle":  "https://www.facebook.com/profile.php?id=100083460695867",
+        "TwitterHandle":  "https://twitter.com/puvvnljaunpur",
+        "NodalDesignation":  "SE",
+        "NodalMobile":  "9415221000"
+    },
+    {
+        "SrNo":  "11",
+        "Discom":  "PUVVNL",
+        "District":  "KAUSHAMBHI",
+        "FbHandle":  "https://www.facebook.com/profile.php?id=100082338452454",
+        "TwitterHandle":  "https://twitter.com/puvvnlkaushambi",
+        "NodalDesignation":  "SE",
+        "NodalMobile":  "8004922424"
+    },
+    {
+        "SrNo":  "12",
+        "Discom":  "PUVVNL",
+        "District":  "KUSHINAGAR",
+        "FbHandle":  "https://www.facebook.com/profile.php?id=61579133460325",
+        "TwitterHandle":  "https://x.com/SE_KUSHINAGAR",
+        "NodalDesignation":  "SE",
+        "NodalMobile":  "9532246876"
+    },
+    {
+        "SrNo":  "13",
+        "Discom":  "PUVVNL",
+        "District":  "MAHARAJGANJ",
+        "FbHandle":  "https://www.facebook.com/profile.php?id=100082008347518",
+        "TwitterHandle":  "https://twitter.com/puvvnlmhrjganj",
+        "NodalDesignation":  "SE",
+        "NodalMobile":  "9532254240"
+    },
+    {
+        "SrNo":  "14",
+        "Discom":  "PUVVNL",
+        "District":  "MAU",
+        "FbHandle":  "https://www.facebook.com/search/top?q=puvvnlmau",
+        "TwitterHandle":  "https://twitter.com/puvvnlmau",
+        "NodalDesignation":  "SE",
+        "NodalMobile":  "9415228000"
+    },
+    {
+        "SrNo":  "15",
+        "Discom":  "PUVVNL",
+        "District":  "MIRZAPUR",
+        "FbHandle":  "https://www.facebook.com/search/top/?q=puvvnlmirzapur\u0026__epa__=SEARCH_BOX\u0026__eps__=SERP_TOP_TAB",
+        "TwitterHandle":  "https://twitter.com/puvvnl_mirzapur",
+        "NodalDesignation":  "SE",
+        "NodalMobile":  "9415304000"
+    },
+    {
+        "SrNo":  "16",
+        "Discom":  "PUVVNL",
+        "District":  "PRATAPGARH",
+        "FbHandle":  "https://www.facebook.com/puvvnl.pratapgarh",
+        "TwitterHandle":  "https://twitter.com/PUVVNLPRTAPGARH",
+        "NodalDesignation":  "SE",
+        "NodalMobile":  "8004932162"
+    },
+    {
+        "SrNo":  "17",
+        "Discom":  "PUVVNL",
+        "District":  "PRAYAGRAJ",
+        "FbHandle":  "https://www.facebook.com/profile.php?id=100081796647882",
+        "TwitterHandle":  "https://x.com/1_chiefengineer",
+        "NodalDesignation":  "SE",
+        "NodalMobile":  "tt9415224000 (SE)t"
+    },
+    {
+        "SrNo":  "18",
+        "Discom":  "PUVVNL",
+        "District":  "SANT KABIR NAGAR (KHALILABAD)",
+        "FbHandle":  "https://www.facebook.com/profile.php?id=100082225735677",
+        "TwitterHandle":  "https://twitter.com/puvvnlsknagar",
+        "NodalDesignation":  "SE",
+        "NodalMobile":  "9532460449"
+    },
+    {
+        "SrNo":  "19",
+        "Discom":  "PUVVNL",
+        "District":  "SIDDHARTH NAGAR",
+        "FbHandle":  "https://www.facebook.com/profile.php?id=61578862814071",
+        "TwitterHandle":  "https://twitter.com/puvvnlsdnagar",
+        "NodalDesignation":  "SE",
+        "NodalMobile":  "9532420139"
+    },
+    {
+        "SrNo":  "20",
+        "Discom":  "PUVVNL",
+        "District":  "SONBHADRA",
+        "FbHandle":  "https://www.facebook.com/profile.php?id=100082332941282",
+        "TwitterHandle":  "https://twitter.com/puvvnlsonbhadra",
+        "NodalDesignation":  "SE",
+        "NodalMobile":  "9450964000"
+    },
+    {
+        "SrNo":  "21",
+        "Discom":  "PUVVNL",
+        "District":  "VARANASI",
+        "FbHandle":  "https://www.facebook.com/profile.php?id=61578983591873",
+        "TwitterHandle":  "https://twitter.com/puvvnlvaranasi",
+        "NodalDesignation":  "SE",
+        "NodalMobile":  "9415301234(CE)t9415302000"
+    },
+    {
+        "SrNo":  null,
+        "Discom":  "MVVNL",
+        "District":  "BAREILLY Zone 1",
+        "FbHandle":  "https://www.facebook.com/profile.php?id=61579191058536",
+        "TwitterHandle":  "https://x.com/CEBareilly1",
+        "NodalDesignation":  "CE",
+        "NodalMobile":  "tt9415901646(SE)"
+    },
+    {
+        "SrNo":  "22",
+        "Discom":  "MVVNL",
+        "District":  "tBAREILY Zone 2",
+        "FbHandle":  null,
+        "TwitterHandle":  "https://x.com/CZEBlyzone2",
+        "NodalDesignation":  null,
+        "NodalMobile":  "9415901631"
+    },
+    {
+        "SrNo":  "23",
+        "Discom":  "MVVNL",
+        "District":  "BADAUN",
+        "FbHandle":  "https://www.facebook.com/profile.php?id=61579174467829",
+        "TwitterHandle":  "https://x.com/mvvnlbudaun?s=20",
+        "NodalDesignation":  "SE",
+        "NodalMobile":  "9415311488"
+    },
+    {
+        "SrNo":  "24",
+        "Discom":  "MVVNL",
+        "District":  "PILIBHIT",
+        "FbHandle":  [
+                         [
+
+                         ]
+                     ],
+        "TwitterHandle":  "https://twitter.com/mvvnlpilibhit",
+        "NodalDesignation":  "SE",
+        "NodalMobile":  "8004918860"
+    },
+    {
+        "SrNo":  "25",
+        "Discom":  "MVVNL",
+        "District":  "SHAHJAHANPUR",
+        "FbHandle":  [
+                         [
+
+                         ]
+                     ],
+        "TwitterHandle":  "https://twitter.com/mvvnlsahjahapur",
+        "NodalDesignation":  "SE",
+        "NodalMobile":  "9415901733 8077434279(STENO)"
+    },
+    {
+        "SrNo":  "26",
+        "Discom":  "MVVNL",
+        "District":  "AMBEDKAR NAGAR",
+        "FbHandle":  "https://www.facebook.com/share/19guaMrosk/",
+        "TwitterHandle":  "https://twitter.com/EDC_Ambdkrnagar",
+        "NodalDesignation":  "SE",
+        "NodalMobile":  "9415901494"
+    },
+    {
+        "SrNo":  "27",
+        "Discom":  "MVVNL",
+        "District":  "AMETHI",
+        "FbHandle":  "https://www.facebook.com/profile.php?id=61579171289225",
+        "TwitterHandle":  "https://twitter.com/mvvnlamethi",
+        "NodalDesignation":  "SE",
+        "NodalMobile":  "8004915109"
+    },
+    {
+        "SrNo":  "28",
+        "Discom":  "MVVNL",
+        "District":  "BARABANKI",
+        "FbHandle":  "https://www.facebook.com/profile.php?id=61579177732163",
+        "TwitterHandle":  "https://twitter.com/mvvnlbarabanki",
+        "NodalDesignation":  "SE",
+        "NodalMobile":  "8004923404"
+    },
+    {
+        "SrNo":  "29",
+        "Discom":  "MVVNL",
+        "District":  "AYODHYA",
+        "FbHandle":  [
+                         [
+
+                         ]
+                     ],
+        "TwitterHandle":  "https://x.com/mvvnlAyodhya",
+        "NodalDesignation":  "SE",
+        "NodalMobile":  "9415901452t7376780975(JE)"
+    },
+    {
+        "SrNo":  null,
+        "Discom":  null,
+        "District":  null,
+        "FbHandle":  null,
+        "TwitterHandle":  "https://x.com/ChiefAyodhya",
+        "NodalDesignation":  null,
+        "NodalMobile":  "9450504000"
+    },
+    {
+        "SrNo":  "30",
+        "Discom":  "MVVNL",
+        "District":  "SULTANPUR",
+        "FbHandle":  "https://www.facebook.com/profile.php?id=61578764169126",
+        "TwitterHandle":  "https://twitter.com/mvvnlsultanpur",
+        "NodalDesignation":  "SE",
+        "NodalMobile":  "9415901567"
+    },
+    {
+        "SrNo":  "31",
+        "Discom":  "MVVNL",
+        "District":  "BAHRAICH",
+        "FbHandle":  "https://www.facebook.com/profile.php?id=61579289152217",
+        "TwitterHandle":  "https://twitter.com/mvvnlbahraich",
+        "NodalDesignation":  "SE",
+        "NodalMobile":  "8004918959t9415901549(EE)"
+    },
+    {
+        "SrNo":  "32",
+        "Discom":  "MVVNL",
+        "District":  "BALRAMPUR",
+        "FbHandle":  "https://www.facebook.com/profile.php?id=61583279540956",
+        "TwitterHandle":  "https://twitter.com/mvvnlbalrampur",
+        "NodalDesignation":  "SE",
+        "NodalMobile":  "8004922554t9415901524"
+    },
+    {
+        "SrNo":  "33",
+        "Discom":  "MVVNL",
+        "District":  "GONDA",
+        "FbHandle":  "https://www.facebook.com/share/1BCEefs2hp/",
+        "TwitterHandle":  "https://twitter.com/mvvnlgonda",
+        "NodalDesignation":  "SE",
+        "NodalMobile":  "9415901510"
+    },
+    {
+        "SrNo":  "34",
+        "Discom":  "MVVNL",
+        "District":  "SHRAVASTI",
+        "FbHandle":  "Not Respond",
+        "TwitterHandle":  "https://x.com/EddShrawasti?s=20",
+        "NodalDesignation":  "SE",
+        "NodalMobile":  "8004922554"
+    },
+    {
+        "SrNo":  "35",
+        "Discom":  "Lucknow (Cis Gomti)",
+        "District":  "@ZoneAmausi",
+        "FbHandle":  "https://www.facebook.com/share/1ArVVVPhRW/",
+        "TwitterHandle":  "https://x.com/ZoneAmausi",
+        "NodalDesignation":  "CE",
+        "NodalMobile":  "tt8005488412 (EE- ADMIN)"
+    },
+    {
+        "SrNo":  "36",
+        "Discom":  null,
+        "District":  "CE Lesa Central Zone @Mvvnlcisgomti2",
+        "FbHandle":  "https://www.facebook.com/ce.lesa.92980",
+        "TwitterHandle":  "https://x.com/Mvvnlcisgomti2",
+        "NodalDesignation":  "CE",
+        "NodalMobile":  "tt8126724152"
+    },
+    {
+        "SrNo":  "37",
+        "Discom":  "Lucknow (Trans Gomti)",
+        "District":  "JANKIPURAM ZONE @mvvnllesatrans",
+        "FbHandle":  "https://www.facebook.com/profile.php?id=61579096683121",
+        "TwitterHandle":  "https://x.com/mvvnllesatrans",
+        "NodalDesignation":  "CE",
+        "NodalMobile":  "9453004527"
+    },
+    {
+        "SrNo":  "38",
+        "Discom":  null,
+        "District":  "@Gomtinagarzone",
+        "FbHandle":  "https://www.facebook.com/share/1GhF7XiLsE/",
+        "TwitterHandle":  "https://x.com/Gomtinagarzone",
+        "NodalDesignation":  "CE",
+        "NodalMobile":  "8004912190 / 9415901286"
+    },
+    {
+        "SrNo":  "39",
+        "Discom":  "MVVNL",
+        "District":  "LAKHIMPUR KHERI",
+        "FbHandle":  "https://www.facebook.com/profile.php?id=61579139881472",
+        "TwitterHandle":  "https://x.com/EDCLAKHIMPUR",
+        "NodalDesignation":  "SE",
+        "NodalMobile":  "9415903837/9415901534"
+    },
+    {
+        "SrNo":  "40",
+        "Discom":  "MVVNL",
+        "District":  "HARDOI",
+        "FbHandle":  "https://www.facebook.com/profile.php?id=61579209536249",
+        "TwitterHandle":  "https://twitter.com/mvvnlhardoi",
+        "NodalDesignation":  "SE",
+        "NodalMobile":  "9415901196"
+    },
+    {
+        "SrNo":  "41",
+        "Discom":  "MVVNL",
+        "District":  "RAEBARELI",
+        "FbHandle":  "https://www.facebook.com/share/175y8oDYJJ/",
+        "TwitterHandle":  "https://twitter.com/mvvnlraebareli",
+        "NodalDesignation":  "SE",
+        "NodalMobile":  "9415901224"
+    },
+    {
+        "SrNo":  "42",
+        "Discom":  "MVVNL",
+        "District":  "SITAPUR",
+        "FbHandle":  "https://www.facebook.com/profile.php?id=61578945700618",
+        "TwitterHandle":  "https://x.com/sitapurmvvnl",
+        "NodalDesignation":  "SE",
+        "NodalMobile":  "9415901149"
+    },
+    {
+        "SrNo":  "43",
+        "Discom":  "MVVNL",
+        "District":  "UNNAO",
+        "FbHandle":  "https://www.facebook.com/profile.php?id=61579121551832",
+        "TwitterHandle":  "https://twitter.com/MVVNLUNNAO",
+        "NodalDesignation":  "SE",
+        "NodalMobile":  "9453005041"
+    },
+    {
+        "SrNo":  "44",
+        "Discom":  "DVVNL",
+        "District":  "AGRA",
+        "FbHandle":  "https://www.facebook.com/dvvnlagra",
+        "TwitterHandle":  "https://twitter.com/dvvnlagra",
+        "NodalDesignation":  "SE",
+        "NodalMobile":  "9193303131 / 9193303132"
+    },
+    {
+        "SrNo":  "45",
+        "Discom":  "DVVNL",
+        "District":  "Aligarh",
+        "FbHandle":  "https://www.facebook.com/profile.php?id=100076016777295",
+        "TwitterHandle":  "https://twitter.com/dvvnlaligarh",
+        "NodalDesignation":  "SE",
+        "NodalMobile":  "9193304555/9412748422(Rural)"
+    },
+    {
+        "SrNo":  "46",
+        "Discom":  "DVVNL",
+        "District":  "AURAIYA",
+        "FbHandle":  "https://www.facebook.com/profile.php?id=100078339365622",
+        "TwitterHandle":  "https://twitter.com/dvvnlauraiya",
+        "NodalDesignation":  "SE",
+        "NodalMobile":  "9412740087"
+    },
+    {
+        "SrNo":  "47",
+        "Discom":  "DVVNL",
+        "District":  "BANDA",
+        "FbHandle":  "https://www.facebook.com/profile.php?id=100085526959640",
+        "TwitterHandle":  "https://twitter.com/dvvnlbanda",
+        "NodalDesignation":  "SE",
+        "NodalMobile":  "9415909200"
+    },
+    {
+        "SrNo":  "48",
+        "Discom":  "DVVNL",
+        "District":  "CHITRAKOOT",
+        "FbHandle":  "https://www.facebook.com/dvvnl.chitrakoot",
+        "TwitterHandle":  "https://twitter.com/dvvnlchitrakoot",
+        "NodalDesignation":  "SE",
+        "NodalMobile":  "8400700835"
+    },
+    {
+        "SrNo":  "49",
+        "Discom":  "DVVNL",
+        "District":  "ETAH",
+        "FbHandle":  "https://www.facebook.com/dvvnletah1",
+        "TwitterHandle":  "https://twitter.com/dvvnletah",
+        "NodalDesignation":  "SE",
+        "NodalMobile":  "9193304301"
+    },
+    {
+        "SrNo":  "50",
+        "Discom":  "DVVNL",
+        "District":  "ETAWAH",
+        "FbHandle":  "https://www.facebook.com/dvvnl.etawah.9",
+        "TwitterHandle":  "https://twitter.com/dvvnletawah01",
+        "NodalDesignation":  "SE",
+        "NodalMobile":  "9412748844"
+    },
+    {
+        "SrNo":  "51",
+        "Discom":  "DVVNL",
+        "District":  "FARRUKHABAD",
+        "FbHandle":  "https://www.facebook.com/profile.php?id=61594713278155",
+        "TwitterHandle":  "https://twitter.com/dvvnlfarrukhaba",
+        "NodalDesignation":  "SE",
+        "NodalMobile":  "9415334176"
+    },
+    {
+        "SrNo":  "52",
+        "Discom":  "DVVNL",
+        "District":  "FIROZABAD",
+        "FbHandle":  "https://www.facebook.com/profile.php?id=100076299606971",
+        "TwitterHandle":  "https://twitter.com/dvvnlfirozabad",
+        "NodalDesignation":  "SE",
+        "NodalMobile":  "9412719741/ 9193303460"
+    },
+    {
+        "SrNo":  "53",
+        "Discom":  "DVVNL",
+        "District":  "HAMIRPUR",
+        "FbHandle":  "https://www.facebook.com/dvvnlhamirpur",
+        "TwitterHandle":  "https://twitter.com/dvvnlhamirpur",
+        "NodalDesignation":  "SE",
+        "NodalMobile":  "9415909213"
+    },
+    {
+        "SrNo":  "54",
+        "Discom":  "DVVNL",
+        "District":  "HATHRAS",
+        "FbHandle":  "https://www.facebook.com/profile.php?id=100076376774426",
+        "TwitterHandle":  "https://twitter.com/dvvnlhathras",
+        "NodalDesignation":  "SE",
+        "NodalMobile":  "9193304444"
+    },
+    {
+        "SrNo":  "55",
+        "Discom":  "DVVNL",
+        "District":  "JALAUN(URAI)",
+        "FbHandle":  "https://www.facebook.com/Dvvnljalaun.2",
+        "TwitterHandle":  "https://x.com/dvvnljalaun2?s=22",
+        "NodalDesignation":  "SE",
+        "NodalMobile":  "9415909511"
+    },
+    {
+        "SrNo":  "56",
+        "Discom":  "DVVNL",
+        "District":  "JHANSI",
+        "FbHandle":  "https://www.facebook.com/profile.php?id=100076048905757",
+        "TwitterHandle":  "https://twitter.com/dvvnljhansi",
+        "NodalDesignation":  "SE",
+        "NodalMobile":  "9453143642"
+    },
+    {
+        "SrNo":  "57",
+        "Discom":  "DVVNL",
+        "District":  "KANNAUJ",
+        "FbHandle":  "https://www.facebook.com/DVVNLKANNAUJ",
+        "TwitterHandle":  "https://twitter.com/dvvnlkannauj",
+        "NodalDesignation":  "SE",
+        "NodalMobile":  "8004933075"
+    },
+    {
+        "SrNo":  "58",
+        "Discom":  "DVVNL",
+        "District":  "KANPUR DEHAT",
+        "FbHandle":  "https://www.facebook.com/profile.php?id=100068815057237",
+        "TwitterHandle":  "https://twitter.com/dvvnlkanpurdeha",
+        "NodalDesignation":  "SE",
+        "NodalMobile":  "8004938792"
+    },
+    {
+        "SrNo":  "59",
+        "Discom":  "DVVNL",
+        "District":  "KANPUR NAGAR",
+        "FbHandle":  "https://www.facebook.com/dvvnlkanpurnagr",
+        "TwitterHandle":  "https://twitter.com/dvvnlkanpurnagr",
+        "NodalDesignation":  "SE",
+        "NodalMobile":  "9415909008"
+    },
+    {
+        "SrNo":  "60",
+        "Discom":  "DVVNL",
+        "District":  "KASGANJ",
+        "FbHandle":  "https://www.facebook.com/profile.php?id=100076298841827",
+        "TwitterHandle":  "https://twitter.com/dvvnlKasganj",
+        "NodalDesignation":  "SE",
+        "NodalMobile":  "9193304111"
+    },
+    {
+        "SrNo":  "61",
+        "Discom":  "DVVNL",
+        "District":  "LALITPUR",
+        "FbHandle":  "https://www.facebook.com/seedclalitpur1",
+        "TwitterHandle":  "https://x.com/edc_engine60946?s=20",
+        "NodalDesignation":  "SE",
+        "NodalMobile":  "9532589691"
+    },
+    {
+        "SrNo":  "62",
+        "Discom":  "DVVNL",
+        "District":  "MAHOBA",
+        "FbHandle":  "https://www.facebook.com/dvvnl.mahoba",
+        "TwitterHandle":  "https://twitter.com/dvvnlmahoba",
+        "NodalDesignation":  "SE",
+        "NodalMobile":  "9453019114 / 9453955097(JE)"
+    },
+    {
+        "SrNo":  "63",
+        "Discom":  "DVVNL",
+        "District":  "MAINPURI",
+        "FbHandle":  "https://www.facebook.com/profile.php?id=100075405409941",
+        "TwitterHandle":  "https://twitter.com/dvvnlmainpuri",
+        "NodalDesignation":  "SE",
+        "NodalMobile":  "9193303900"
+    },
+    {
+        "SrNo":  "64",
+        "Discom":  "DVVNL",
+        "District":  "MATHURA",
+        "FbHandle":  "https://www.facebook.com/profile.php?id=100076333086046",
+        "TwitterHandle":  "https://twitter.com/dvvnlmathura1",
+        "NodalDesignation":  "SE",
+        "NodalMobile":  "tt9193303221"
+    },
+    {
+        "SrNo":  "65",
+        "Discom":  "PVVNL",
+        "District":  "AMROHA",
+        "FbHandle":  "https://www.facebook.com/profile.php?id=61578853065599",
+        "TwitterHandle":  "https://x.com/pvvnlAmroha23",
+        "NodalDesignation":  "SE",
+        "NodalMobile":  "9193300500"
+    },
+    {
+        "SrNo":  "66",
+        "Discom":  "PVVNL",
+        "District":  "BAGHPAT",
+        "FbHandle":  "https://www.facebook.com/profile.php?id=61579266144379",
+        "TwitterHandle":  "https://twitter.com/pvvnlbaghpat",
+        "NodalDesignation":  "SE",
+        "NodalMobile":  "9193330555"
+    },
+    {
+        "SrNo":  "67",
+        "Discom":  "PVVNL",
+        "District":  "BIJNOR",
+        "FbHandle":  "https://www.facebook.com/profile.php?id=61578916360680",
+        "TwitterHandle":  "https://twitter.com/pvvnlbijnor",
+        "NodalDesignation":  "SE",
+        "NodalMobile":  "9193300700"
+    },
+    {
+        "SrNo":  "68",
+        "Discom":  "PVVNL",
+        "District":  "BULANDSHAHAR",
+        "FbHandle":  "https://www.facebook.com/profile.php?id=61579296262886",
+        "TwitterHandle":  "https://twitter.com/pvvnlbulandshr",
+        "NodalDesignation":  "SE",
+        "NodalMobile":  "9193302300"
+    },
+    {
+        "SrNo":  "69",
+        "Discom":  "PVVNL",
+        "District":  "GAUTAM BUDH NAGAR",
+        "FbHandle":  "https://www.facebook.com/PVVNLGBNAGAR",
+        "TwitterHandle":  "@PVVNLNOIDA",
+        "NodalDesignation":  "SE",
+        "NodalMobile":  "7290055802"
+    },
+    {
+        "SrNo":  "70",
+        "Discom":  "PVVNL",
+        "District":  "GHAZIABAD",
+        "FbHandle":  "https://www.facebook.com/profile.php?id=61579213056363",
+        "TwitterHandle":  "https://twitter.com/pvvnlghaziabad",
+        "NodalDesignation":  "SE",
+        "NodalMobile":  "9193320111"
+    },
+    {
+        "SrNo":  "71",
+        "Discom":  "PVVNL",
+        "District":  "HAPUR",
+        "FbHandle":  "https://www.facebook.com/profile.php?id=61579136819419",
+        "TwitterHandle":  "https://twitter.com/pvvnlhapur",
+        "NodalDesignation":  "SE",
+        "NodalMobile":  "9193319900"
+    },
+    {
+        "SrNo":  "72",
+        "Discom":  "PVVNL",
+        "District":  "MEERUT",
+        "FbHandle":  "https://www.facebook.com/profile.php?id=61579296563174",
+        "TwitterHandle":  "https://twitter.com/pvvnlmeerut",
+        "NodalDesignation":  "SE",
+        "NodalMobile":  "9193330310"
+    },
+    {
+        "SrNo":  "73",
+        "Discom":  "PVVNL",
+        "District":  "MORADABAD",
+        "FbHandle":  "https://www.facebook.com/profile.php?id=61579054025165",
+        "TwitterHandle":  "https://twitter.com/pvvnlmoradabad",
+        "NodalDesignation":  "SE",
+        "NodalMobile":  "9193300200"
+    },
+    {
+        "SrNo":  "74",
+        "Discom":  "PVVNL",
+        "District":  "MUZAFFERNAGAR",
+        "FbHandle":  "https://www.facebook.com/pvvnl.muzaffarnagar",
+        "TwitterHandle":  "https://twitter.com/pvvnlmuzafarngr",
+        "NodalDesignation":  "SE",
+        "NodalMobile":  "9412749361t9193331101t9193331400t"
+    },
+    {
+        "SrNo":  "75",
+        "Discom":  "PVVNL",
+        "District":  "RAMPUR",
+        "FbHandle":  "https://www.facebook.com/profile.php?id=61579166429624",
+        "TwitterHandle":  "https://x.com/pvvnl_rampur",
+        "NodalDesignation":  "SE",
+        "NodalMobile":  "9193300600"
+    },
+    {
+        "SrNo":  "76",
+        "Discom":  "PVVNL",
+        "District":  "SAHARANPUR",
+        "FbHandle":  "https://www.facebook.com/profile.php?id=61579346690206",
+        "TwitterHandle":  "https://twitter.com/PVVNLSAHARANPUR",
+        "NodalDesignation":  "SE",
+        "NodalMobile":  "9193330410"
+    },
+    {
+        "SrNo":  "77",
+        "Discom":  "PVVNL",
+        "District":  "SAMBHAL",
+        "FbHandle":  "https://www.facebook.com/share/1AbA3KMKiK/",
+        "TwitterHandle":  "https://twitter.com/pvvnlsambhal",
+        "NodalDesignation":  "SE",
+        "NodalMobile":  "9193300400"
+    },
+    {
+        "SrNo":  "78",
+        "Discom":  "PVVNL",
+        "District":  "SHAMLI",
+        "FbHandle":  "https://www.facebook.com/profile.php?id=61579184158732",
+        "TwitterHandle":  "https://twitter.com/PVVNLSHAMLI",
+        "NodalDesignation":  "SE",
+        "NodalMobile":  "9193330999"
+    },
+    {
+        "SrNo":  "79",
+        "Discom":  "KESCoHQ",
+        "District":  "KESCoHQ",
+        "FbHandle":  "https://www.facebook.com/kesco.kanpur",
+        "TwitterHandle":  "https://x.com/KESCoHQ",
+        "NodalDesignation":  "SE",
+        "NodalMobile":  "9415909008"
+    },
+    {
+        "SrNo":  "79",
+        "Discom":  "DISCOM",
+        "District":  "PVVNLHQ",
+        "FbHandle":  "https://www.facebook.com/share/19QNvebucF/",
+        "TwitterHandle":  "https://x.com/PVVNLHQ",
+        "NodalDesignation":  null,
+        "NodalMobile":  null
+    },
+    {
+        "SrNo":  null,
+        "Discom":  null,
+        "District":  "DVVNLHQ",
+        "FbHandle":  "https://www.facebook.com/dvvnlhq",
+        "TwitterHandle":  "https://x.com/dvvnlhq",
+        "NodalDesignation":  null,
+        "NodalMobile":  null
+    },
+    {
+        "SrNo":  null,
+        "Discom":  null,
+        "District":  "PUVVNLHQ",
+        "FbHandle":  "https://www.facebook.com/PUVVNLHQOFFICIAL",
+        "TwitterHandle":  "https://x.com/PuVVNLHQ",
+        "NodalDesignation":  null,
+        "NodalMobile":  null
+    },
+    {
+        "SrNo":  null,
+        "Discom":  null,
+        "District":  "MVVNLHQ",
+        "FbHandle":  "https://www.facebook.com/mvvnlhqlko",
+        "TwitterHandle":  "https://x.com/MVVNLHQ",
+        "NodalDesignation":  null,
+        "NodalMobile":  null
+    },
+    {
+        "SrNo":  null,
+        "Discom":  null,
+        "District":  "KESCoHQ",
+        "FbHandle":  "https://www.facebook.com/kesco.kanpur",
+        "TwitterHandle":  "https://x.com/KESCoHQ",
+        "NodalDesignation":  null,
+        "NodalMobile":  null
+    },
+    {
+        "SrNo":  "80",
+        "Discom":  "MD-DISCOM",
+        "District":  "PUVVNL",
+        "FbHandle":  "https://www.facebook.com/PUVVNLHQOFFICIAL",
+        "TwitterHandle":  "https://x.com/MdPuvvnl?s=20",
+        "NodalDesignation":  null,
+        "NodalMobile":  null
+    },
+    {
+        "SrNo":  null,
+        "Discom":  null,
+        "District":  "PVVNL",
+        "FbHandle":  "https://www.facebook.com/share/19QNvebucF/",
+        "TwitterHandle":  "https://x.com/MdPvvnl",
+        "NodalDesignation":  null,
+        "NodalMobile":  null
+    },
+    {
+        "SrNo":  null,
+        "Discom":  null,
+        "District":  "DVVNL",
+        "FbHandle":  "https://www.facebook.com/DVVNL",
+        "TwitterHandle":  "https://x.com/MDDVVNL",
+        "NodalDesignation":  null,
+        "NodalMobile":  null
+    }
+]

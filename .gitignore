@@ -1,0 +1,16 @@
+# Dependencies & Runtime
+node_modules/
+runtime/
+
+# Environment Variables & Secrets
+.env
+
+# Uploads
+uploads/*
+!uploads/.gitkeep
+
+# Temporary / Scratch files
+scratch/
+test_*.js
+verify_db.js
+*.log

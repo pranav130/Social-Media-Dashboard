@@ -1,0 +1,542 @@
+﻿[
+    {
+        "SrNo":  "1",
+        "Discom":  "UPPCL HQ",
+        "District":  null,
+        "TwitterHandle":  "https://x.com/UPPCLLKO"
+    },
+    {
+        "SrNo":  "2",
+        "Discom":  "CM OFFICE",
+        "District":  null,
+        "TwitterHandle":  "https://x.com/CMOfficeUP"
+    },
+    {
+        "SrNo":  "3",
+        "Discom":  "E M OFFICE",
+        "District":  null,
+        "TwitterHandle":  "https://x.com/EMofficeUP"
+    },
+    {
+        "SrNo":  "4",
+        "Discom":  "EM SIR",
+        "District":  "SHRI A K SHARMA",
+        "TwitterHandle":  "https://x.com/AKSharmaOffice"
+    },
+    {
+        "SrNo":  "5",
+        "Discom":  "EM SIR",
+        "District":  "SHRI A K SHARMA",
+        "TwitterHandle":  "https://x.com/aksharmaBharat"
+    },
+    {
+        "SrNo":  "6",
+        "Discom":  "Chairman UPPCL",
+        "District":  null,
+        "TwitterHandle":  "https://x.com/ChairmanUppcl"
+    },
+    {
+        "SrNo":  "7",
+        "Discom":  "MD UPPCL",
+        "District":  null,
+        "TwitterHandle":  "https://x.com/mduppcl"
+    },
+    {
+        "SrNo":  "8",
+        "Discom":  "PUVVNL",
+        "District":  "AZAMGARH",
+        "TwitterHandle":  "https://twitter.com/puvvnlazamgarh"
+    },
+    {
+        "SrNo":  "9",
+        "Discom":  "PUVVNL",
+        "District":  "BHADOHI",
+        "TwitterHandle":  "https://twitter.com/puvvnlbhadohi"
+    },
+    {
+        "SrNo":  "10",
+        "Discom":  "PUVVNL",
+        "District":  "BALLIA",
+        "TwitterHandle":  "https://twitter.com/puvvnlballia"
+    },
+    {
+        "SrNo":  "11",
+        "Discom":  "PUVVNL",
+        "District":  "BASTI",
+        "TwitterHandle":  "https://twitter.com/puvvnlbasti"
+    },
+    {
+        "SrNo":  "12",
+        "Discom":  "PUVVNL",
+        "District":  "CHANDAULI",
+        "TwitterHandle":  "https://twitter.com/puvvnlchandauli"
+    },
+    {
+        "SrNo":  "13",
+        "Discom":  "PUVVNL",
+        "District":  "DEORIA",
+        "TwitterHandle":  "PuVVNL Deoria (@puvvnldeoria) / X"
+    },
+    {
+        "SrNo":  "14",
+        "Discom":  "PUVVNL",
+        "District":  "FATEHPUR",
+        "TwitterHandle":  "https://twitter.com/puvvnlfatehpur"
+    },
+    {
+        "SrNo":  "15",
+        "Discom":  "PUVVNL",
+        "District":  "GHAZIPUR",
+        "TwitterHandle":  "https://twitter.com/puvvnlghazipur"
+    },
+    {
+        "SrNo":  "16",
+        "Discom":  "PUVVNL",
+        "District":  "GORAKHPUR",
+        "TwitterHandle":  "https://twitter.com/puvvnlgorakhpur"
+    },
+    {
+        "SrNo":  "17",
+        "Discom":  "PUVVNL",
+        "District":  "JAUNPUR",
+        "TwitterHandle":  "https://twitter.com/puvvnljaunpur"
+    },
+    {
+        "SrNo":  "18",
+        "Discom":  "PUVVNL",
+        "District":  "KAUSHAMBHI",
+        "TwitterHandle":  "https://twitter.com/puvvnlkaushambi"
+    },
+    {
+        "SrNo":  "19",
+        "Discom":  "PUVVNL",
+        "District":  "KUSHINAGAR",
+        "TwitterHandle":  "https://twitter.com/puvvnlkusinagar"
+    },
+    {
+        "SrNo":  "20",
+        "Discom":  "PUVVNL",
+        "District":  "MAHARAJGANJ",
+        "TwitterHandle":  "https://twitter.com/puvvnlmhrjganj"
+    },
+    {
+        "SrNo":  "21",
+        "Discom":  "PUVVNL",
+        "District":  "MAU",
+        "TwitterHandle":  "https://twitter.com/puvvnlmau"
+    },
+    {
+        "SrNo":  "22",
+        "Discom":  "PUVVNL",
+        "District":  "MIRZAPUR",
+        "TwitterHandle":  "https://twitter.com/puvvnlmirzapur1"
+    },
+    {
+        "SrNo":  "23",
+        "Discom":  "PUVVNL",
+        "District":  "PRATAPGARH",
+        "TwitterHandle":  "https://twitter.com/PUVVNLPRTAPGARH"
+    },
+    {
+        "SrNo":  "24",
+        "Discom":  "PUVVNL",
+        "District":  "PRAYAGRAJ",
+        "TwitterHandle":  "https://twitter.com/puvvnlprayagraj"
+    },
+    {
+        "SrNo":  "25",
+        "Discom":  "PUVVNL",
+        "District":  "SANT KABIR NAGAR (KHALILABAD)",
+        "TwitterHandle":  "https://twitter.com/puvvnlsknagar"
+    },
+    {
+        "SrNo":  "26",
+        "Discom":  "PUVVNL",
+        "District":  "SIDDHARTH NAGAR",
+        "TwitterHandle":  "https://twitter.com/puvvnlsdnagar"
+    },
+    {
+        "SrNo":  "27",
+        "Discom":  "PUVVNL",
+        "District":  "SONBHADRA",
+        "TwitterHandle":  "https://twitter.com/puvvnlsonbhadra"
+    },
+    {
+        "SrNo":  "28",
+        "Discom":  "PUVVNL",
+        "District":  "VARANASI",
+        "TwitterHandle":  "https://twitter.com/puvvnlvaranasi"
+    },
+    {
+        "SrNo":  "29",
+        "Discom":  "MVVNL",
+        "District":  "BAREILLY",
+        "TwitterHandle":  "https://twitter.com/mvvnlbareilly"
+    },
+    {
+        "SrNo":  "30",
+        "Discom":  "MVVNL",
+        "District":  "BADAUN",
+        "TwitterHandle":  "https://x.com/mvvnlbudaun?s=20"
+    },
+    {
+        "SrNo":  "31",
+        "Discom":  "MVVNL",
+        "District":  "PILIBHIT",
+        "TwitterHandle":  "https://twitter.com/mvvnlpilibhit"
+    },
+    {
+        "SrNo":  "32",
+        "Discom":  "MVVNL",
+        "District":  "SHAHJAHANPUR",
+        "TwitterHandle":  "https://twitter.com/mvvnlsahjahapur"
+    },
+    {
+        "SrNo":  "33",
+        "Discom":  "MVVNL",
+        "District":  "AMBEDKAR NAGAR",
+        "TwitterHandle":  "https://twitter.com/EDC_Ambdkrnagar"
+    },
+    {
+        "SrNo":  "34",
+        "Discom":  "MVVNL",
+        "District":  "AMETHI",
+        "TwitterHandle":  "https://twitter.com/mvvnlamethi"
+    },
+    {
+        "SrNo":  "35",
+        "Discom":  "MVVNL",
+        "District":  "BARABANKI",
+        "TwitterHandle":  "https://twitter.com/mvvnlbarabanki"
+    },
+    {
+        "SrNo":  "36",
+        "Discom":  "MVVNL",
+        "District":  "AYODHYA",
+        "TwitterHandle":  "https://twitter.com/mvvnlAyodhya"
+    },
+    {
+        "SrNo":  "37",
+        "Discom":  "MVVNL",
+        "District":  "SULTANPUR",
+        "TwitterHandle":  "https://twitter.com/mvvnlsultanpur"
+    },
+    {
+        "SrNo":  "38",
+        "Discom":  "MVVNL",
+        "District":  "BAHRAICH",
+        "TwitterHandle":  "https://twitter.com/mvvnlbahraich"
+    },
+    {
+        "SrNo":  "39",
+        "Discom":  "MVVNL",
+        "District":  "BALRAMPUR",
+        "TwitterHandle":  "https://twitter.com/mvvnlbalrampur"
+    },
+    {
+        "SrNo":  "40",
+        "Discom":  "MVVNL",
+        "District":  "GONDA",
+        "TwitterHandle":  "https://twitter.com/mvvnlgonda"
+    },
+    {
+        "SrNo":  "41",
+        "Discom":  "MVVNL",
+        "District":  "SHRAVASTI",
+        "TwitterHandle":  "https://twitter.com/mvvnlshrawasti"
+    },
+    {
+        "SrNo":  "42",
+        "Discom":  "MVVNL",
+        "District":  "CISS GOMTI 1 (AMAUSI)",
+        "TwitterHandle":  "https://x.com/ZoneAmausi"
+    },
+    {
+        "SrNo":  "43",
+        "Discom":  "MVVNL",
+        "District":  "LUCKNOW(cisGomti 2)",
+        "TwitterHandle":  "https://x.com/Mvvnlcisgomti2"
+    },
+    {
+        "SrNo":  "44",
+        "Discom":  "MVVNL",
+        "District":  "LUCKNOW (transGomti 1)",
+        "TwitterHandle":  "@ZoneGomtinagar"
+    },
+    {
+        "SrNo":  "45",
+        "Discom":  "MVVNL",
+        "District":  "LUCKNOW (transGomti 2)",
+        "TwitterHandle":  "https://x.com/mvvnllesatrans"
+    },
+    {
+        "SrNo":  "46",
+        "Discom":  "MVVNL",
+        "District":  "LAKHIMPUR KHERI",
+        "TwitterHandle":  "https://twitter.com/mvvnlLakhimpur"
+    },
+    {
+        "SrNo":  "47",
+        "Discom":  "MVVNL",
+        "District":  "HARDOI",
+        "TwitterHandle":  "https://twitter.com/mvvnlhardoi"
+    },
+    {
+        "SrNo":  "48",
+        "Discom":  "MVVNL",
+        "District":  "RAEBARELI",
+        "TwitterHandle":  "https://twitter.com/mvvnlraebareli"
+    },
+    {
+        "SrNo":  "49",
+        "Discom":  "MVVNL",
+        "District":  "SITAPUR",
+        "TwitterHandle":  "https://twitter.com/mvvnlsitapur"
+    },
+    {
+        "SrNo":  "50",
+        "Discom":  "MVVNL",
+        "District":  "UNNAO",
+        "TwitterHandle":  "https://twitter.com/MVVNLUNNAO"
+    },
+    {
+        "SrNo":  "51",
+        "Discom":  "DVVNL",
+        "District":  "AGRA",
+        "TwitterHandle":  "https://twitter.com/dvvnlagra"
+    },
+    {
+        "SrNo":  "52",
+        "Discom":  "DVVNL",
+        "District":  "ALIGARH",
+        "TwitterHandle":  "https://twitter.com/dvvnlaligarh"
+    },
+    {
+        "SrNo":  "53",
+        "Discom":  "DVVNL",
+        "District":  "AURAIYA",
+        "TwitterHandle":  "https://twitter.com/dvvnlauraiya"
+    },
+    {
+        "SrNo":  "54",
+        "Discom":  "DVVNL",
+        "District":  "BANDA",
+        "TwitterHandle":  "https://twitter.com/dvvnlbanda"
+    },
+    {
+        "SrNo":  "55",
+        "Discom":  "DVVNL",
+        "District":  "CHITRAKOOT",
+        "TwitterHandle":  "https://twitter.com/dvvnlchitrakoot"
+    },
+    {
+        "SrNo":  "56",
+        "Discom":  "DVVNL",
+        "District":  "ETAH",
+        "TwitterHandle":  "https://twitter.com/dvvnletah"
+    },
+    {
+        "SrNo":  "57",
+        "Discom":  "DVVNL",
+        "District":  "ETAWAH",
+        "TwitterHandle":  "https://twitter.com/dvvnletawah01"
+    },
+    {
+        "SrNo":  "58",
+        "Discom":  "DVVNL",
+        "District":  "FARRUKHABAD",
+        "TwitterHandle":  "https://twitter.com/dvvnlfarrukhaba"
+    },
+    {
+        "SrNo":  "59",
+        "Discom":  "DVVNL",
+        "District":  "FIROZABAD",
+        "TwitterHandle":  "https://twitter.com/dvvnlfirozabad"
+    },
+    {
+        "SrNo":  "60",
+        "Discom":  "DVVNL",
+        "District":  "HAMIRPUR",
+        "TwitterHandle":  "https://twitter.com/dvvnlhamirpur"
+    },
+    {
+        "SrNo":  "61",
+        "Discom":  "DVVNL",
+        "District":  "HATHRAS",
+        "TwitterHandle":  "https://twitter.com/dvvnlhathras"
+    },
+    {
+        "SrNo":  "62",
+        "Discom":  "DVVNL",
+        "District":  "JALAUN(URAI)",
+        "TwitterHandle":  "https://x.com/dvvnljalaun2?s=22"
+    },
+    {
+        "SrNo":  "63",
+        "Discom":  "DVVNL",
+        "District":  "JHANSI",
+        "TwitterHandle":  "https://twitter.com/dvvnljhansi"
+    },
+    {
+        "SrNo":  "64",
+        "Discom":  "DVVNL",
+        "District":  "KANNAUJ",
+        "TwitterHandle":  "https://twitter.com/dvvnlkannauj"
+    },
+    {
+        "SrNo":  "65",
+        "Discom":  "DVVNL",
+        "District":  "KANPUR DEHAT",
+        "TwitterHandle":  "https://twitter.com/dvvnlkanpurdeha"
+    },
+    {
+        "SrNo":  "66",
+        "Discom":  "DVVNL",
+        "District":  "KANPUR NAGAR",
+        "TwitterHandle":  "https://twitter.com/dvvnlkanpurnagr"
+    },
+    {
+        "SrNo":  "67",
+        "Discom":  "DVVNL",
+        "District":  "KASGANJ",
+        "TwitterHandle":  "https://twitter.com/dvvnlKasganj"
+    },
+    {
+        "SrNo":  "68",
+        "Discom":  "DVVNL",
+        "District":  "LALITPUR",
+        "TwitterHandle":  "https://twitter.com/dvvnllalitpur2"
+    },
+    {
+        "SrNo":  "69",
+        "Discom":  "DVVNL",
+        "District":  "MAHOBA",
+        "TwitterHandle":  "https://twitter.com/dvvnlmahoba"
+    },
+    {
+        "SrNo":  "70",
+        "Discom":  "DVVNL",
+        "District":  "MAINPURI",
+        "TwitterHandle":  "https://twitter.com/dvvnlmainpuri"
+    },
+    {
+        "SrNo":  "71",
+        "Discom":  "DVVNL",
+        "District":  "MATHURA",
+        "TwitterHandle":  "https://twitter.com/dvvnlmathura1"
+    },
+    {
+        "SrNo":  "72",
+        "Discom":  "PVVNL",
+        "District":  "AMROHA",
+        "TwitterHandle":  "https://twitter.com/pvvnlamroha"
+    },
+    {
+        "SrNo":  "73",
+        "Discom":  "PVVNL",
+        "District":  "BAGHPAT",
+        "TwitterHandle":  "https://twitter.com/pvvnlbaghpat"
+    },
+    {
+        "SrNo":  "74",
+        "Discom":  "PVVNL",
+        "District":  "BIJNOR",
+        "TwitterHandle":  "https://twitter.com/pvvnlbijnor"
+    },
+    {
+        "SrNo":  "75",
+        "Discom":  "PVVNL",
+        "District":  "BULANDSHAHAR",
+        "TwitterHandle":  "https://twitter.com/pvvnlbulandshr"
+    },
+    {
+        "SrNo":  "76",
+        "Discom":  "PVVNL",
+        "District":  "GAUTAM BUDH NAGAR",
+        "TwitterHandle":  "https://twitter.com/pvvnlgbnagar"
+    },
+    {
+        "SrNo":  "77",
+        "Discom":  "PVVNL",
+        "District":  "GHAZIABAD",
+        "TwitterHandle":  "https://twitter.com/pvvnlghaziabad"
+    },
+    {
+        "SrNo":  "78",
+        "Discom":  "PVVNL",
+        "District":  "HAPUR",
+        "TwitterHandle":  "https://twitter.com/pvvnlhapur"
+    },
+    {
+        "SrNo":  "79",
+        "Discom":  "PVVNL",
+        "District":  "MEERUT",
+        "TwitterHandle":  "https://twitter.com/pvvnlmeerut"
+    },
+    {
+        "SrNo":  "80",
+        "Discom":  "PVVNL",
+        "District":  "MORADABAD",
+        "TwitterHandle":  "https://twitter.com/pvvnlmoradabad"
+    },
+    {
+        "SrNo":  "81",
+        "Discom":  "PVVNL",
+        "District":  "MUZAFFERNAGAR",
+        "TwitterHandle":  "https://twitter.com/pvvnlmuzafarngr"
+    },
+    {
+        "SrNo":  "82",
+        "Discom":  "PVVNL",
+        "District":  "RAMPUR",
+        "TwitterHandle":  "https://twitter.com/pvvnlrampur"
+    },
+    {
+        "SrNo":  "83",
+        "Discom":  "PVVNL",
+        "District":  "SAHARANPUR",
+        "TwitterHandle":  "https://twitter.com/PVVNLSAHARANPUR"
+    },
+    {
+        "SrNo":  "84",
+        "Discom":  "PVVNL",
+        "District":  "SAMBHAL",
+        "TwitterHandle":  "https://twitter.com/pvvnlsambhal"
+    },
+    {
+        "SrNo":  "85",
+        "Discom":  "PVVNL",
+        "District":  "SHAMli",
+        "TwitterHandle":  "https://twitter.com/PVVNLSHAMLI"
+    },
+    {
+        "SrNo":  "86",
+        "Discom":  "DISCOM",
+        "District":  "PVVNLHQ",
+        "TwitterHandle":  "https://x.com/PVVNLHQ"
+    },
+    {
+        "SrNo":  "87",
+        "Discom":  null,
+        "District":  "DVVNLHQ",
+        "TwitterHandle":  "https://x.com/dvvnlhq"
+    },
+    {
+        "SrNo":  "88",
+        "Discom":  null,
+        "District":  "PUVVNLHQ",
+        "TwitterHandle":  "https://x.com/PuVVNLHQ"
+    },
+    {
+        "SrNo":  "89",
+        "Discom":  null,
+        "District":  "MVVNLHQ",
+        "TwitterHandle":  "https://x.com/MVVNLHQ"
+    },
+    {
+        "SrNo":  "90",
+        "Discom":  null,
+        "District":  "KESCoHQ",
+        "TwitterHandle":  "https://x.com/KESCoHQ"
+    }
+]
