@@ -1,5 +1,6 @@
 // UPPCL Social Media Cell - Front-end Application
 const App = {
+  theme: 'light',
   user: null,
   token: null,
   currentPage: 'dashboard',
@@ -28,6 +29,7 @@ const App = {
   },
 
   init() {
+    this.initTheme();
     this.token = localStorage.getItem('uppcl_smc_token');
     const savedUser = localStorage.getItem('uppcl_smc_user');
     if (savedUser) {
@@ -58,6 +60,54 @@ const App = {
         el.innerHTML = `<i class="fa-regular fa-clock"></i> IST: ${ist.toLocaleDateString('en-GB')} ${ist.toLocaleTimeString('en-GB')}`;
       }
     }, 1000);
+  },
+
+  initTheme() {
+    try {
+      const savedTheme = localStorage.getItem('uppcl_smc_theme') || 
+        (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+      this.setTheme(savedTheme, false);
+    } catch(e) {
+      this.setTheme('light', false);
+    }
+  },
+
+  setTheme(theme, updateCharts = true) {
+    this.theme = theme;
+    document.documentElement.setAttribute('data-theme', theme);
+    try {
+      localStorage.setItem('uppcl_smc_theme', theme);
+    } catch(e) {}
+
+    // Update Chart.js defaults if library loaded
+    if (window.Chart) {
+      const isDark = theme === 'dark';
+      Chart.defaults.color = isDark ? '#94a3b8' : '#6b7280';
+      Chart.defaults.borderColor = isDark ? '#24354f' : '#edf2f7';
+    }
+
+    // Update all theme buttons in the UI
+    document.querySelectorAll('.theme-toggle-btn').forEach(btn => {
+      const isDark = theme === 'dark';
+      btn.innerHTML = isDark
+        ? '<i class="fa-solid fa-sun" style="color: #f59e0b;"></i> <span class="theme-label">Light Mode</span>'
+        : '<i class="fa-solid fa-moon" style="color: #6366f1;"></i> <span class="theme-label">Dark Mode</span>';
+      btn.setAttribute('title', isDark ? 'Switch to Light Mode' : 'Switch to Dark Mode');
+      btn.setAttribute('aria-label', isDark ? 'Switch to Light Mode' : 'Switch to Dark Mode');
+    });
+
+    // Re-render dashboard charts if currently viewing dashboard
+    if (updateCharts && this.currentPage === 'dashboard') {
+      const container = document.getElementById('page-content');
+      if (container && Object.keys(this.charts).length > 0) {
+        this.renderDashboard(container);
+      }
+    }
+  },
+
+  toggleTheme() {
+    const nextTheme = this.theme === 'dark' ? 'light' : 'dark';
+    this.setTheme(nextTheme, true);
   },
 
   async api(endpoint, options = {}) {
@@ -266,6 +316,12 @@ const App = {
               <button class="btn btn-accent btn-sm" onclick="App.navigate('add-complaint')">
                 <i class="fa-solid fa-plus"></i> New Complaint
               </button>` : ''}
+
+              <!-- Theme Toggle Button -->
+              <button class="theme-toggle-btn" onclick="App.toggleTheme()" title="${this.theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}" aria-label="Toggle Theme">
+                <i class="fa-solid ${this.theme === 'dark' ? 'fa-sun' : 'fa-moon'}" style="${this.theme === 'dark' ? 'color: #f59e0b;' : 'color: #6366f1;'}"></i>
+                <span class="theme-label">${this.theme === 'dark' ? 'Light Mode' : 'Dark Mode'}</span>
+              </button>
 
               <div class="user-pill">
                 <div class="user-avatar">${this.user.full_name.charAt(0).toUpperCase()}</div>
@@ -1122,7 +1178,7 @@ const App = {
           </div>
 
           <!-- Immediate Forwarding Section -->
-          <div style="background-color: #f8fafc; border: 1px solid var(--border-color); border-radius: 6px; padding: 14px; margin-bottom: 20px;">
+          <div style="background-color: var(--bg-subtle); border: 1px solid var(--border-color); border-radius: 6px; padding: 14px; margin-bottom: 20px;">
             <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 10px;">
               <input type="checkbox" id="add-forward-now" onchange="App.toggleForwardSection(this.checked)">
               <label for="add-forward-now" style="font-weight: 700; color: var(--primary); font-size: 13px; cursor: pointer;">
@@ -1370,7 +1426,7 @@ const App = {
                       <span style="font-size: 11px; color: var(--text-muted);">${c.received_at} IST</span>
                     </div>
 
-                    <div style="background-color: #f8fafc; padding: 14px; border-radius: 6px; border: 1px solid #e2e8f0; font-size: 13px; line-height: 1.5; color: var(--primary-dark); margin-bottom: 14px;">
+                    <div style="background-color: var(--bg-subtle); padding: 14px; border-radius: 6px; border: 1px solid var(--border-color); font-size: 13px; line-height: 1.5; color: var(--text-main); margin-bottom: 14px;">
                       ${c.complaint_text}
                     </div>
 
@@ -1467,7 +1523,7 @@ const App = {
                   </div>
 
                   <!-- Quick Action Panel -->
-                  <div class="details-card" style="background-color: #fafbfd;">
+                  <div class="details-card" style="background-color: var(--bg-subtle);">
                     <div class="details-card-header">
                       <span><i class="fa-solid fa-bolt"></i> Workflow Actions</span>
                     </div>
@@ -2074,7 +2130,7 @@ const App = {
         </div>
 
         <div id="report-preview-container">
-          <div style="text-align: center; padding: 30px; color: var(--text-muted); background: #f8fafc; border-radius: 6px; border: 1px dashed var(--border-color);">
+          <div style="text-align: center; padding: 30px; color: var(--text-muted); background: var(--bg-subtle); border-radius: 6px; border: 1px dashed var(--border-color);">
             Select parameters and click Download or Print. Exported datasets match real-time system records.
           </div>
         </div>
@@ -2420,6 +2476,21 @@ const App = {
         </div>
       </div>
 
+      <div class="details-card" style="margin-bottom: 20px;">
+        <div class="details-card-header">
+          <span><i class="fa-solid fa-palette"></i> Interface Appearance</span>
+        </div>
+        <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 14px;">Select system appearance mode. Preferences are preserved across sessions.</p>
+        <div style="display: flex; gap: 12px; align-items: center;">
+          <button type="button" class="btn ${this.theme === 'light' ? 'btn-primary' : 'btn-secondary'}" onclick="App.setTheme('light', true); App.renderSettings(document.getElementById('page-content'))">
+            <i class="fa-solid fa-sun" style="color: #f59e0b;"></i> Light Mode
+          </button>
+          <button type="button" class="btn ${this.theme === 'dark' ? 'btn-primary' : 'btn-secondary'}" onclick="App.setTheme('dark', true); App.renderSettings(document.getElementById('page-content'))">
+            <i class="fa-solid fa-moon" style="color: #6366f1;"></i> Dark Mode
+          </button>
+        </div>
+      </div>
+
       <div class="details-card">
         <form onsubmit="App.saveSettings(event)">
           <div id="settings-fields-container" style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; margin-bottom: 20px;">
@@ -2470,6 +2541,12 @@ const App = {
     const root = document.getElementById('app');
     root.innerHTML = `
       <div class="login-wrapper">
+        <div class="login-theme-bar">
+          <button class="theme-toggle-btn" onclick="App.toggleTheme()" title="${this.theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}" aria-label="Toggle Theme">
+            <i class="fa-solid ${this.theme === 'dark' ? 'fa-sun' : 'fa-moon'}" style="${this.theme === 'dark' ? 'color: #f59e0b;' : 'color: #6366f1;'}"></i>
+            <span class="theme-label">${this.theme === 'dark' ? 'Light Mode' : 'Dark Mode'}</span>
+          </button>
+        </div>
         <div class="login-box">
           <div class="login-logo">
             <div style="width: 56px; height: 56px; background: linear-gradient(135deg, #123456, #008080); border-radius: 12px; margin: 0 auto; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 28px;">
