@@ -1269,14 +1269,37 @@ const App = {
     this.loadRegisterData();
   },
 
-  exportCurrentRegister(format) {
+  async exportCurrentRegister(format) {
     const q = new URLSearchParams();
     Object.entries(this.currentFilters).forEach(([k, v]) => {
       if (v && v !== 'All') q.append(k, v);
     });
     q.set('format', format);
     q.set('type', 'register');
-    window.open(`/api/reports/export?${q.toString()}`, '_blank');
+    if (this.token) q.set('token', this.token);
+
+    try {
+      const res = await fetch(`/api/reports/export?${q.toString()}`, {
+        headers: this.token ? { 'Authorization': `Bearer ${this.token}` } : {}
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || `Export failed with status ${res.status}`);
+      }
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const dateStr = new Date().toISOString().slice(0, 10);
+      a.download = `UPPCL_SMC_Complaint_Register_${dateStr}.${format === 'excel' ? 'xlsx' : 'csv'}`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      console.warn('Direct blob download fallback:', err.message);
+      window.open(`/api/reports/export?${q.toString()}`, '_blank');
+    }
   },
 
   // -----------------------------------------------------------
@@ -1855,15 +1878,46 @@ const App = {
                   </div>
 
                   <!-- Assignment & Nodal Officer -->
-                  <div class="details-card">
+                  <div class="details-card" style="border-left: 4px solid var(--primary);">
                     <div class="details-card-header">
-                      <span><i class="fa-solid fa-user-tie"></i> Routing & Assigned X-Handle</span>
+                      <span><i class="fa-solid fa-share-nodes"></i> Field Forwarding & Assigned X-Handle</span>
+                      ${c.forwarding_ref_no ? `<span style="font-size: 11px; font-weight: 700; color: var(--primary);"><i class="fa-solid fa-hashtag"></i> ${c.forwarding_ref_no}</span>` : ''}
                     </div>
-                    <div class="info-row"><span class="info-label">Assigned X-Handle:</span><span class="info-value"><b>${c.assigned_nodal_officer_name ? (c.assigned_nodal_officer_name.startsWith('@') ? `<a href="https://x.com/${c.assigned_nodal_officer_name.replace('@', '')}" target="_blank" rel="noopener noreferrer" style="color: var(--primary); font-weight: 700;"><i class="fa-brands fa-x-twitter"></i> ${c.assigned_nodal_officer_name}</a>` : c.assigned_nodal_officer_name) : 'Unassigned'}</b></span></div>
+                    <div class="info-row"><span class="info-label">Assigned X-Handle:</span><span class="info-value"><b>${c.assigned_nodal_officer_name ? (c.assigned_nodal_officer_name.startsWith('@') ? `<a href="https://x.com/${c.assigned_nodal_officer_name.replace('@', '')}" target="_blank" rel="noopener noreferrer" style="color: var(--primary); font-weight: 700;"><i class="fa-brands fa-x-twitter"></i> ${c.assigned_nodal_officer_name}</a>` : c.assigned_nodal_officer_name) : '<span style="color: var(--text-muted); font-style: italic;">Unassigned (Awaiting Forwarding)</span>'}</b></span></div>
+                    <div class="info-row"><span class="info-label">Dispatch Ref No:</span><span class="info-value"><b>${c.forwarding_ref_no ? `<code style="font-size: 11px; font-weight: 700; color: var(--primary); background: var(--bg-subtle); padding: 2px 6px; border-radius: 4px;">${c.forwarding_ref_no}</code>` : '<span style="color: var(--text-muted);">Not assigned yet</span>'}</b></span></div>
                     <div class="info-row"><span class="info-label">Official Mobile:</span><span class="info-value"><b>${c.assigned_nodal_officer_mobile || 'Contact HQ'}</b></span></div>
-                    <div class="info-row"><span class="info-label">Forwarded At:</span><span class="info-value">${c.forwarding_date || 'Not forwarded yet'}</span></div>
+                    <div class="info-row"><span class="info-label">Forwarded At:</span><span class="info-value">${c.forwarding_date ? `<b>${c.forwarding_date} IST</b>` : '<span style="color: var(--text-muted);">Not forwarded yet</span>'}</span></div>
                     <div class="info-row"><span class="info-label">Channel:</span><span class="info-value">${c.forwarding_channel || 'Twitter / X Escalation'}</span></div>
                     <div class="info-row"><span class="info-label">Expected SLA:</span><span class="info-value" style="color: ${isOverdue ? '#ef4444' : 'inherit'}; font-weight: 700;">${c.expected_response_date || 'Pending'}</span></div>
+
+                    ${c.forwarding_remarks ? `
+                    <div style="margin-top: 10px; padding: 10px; background: var(--bg-subtle); border-radius: 4px; border: 1px solid var(--border-color);">
+                      <div style="font-size: 11px; font-weight: 700; color: var(--primary); margin-bottom: 4px;">
+                        <i class="fa-solid fa-file-invoice"></i> Field Action Instructions (अग्रसारण निर्देश):
+                      </div>
+                      <div style="font-size: 12px; line-height: 1.4; color: var(--text-main); white-space: pre-wrap;">${c.forwarding_remarks}</div>
+                    </div>
+                    ` : ''}
+
+                    ${fwdLogs.length > 0 ? `
+                    <div style="margin-top: 12px;">
+                      <div style="font-size: 11px; font-weight: 700; color: var(--text-muted); margin-bottom: 6px;">
+                        <i class="fa-solid fa-clock-rotate-left"></i> Forwarding History (${fwdLogs.length}):
+                      </div>
+                      <div style="display: flex; flex-direction: column; gap: 6px;">
+                        ${fwdLogs.map(fl => `
+                          <div style="background: var(--bg-subtle); border: 1px solid var(--border-color); border-radius: 4px; padding: 6px 10px; font-size: 11px;">
+                            <div style="display: flex; justify-content: space-between; font-weight: 600; color: var(--primary);">
+                              <span>To: ${fl.forwarded_to_officer} (${fl.discom_name}${fl.district_name ? ` • ${fl.district_name}` : ''})</span>
+                              <span style="color: var(--text-muted); font-size: 10px;">${fl.created_at}</span>
+                            </div>
+                            <div style="color: var(--text-muted); font-size: 10px; margin-top: 2px;">Ref: ${fl.ref_no || 'N/A'} • Channel: ${fl.channel} • By: ${fl.forwarded_by}</div>
+                            ${fl.remarks ? `<div style="margin-top: 3px; color: var(--text-main); font-size: 11px;">${fl.remarks}</div>` : ''}
+                          </div>
+                        `).join('')}
+                      </div>
+                    </div>
+                    ` : ''}
                   </div>
 
                   <!-- Quick Action Panel -->
@@ -2267,28 +2321,49 @@ const App = {
 
   async submitForward(e, id) {
     e.preventDefault();
+    const discom = document.getElementById('fwd-discom')?.value || '';
+    const assignedHandle = document.getElementById('fwd-nodal-name')?.value || '';
+    const refNo = (document.getElementById('fwd-ref-no')?.value || '').trim();
+    const remarks = (document.getElementById('fwd-remarks')?.value || '').trim();
+
+    if (!discom) {
+      alert('Please select a Target DISCOM.');
+      document.getElementById('fwd-discom')?.focus();
+      return;
+    }
+    if (!assignedHandle) {
+      alert('Please select an Assigned X-Handle from the hierarchy list.');
+      document.getElementById('fwd-nodal-name')?.focus();
+      return;
+    }
+    if (!remarks) {
+      alert('Action Instructions / Remarks are required.');
+      document.getElementById('fwd-remarks')?.focus();
+      return;
+    }
+
     const payload = {
-      discom_name: document.getElementById('fwd-discom').value,
-      district_name: document.getElementById('fwd-district').value,
-      assigned_nodal_officer_name: document.getElementById('fwd-nodal-name').value,
-      assigned_nodal_officer_mobile: document.getElementById('fwd-nodal-mobile').value,
-      assigned_nodal_officer_id: document.getElementById('fwd-nodal-id').value,
-      forwarding_channel: document.getElementById('fwd-channel').value,
-      forwarding_ref_no: document.getElementById('fwd-ref-no').value.trim(),
-      forwarding_remarks: document.getElementById('fwd-remarks').value.trim()
+      discom_name: discom,
+      district_name: document.getElementById('fwd-district')?.value || '',
+      assigned_nodal_officer_name: assignedHandle,
+      assigned_nodal_officer_mobile: document.getElementById('fwd-nodal-mobile')?.value || '',
+      assigned_nodal_officer_id: document.getElementById('fwd-nodal-id')?.value || '',
+      forwarding_channel: document.getElementById('fwd-channel')?.value || 'Twitter / X Escalation',
+      forwarding_ref_no: refNo,
+      forwarding_remarks: remarks
     };
 
     try {
-      await this.api(`/api/complaints/${id}/forward`, {
+      const res = await this.api(`/api/complaints/${id}/forward`, {
         method: 'POST',
         body: JSON.stringify(payload)
       });
-      alert('Complaint forwarded successfully.');
+      alert(`Complaint successfully forwarded to ${assignedHandle}!\n\nReference Docket: ${refNo || res.ref_no || 'Assigned'}\nStatus: Forwarded\nInstructions: Transmitted to Field Team / Assigned X-Handle.`);
       App.closeModal();
       App.viewComplaint(id);
       App.loadRegisterData();
     } catch (err) {
-      alert(`Error: ${err.message}`);
+      alert(`Forwarding Error: ${err.message}`);
     }
   },
 
@@ -2721,11 +2796,11 @@ const App = {
     // Optional report-specific field updates
   },
 
-  downloadReport(format) {
-    const type = document.getElementById('rep-type').value;
-    const fromDate = document.getElementById('rep-from').value;
-    const toDate = document.getElementById('rep-to').value;
-    const discom = document.getElementById('rep-discom').value;
+  async downloadReport(format) {
+    const type = document.getElementById('rep-type')?.value || 'daily_ops';
+    const fromDate = document.getElementById('rep-from')?.value || '';
+    const toDate = document.getElementById('rep-to')?.value || '';
+    const discom = document.getElementById('rep-discom')?.value || 'All';
 
     const q = new URLSearchParams({
       type,
@@ -2734,8 +2809,30 @@ const App = {
       to_date: toDate,
       discom
     });
+    if (this.token) q.set('token', this.token);
 
-    window.open(`/api/reports/export?${q.toString()}`, '_blank');
+    try {
+      const res = await fetch(`/api/reports/export?${q.toString()}`, {
+        headers: this.token ? { 'Authorization': `Bearer ${this.token}` } : {}
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || `Report export failed with status ${res.status}`);
+      }
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const dateStr = new Date().toISOString().slice(0, 10);
+      a.download = `UPPCL_SMC_${type}_${dateStr}.${format === 'excel' ? 'xlsx' : 'csv'}`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      console.warn('Direct blob download fallback:', err.message);
+      window.open(`/api/reports/export?${q.toString()}`, '_blank');
+    }
   },
 
   // -----------------------------------------------------------

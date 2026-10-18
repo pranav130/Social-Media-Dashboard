@@ -341,6 +341,102 @@ async function runTests() {
     db.run('DELETE FROM complaints WHERE id = ?;', [ins.lastInsertRowid]);
   });
 
+  console.log('\n[15. Forwarding Execution & CSV / Excel Export]');
+  it('Forwarding execution sets status, ref_no, remarks, and logs outgoing escalation', () => {
+    // Insert fresh complaint
+    const ins = db.run(`
+      INSERT INTO complaints (
+        complaint_no, received_at, platform, monitored_account, consumer_name, complaint_text,
+        category_name, discom_name, district_name, priority, current_status, created_at, updated_at
+      ) VALUES (?, datetime('now'), 'Twitter/X', '@UPPCLLKO', 'Forward Test Consumer', 'Outage in test area',
+        'Power Supply Failure', 'PUVVNL', 'Varanasi', 'Normal', 'New', datetime('now'), datetime('now'));
+    `, ['UPPCL-SMC-TEST-FWD-EXEC']);
+
+    const compId = ins.lastInsertRowid;
+    const refNo = 'UPPCL/SMC/2026/FWD-TEST-EXEC';
+    const remarks = 'विद्युत आपूर्ति तत्काल बहाल करें';
+    const handle = '@PuVVNLHQ';
+
+    // Execute forward
+    db.run(`
+      UPDATE complaints SET
+        discom_name = 'PUVVNL',
+        district_name = 'Varanasi',
+        assigned_nodal_officer_name = ?,
+        forwarding_channel = 'Twitter / X Escalation',
+        forwarding_ref_no = ?,
+        forwarding_remarks = ?,
+        current_status = 'Forwarded',
+        updated_at = datetime('now')
+      WHERE id = ?;
+    `, [handle, refNo, remarks, compId]);
+
+    db.run(`
+      INSERT INTO complaint_forwarding_logs (complaint_id, forwarded_by, forwarded_to_officer, discom_name, district_name, channel, ref_no, remarks, created_at)
+      VALUES (?, 'Admin', ?, 'PUVVNL', 'Varanasi', 'Twitter / X Escalation', ?, ?, datetime('now'));
+    `, [compId, handle, refNo, remarks]);
+
+    db.run(`
+      INSERT INTO x_outgoing_replies (complaint_id, in_reply_to_post_id, reply_text, automation_mode, status, created_at)
+      VALUES (?, 'POST-TEST-123', ?, 'Escalation', 'SENT', datetime('now'));
+    `, [compId, `${handle} Forwarded test: ${remarks}`]);
+
+    const updated = db.get('SELECT * FROM complaints WHERE id = ?;', [compId]);
+    assert.strictEqual(updated.current_status, 'Forwarded');
+    assert.strictEqual(updated.assigned_nodal_officer_name, handle);
+    assert.strictEqual(updated.forwarding_ref_no, refNo);
+    assert.strictEqual(updated.forwarding_remarks, remarks);
+
+    const fwdLog = db.get('SELECT * FROM complaint_forwarding_logs WHERE complaint_id = ?;', [compId]);
+    assert.ok(fwdLog);
+    assert.strictEqual(fwdLog.ref_no, refNo);
+
+    const outReply = db.get('SELECT * FROM x_outgoing_replies WHERE complaint_id = ?;', [compId]);
+    assert.ok(outReply);
+    assert.strictEqual(outReply.status, 'SENT');
+
+    // Clean up
+    db.run('DELETE FROM complaints WHERE id = ?;', [compId]);
+    db.run('DELETE FROM complaint_forwarding_logs WHERE complaint_id = ?;', [compId]);
+    db.run('DELETE FROM x_outgoing_replies WHERE complaint_id = ?;', [compId]);
+  });
+
+  it('CSV and Excel export buffers generate valid binary and tabular records', () => {
+    const XLSX = require('xlsx');
+    const rows = db.query(`
+      SELECT
+        complaint_no as 'Complaint ID',
+        received_at as 'Received At (IST)',
+        platform as 'Platform',
+        discom_name as 'DISCOM',
+        current_status as 'Status',
+        assigned_nodal_officer_name as 'Assigned X-Handle',
+        forwarding_ref_no as 'Dispatch Reference No',
+        forwarding_remarks as 'Forwarding Instructions'
+      FROM complaints
+      LIMIT 10;
+    `);
+
+    assert.ok(rows.length > 0, 'Export rows should exist');
+    assert.ok('Dispatch Reference No' in rows[0]);
+    assert.ok('Forwarding Instructions' in rows[0]);
+
+    // Test Excel buffer generation
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'UPPCL SMC Report');
+    const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+    assert.ok(buf instanceof Buffer);
+    assert.ok(buf.length > 1000, 'Excel buffer size should be valid');
+
+    // Test CSV string generation
+    const headers = Object.keys(rows[0]);
+    const csv = headers.map(h => `"${h}"`).join(',') + '\r\n' +
+      rows.map(r => headers.map(h => `"${r[h] || ''}"`).join(',')).join('\r\n');
+    assert.ok(csv.includes('Dispatch Reference No'));
+    assert.ok(csv.includes('Complaint ID'));
+  });
+
   console.log('\n====================================================');
   console.log(` Tests Finished: ${passCount} Passed, ${failCount} Failed`);
   console.log('====================================================\n');

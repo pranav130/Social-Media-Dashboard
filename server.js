@@ -83,11 +83,18 @@ function logAudit(req, user, action, entityType, entityId, details) {
 
 // Authentication Middleware
 function authMiddleware(req, res, next) {
+  let token = null;
   const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    token = authHeader.split(' ')[1];
+  } else if (req.query && req.query.token) {
+    token = req.query.token;
+  }
+
+  if (!token) {
     return res.status(401).json({ error: 'Unauthorized: Missing or invalid token' });
   }
-  const token = authHeader.split(' ')[1];
+
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
     const user = db.get('SELECT id, username, full_name, email, role, discom_name, designation, mobile, is_active, assigned_districts FROM users WHERE id = ?;', [decoded.id]);
@@ -637,7 +644,7 @@ app.post('/api/complaints/:id/forward', authMiddleware, requireRoles('Super Admi
 
   const b = req.body;
   if (!b.discom_name || !b.assigned_nodal_officer_name) {
-    return res.status(400).json({ error: 'DISCOM and Nodal Officer are required for forwarding.' });
+    return res.status(400).json({ error: 'DISCOM and Assigned X-Handle are required for forwarding.' });
   }
 
   const istTime = getIstTimestamp();
@@ -662,10 +669,12 @@ app.post('/api/complaints/:id/forward', authMiddleware, requireRoles('Super Admi
     ? b.forwarding_ref_no.trim()
     : `UPPCL/SMC/${currentYear}/FWD-${compTail}`;
 
+  const finalDistrict = b.district_name && b.district_name.trim() ? b.district_name.trim() : (complaint.district_name === 'Unassigned' ? null : complaint.district_name);
+
   db.run(`
     UPDATE complaints SET
       discom_name = ?,
-      district_name = COALESCE(?, district_name),
+      district_name = ?,
       assigned_nodal_officer_id = ?,
       assigned_nodal_officer_name = ?,
       assigned_nodal_officer_mobile = ?,
@@ -680,7 +689,7 @@ app.post('/api/complaints/:id/forward', authMiddleware, requireRoles('Super Admi
     WHERE id = ?;
   `, [
     b.discom_name,
-    b.district_name || null,
+    finalDistrict,
     b.assigned_nodal_officer_id || null,
     b.assigned_nodal_officer_name,
     b.assigned_nodal_officer_mobile || '',
@@ -699,7 +708,7 @@ app.post('/api/complaints/:id/forward', authMiddleware, requireRoles('Super Admi
     INSERT INTO complaint_forwarding_logs (complaint_id, forwarded_by, forwarded_to_officer, discom_name, district_name, channel, ref_no, remarks, expected_response_date, created_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
   `, [
-    id, req.user.full_name, b.assigned_nodal_officer_name, b.discom_name, b.district_name || complaint.district_name,
+    id, req.user.full_name, b.assigned_nodal_officer_name, b.discom_name, finalDistrict,
     b.forwarding_channel || 'Twitter / X Escalation', finalRefNo, b.forwarding_remarks || '', expectedDate, istTime
   ]);
 
@@ -708,13 +717,34 @@ app.post('/api/complaints/:id/forward', authMiddleware, requireRoles('Super Admi
     VALUES (?, 'Forwarded', ?, ?, ?, ?, ?, ?, ?);
   `, [
     id, oldStatus, newStatus, req.user.id, req.user.full_name, req.user.role,
-    `Forwarded to ${b.discom_name} (${b.assigned_nodal_officer_name}) via ${b.forwarding_channel || 'e-Office'}. Remarks: ${b.forwarding_remarks || 'None'}`,
+    `Forwarded to ${b.discom_name} (${b.assigned_nodal_officer_name}) via ${b.forwarding_channel || 'Twitter / X Escalation'}. Ref: ${finalRefNo}. Remarks: ${b.forwarding_remarks || 'None'}`,
     istTime
   ]);
 
-  logAudit(req, req.user, 'COMPLAINT_FORWARDED', 'COMPLAINT', id, `Forwarded complaint ${complaint.complaint_no} to ${b.discom_name}`);
+  // If forwarded via Twitter / X Escalation, record in outgoing replies for audit & visibility
+  if (b.forwarding_channel === 'Twitter / X Escalation' && b.assigned_nodal_officer_name) {
+    const fwdEscalationText = `${b.assigned_nodal_officer_name} Attention: Grievance Ref ${finalRefNo} (${complaint.complaint_no}) escalated for prompt field action: ${b.forwarding_remarks || 'Kindly inspect and resolve within SLA.'}`.substring(0, 280);
+    try {
+      db.run(`
+        INSERT INTO x_outgoing_replies (
+          complaint_id, in_reply_to_post_id, reply_text, automation_mode,
+          status, sent_by_user_id, sent_by_username, created_at, published_at
+        ) VALUES (?, ?, ?, 'Escalation', 'SENT', ?, ?, ?, ?);
+      `, [id, complaint.original_post_id || complaint.complaint_no || String(id), fwdEscalationText, req.user.id, req.user.full_name, istTime, istTime]);
+    } catch (e) {
+      console.warn('Could not record outgoing escalation reply:', e.message);
+    }
+  }
 
-  res.json({ message: 'Complaint forwarded successfully', expected_response_date: expectedDate });
+  logAudit(req, req.user, 'COMPLAINT_FORWARDED', 'COMPLAINT', id, `Forwarded complaint ${complaint.complaint_no} to ${b.discom_name} (${b.assigned_nodal_officer_name}) under Ref: ${finalRefNo}`);
+
+  res.json({
+    message: 'Complaint forwarded successfully',
+    complaint_no: complaint.complaint_no,
+    ref_no: finalRefNo,
+    assigned_handle: b.assigned_nodal_officer_name,
+    expected_response_date: expectedDate
+  });
 });
 
 // 6. Record DISCOM Follow-Up
@@ -1250,7 +1280,21 @@ app.get('/api/reports/list', authMiddleware, (req, res) => {
 });
 
 app.get('/api/reports/export', authMiddleware, (req, res) => {
-  const { type = 'daily_ops', format = 'csv', from_date, to_date, discom, district } = req.query;
+  const {
+    type = 'daily_ops',
+    format = 'csv',
+    from_date,
+    to_date,
+    discom,
+    district,
+    status,
+    search,
+    category,
+    priority,
+    platform,
+    assigned_handle,
+    overdue
+  } = req.query;
 
   let whereClauses = [];
   let params = [];
@@ -1263,6 +1307,12 @@ app.get('/api/reports/export', authMiddleware, (req, res) => {
     )
   )`);
 
+  if (search && search.trim()) {
+    const term = `%${search.trim()}%`;
+    whereClauses.push('(complaint_no LIKE ? OR consumer_name LIKE ? OR consumer_handle LIKE ? OR complaint_text LIKE ? OR consumer_mobile LIKE ? OR consumer_account_no LIKE ? OR forwarding_ref_no LIKE ?)');
+    params.push(term, term, term, term, term, term, term);
+  }
+
   if (req.user.role === 'DISCOM Nodal Officer') {
     whereClauses.push('(discom_name = ? OR discom_name = ?)');
     params.push(req.user.discom_name, req.user.discom_name.toUpperCase());
@@ -1274,6 +1324,58 @@ app.get('/api/reports/export', authMiddleware, (req, res) => {
   if (district && district !== 'All') {
     whereClauses.push('district_name = ?');
     params.push(district);
+  }
+
+  if (category && category !== 'All') {
+    whereClauses.push('category_name = ?');
+    params.push(category);
+  }
+
+  if (priority && priority !== 'All') {
+    whereClauses.push('priority = ?');
+    params.push(priority);
+  }
+
+  if (platform && platform !== 'All') {
+    whereClauses.push('platform = ?');
+    params.push(platform);
+  }
+
+  if (assigned_handle && assigned_handle !== 'All') {
+    if (assigned_handle === 'Unassigned') {
+      whereClauses.push('(assigned_nodal_officer_name IS NULL OR assigned_nodal_officer_name = "")');
+    } else {
+      whereClauses.push('(assigned_nodal_officer_name = ? OR assigned_nodal_officer_name LIKE ?)');
+      params.push(assigned_handle, `%${assigned_handle}%`);
+    }
+  }
+
+  if (overdue === '1') {
+    whereClauses.push('is_overdue = 1');
+  }
+
+  if (status && status !== 'All') {
+    if (status === 'my_assigned') {
+      whereClauses.push('assigned_operator_id = ?');
+      params.push(req.user.id);
+    } else if (status === 'awaiting_forwarding') {
+      whereClauses.push("current_status = 'New'");
+    } else if (status === 'awaiting_discom') {
+      whereClauses.push("current_status IN ('Forwarded', 'DISCOM Follow Up')");
+    } else if (status === 'followup_due') {
+      whereClauses.push("current_status = 'DISCOM Follow Up'");
+    } else if (status === 'overdue') {
+      whereClauses.push("is_overdue = 1");
+    } else if (status === 'escalated') {
+      whereClauses.push("current_status = 'Escalated'");
+    } else if (status === 'verification_pending') {
+      whereClauses.push("current_status = 'Resolved — Verification Pending'");
+    } else if (status === 'closed') {
+      whereClauses.push("current_status = 'Closed'");
+    } else {
+      whereClauses.push('current_status = ?');
+      params.push(status);
+    }
   }
 
   if (from_date) {
@@ -1375,8 +1477,10 @@ app.get('/api/reports/export', authMiddleware, (req, res) => {
         current_status as 'Status',
         assigned_operator_name as 'Assigned Operator',
         assigned_nodal_officer_name as 'Assigned X-Handle',
+        forwarding_ref_no as 'Dispatch Reference No',
         forwarding_date as 'Forwarded Date',
         forwarding_channel as 'Forwarding Channel',
+        forwarding_remarks as 'Forwarding Instructions',
         expected_response_date as 'Expected SLA Date',
         discom_action_taken as 'Action Taken',
         closure_date as 'Closure Date',
