@@ -1046,7 +1046,7 @@ const App = {
               ` : '<span style="font-size: 11px; color: var(--text-light);">-</span>')}
             </td>
             <td>
-              <div style="font-size: 11px; font-weight: 600;">${c.assigned_nodal_officer_name || c.assigned_operator_name || 'Unassigned'}</div>
+              <div style="font-size: 11px; font-weight: 600;">${c.assigned_nodal_officer_name ? (c.assigned_nodal_officer_name.startsWith('@') ? `<span style="color: var(--primary);"><i class="fa-brands fa-x-twitter"></i> ${c.assigned_nodal_officer_name}</span>` : c.assigned_nodal_officer_name) : (c.assigned_operator_name || 'Unassigned')}</div>
             </td>
             <td>
               <div style="display: flex; gap: 4px;">
@@ -1257,8 +1257,10 @@ const App = {
 
             <div id="forward-fields" style="display: none; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 12px;">
               <div class="filter-group">
-                <label>Assigned Nodal Officer</label>
-                <input type="text" id="add-nodal-name" class="form-control" readonly placeholder="Auto-populated by District">
+                <label>Assigned X-Handle</label>
+                <select id="add-nodal-name" class="form-control">
+                  <option value="">-- Select District Above --</option>
+                </select>
                 <input type="hidden" id="add-nodal-id">
                 <input type="hidden" id="add-nodal-mobile">
               </div>
@@ -1310,35 +1312,84 @@ const App = {
     if (!distSel) return;
     distSel.innerHTML = '<option value="">-- Select District --</option>';
 
-    const dObj = this.cachedMaster.discoms.find(d => d.code.toUpperCase() === discom.toUpperCase());
+    const dObj = this.cachedMaster.discoms.find(d => d.code.toUpperCase() === (discom || '').toUpperCase());
     if (dObj && dObj.districts) {
       dObj.districts.forEach(dist => {
         distSel.innerHTML += `<option value="${dist.name}">${dist.name}</option>`;
       });
     }
+    this.handleAddDistrictChange(distSel.value);
   },
 
   handleAddDistrictChange(district) {
-    const discom = document.getElementById('add-discom').value;
+    const discom = document.getElementById('add-discom')?.value || '';
     const nodalInp = document.getElementById('add-nodal-name');
     const nodalIdInp = document.getElementById('add-nodal-id');
     const nodalMobileInp = document.getElementById('add-nodal-mobile');
 
     if (!nodalInp) return;
 
-    const officer = this.cachedMaster.nodalOfficers.find(o =>
-      o.discom_name.toUpperCase() === discom.toUpperCase() &&
-      o.district_name.toUpperCase() === district.toUpperCase()
-    );
+    const normDiscom = (discom || '').trim().toUpperCase();
+    const normDist = (district || '').trim().toUpperCase();
+    const cleanDist = normDist.replace(/[^A-Z0-9]/g, '');
 
-    if (officer) {
-      nodalInp.value = `${officer.officer_name} (${officer.mobile})`;
+    const hierarchy = this.cachedMaster.xHierarchy || [];
+    const seenHandles = new Set();
+
+    let districtMatches = [];
+    if (normDist) {
+      districtMatches = hierarchy.filter(h => {
+        const hDiscom = (h.discom_name || '').trim().toUpperCase();
+        const hDist = (h.district_name || '').trim().toUpperCase();
+        const cleanHDist = hDist.replace(/[^A-Z0-9]/g, '');
+        const matchesDiscom = !hDiscom || hDiscom === normDiscom || hDiscom.includes(normDiscom);
+        const matchesDist = cleanHDist && cleanDist && (
+          cleanHDist.includes(cleanDist) || cleanDist.includes(cleanHDist) ||
+          (normDist.includes('LUCKNOW') && cleanHDist.includes('GOMTI')) ||
+          (normDist.includes('KANPUR') && (cleanHDist.includes('KANPUR') || hDiscom.includes('KESCO')))
+        );
+        return matchesDiscom && matchesDist && h.handle_name;
+      });
+      districtMatches.forEach(h => seenHandles.add(h.handle_name.toLowerCase()));
+    }
+
+    const discomHQ = hierarchy.filter(h => {
+      const hDiscom = (h.discom_name || '').trim().toUpperCase();
+      const hLevel = (h.hierarchy_level || '').toUpperCase();
+      const hHandle = (h.handle_name || '').toUpperCase();
+      const isHQ = (hLevel.includes('DISCOM') || hLevel.includes('HQ')) &&
+                   (hDiscom === normDiscom || hHandle.includes(normDiscom));
+      return isHQ && !seenHandles.has(h.handle_name.toLowerCase());
+    });
+    discomHQ.forEach(h => seenHandles.add(h.handle_name.toLowerCase()));
+
+    let html = '';
+    if (districtMatches.length > 0) {
+      html += `<optgroup label="Direct District / Division Handle (${district})">`;
+      districtMatches.forEach(h => {
+        html += `<option value="${h.handle_name}">${h.handle_name} — ${h.district_name} (${h.discom_name})</option>`;
+      });
+      html += `</optgroup>`;
+    }
+    if (discomHQ.length > 0) {
+      html += `<optgroup label="DISCOM Corporate HQ">`;
+      discomHQ.forEach(h => {
+        html += `<option value="${h.handle_name}">${h.handle_name} — ${h.discom_name} Corporate HQ</option>`;
+      });
+      html += `</optgroup>`;
+    }
+    if (!html) {
+      html = `<option value="@${discom || 'UPPCL'}HQ">@${discom || 'UPPCL'}HQ</option>`;
+    }
+    nodalInp.innerHTML = html;
+
+    const officer = (this.cachedMaster.nodalOfficers || []).find(o =>
+      o.discom_name.toUpperCase() === normDiscom &&
+      o.district_name.toUpperCase() === normDist
+    );
+    if (officer && nodalIdInp && nodalMobileInp) {
       nodalIdInp.value = officer.id;
       nodalMobileInp.value = officer.mobile;
-    } else {
-      nodalInp.value = `Nodal Officer ${discom} - ${district}`;
-      nodalIdInp.value = '';
-      nodalMobileInp.value = '';
     }
   },
 
@@ -1642,12 +1693,12 @@ const App = {
                   <!-- Assignment & Nodal Officer -->
                   <div class="details-card">
                     <div class="details-card-header">
-                      <span><i class="fa-solid fa-user-tie"></i> Routing & Nodal Officer</span>
+                      <span><i class="fa-solid fa-user-tie"></i> Routing & Assigned X-Handle</span>
                     </div>
-                    <div class="info-row"><span class="info-label">Nodal Officer:</span><span class="info-value"><b>${c.assigned_nodal_officer_name || 'Unassigned'}</b></span></div>
+                    <div class="info-row"><span class="info-label">Assigned X-Handle:</span><span class="info-value"><b>${c.assigned_nodal_officer_name ? (c.assigned_nodal_officer_name.startsWith('@') ? `<a href="https://x.com/${c.assigned_nodal_officer_name.replace('@', '')}" target="_blank" rel="noopener noreferrer" style="color: var(--primary); font-weight: 700;"><i class="fa-brands fa-x-twitter"></i> ${c.assigned_nodal_officer_name}</a>` : c.assigned_nodal_officer_name) : 'Unassigned'}</b></span></div>
                     <div class="info-row"><span class="info-label">Official Mobile:</span><span class="info-value"><b>${c.assigned_nodal_officer_mobile || 'Contact HQ'}</b></span></div>
                     <div class="info-row"><span class="info-label">Forwarded At:</span><span class="info-value">${c.forwarding_date || 'Not forwarded yet'}</span></div>
-                    <div class="info-row"><span class="info-label">Channel:</span><span class="info-value">${c.forwarding_channel || 'e-Office'}</span></div>
+                    <div class="info-row"><span class="info-label">Channel:</span><span class="info-value">${c.forwarding_channel || 'Twitter / X Escalation'}</span></div>
                     <div class="info-row"><span class="info-label">Expected SLA:</span><span class="info-value" style="color: ${isOverdue ? '#ef4444' : 'inherit'}; font-weight: 700;">${c.expected_response_date || 'Pending'}</span></div>
                   </div>
 
@@ -1714,7 +1765,7 @@ const App = {
   // -----------------------------------------------------------
   // ACTION MODALS
   // -----------------------------------------------------------
-  openForwardModal(id) {
+  async openForwardModal(id) {
     const root = document.getElementById('modal-root');
     root.innerHTML = `
       <div class="modal-overlay">
@@ -1745,8 +1796,10 @@ const App = {
               </div>
 
               <div class="filter-group" style="margin-bottom: 12px;">
-                <label>Assigned Nodal Officer *</label>
-                <input type="text" id="fwd-nodal-name" class="form-control" required placeholder="Select district above">
+                <label>Assigned X-Handle *</label>
+                <select id="fwd-nodal-name" class="form-control" required onchange="App.handleFwdHandleChange(this.value)">
+                  <option value="">-- Select DISCOM & District Above --</option>
+                </select>
                 <input type="hidden" id="fwd-nodal-mobile">
                 <input type="hidden" id="fwd-nodal-id">
               </div>
@@ -1778,36 +1831,207 @@ const App = {
         </div>
       </div>
     `;
+
+    // Ensure xHierarchy is loaded in memory
+    if (!this.cachedMaster.xHierarchy || this.cachedMaster.xHierarchy.length === 0) {
+      try {
+        const xh = await this.api('/api/master/x-hierarchy');
+        this.cachedMaster.xHierarchy = xh.data || [];
+      } catch (e) {}
+    }
+
+    // Auto-prepopulate DISCOM and District from current complaint record if available
+    try {
+      if (id) {
+        const res = await this.api(`/api/complaints/${id}`);
+        const c = res.complaint;
+        if (c && document.getElementById('fwd-discom')) {
+          const validDiscoms = ['PUVVNL', 'MVVNL', 'DVVNL', 'PVVNL', 'KESCo'];
+          const matchedDiscom = validDiscoms.find(d => d.toUpperCase() === (c.discom_name || '').toUpperCase());
+          if (matchedDiscom) {
+            document.getElementById('fwd-discom').value = matchedDiscom;
+            this.handleFwdDiscomChange(matchedDiscom);
+
+            if (c.district_name) {
+              const distSel = document.getElementById('fwd-district');
+              const opt = Array.from(distSel.options).find(o => o.value.toUpperCase() === c.district_name.toUpperCase());
+              if (opt) {
+                distSel.value = opt.value;
+              }
+              this.handleFwdDistrictChange(distSel.value);
+            }
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('Could not auto-fill forward modal with complaint data:', e.message);
+    }
   },
 
   handleFwdDiscomChange(discom) {
     const distSel = document.getElementById('fwd-district');
+    if (!distSel) return;
     distSel.innerHTML = '<option value="">-- Select District --</option>';
-    const dObj = this.cachedMaster.discoms.find(d => d.code.toUpperCase() === discom.toUpperCase());
+    const dObj = this.cachedMaster.discoms.find(d => d.code.toUpperCase() === (discom || '').toUpperCase());
     if (dObj && dObj.districts) {
       dObj.districts.forEach(dist => {
         distSel.innerHTML += `<option value="${dist.name}">${dist.name}</option>`;
       });
     }
+    this.updateForwardHandlesDropdown(discom, distSel.value);
   },
 
   handleFwdDistrictChange(dist) {
-    const discom = document.getElementById('fwd-discom').value;
-    const officer = this.cachedMaster.nodalOfficers.find(o =>
-      o.discom_name.toUpperCase() === discom.toUpperCase() &&
-      o.district_name.toUpperCase() === dist.toUpperCase()
-    );
+    const discom = document.getElementById('fwd-discom')?.value || '';
+    this.updateForwardHandlesDropdown(discom, dist);
+  },
 
-    const nameInp = document.getElementById('fwd-nodal-name');
+  updateForwardHandlesDropdown(discom, district = '', selectedHandle = '') {
+    const handleSel = document.getElementById('fwd-nodal-name');
+    if (!handleSel) return;
+
+    if (!discom) {
+      handleSel.innerHTML = '<option value="">-- Select DISCOM & District First --</option>';
+      this.handleFwdHandleChange('');
+      return;
+    }
+
+    const normDiscom = (discom || '').trim().toUpperCase();
+    const normDistrict = (district || '').trim().toUpperCase();
+    const cleanDist = normDistrict.replace(/[^A-Z0-9]/g, '');
+
+    const hierarchy = this.cachedMaster.xHierarchy || [];
+    const seenHandles = new Set();
+
+    // 1. Direct District / Division matches
+    let districtMatches = [];
+    if (normDistrict) {
+      districtMatches = hierarchy.filter(h => {
+        const hDiscom = (h.discom_name || '').trim().toUpperCase();
+        const hDist = (h.district_name || '').trim().toUpperCase();
+        const cleanHDist = hDist.replace(/[^A-Z0-9]/g, '');
+        const matchesDiscom = !hDiscom || hDiscom === normDiscom || hDiscom.includes(normDiscom);
+        const matchesDist = cleanHDist && cleanDist && (
+          cleanHDist.includes(cleanDist) || cleanDist.includes(cleanHDist) ||
+          (normDistrict.includes('LUCKNOW') && cleanHDist.includes('GOMTI')) ||
+          (normDistrict.includes('KANPUR') && (cleanHDist.includes('KANPUR') || hDiscom.includes('KESCO')))
+        );
+        return matchesDiscom && matchesDist && h.handle_name;
+      });
+      districtMatches.forEach(h => seenHandles.add(h.handle_name.toLowerCase()));
+    }
+
+    // 2. DISCOM Corporate HQ handle
+    const discomHQ = hierarchy.filter(h => {
+      const hDiscom = (h.discom_name || '').trim().toUpperCase();
+      const hLevel = (h.hierarchy_level || '').toUpperCase();
+      const hHandle = (h.handle_name || '').toUpperCase();
+      const isHQ = (hLevel.includes('DISCOM') || hLevel.includes('HQ')) &&
+                   (hDiscom === normDiscom || hHandle.includes(normDiscom));
+      return isHQ && !seenHandles.has(h.handle_name.toLowerCase());
+    });
+    discomHQ.forEach(h => seenHandles.add(h.handle_name.toLowerCase()));
+
+    // 3. Other District / Field handles for this DISCOM
+    const otherDiscom = hierarchy.filter(h => {
+      const hDiscom = (h.discom_name || '').trim().toUpperCase();
+      const isDist = (h.hierarchy_level || '').includes('District');
+      return hDiscom === normDiscom && isDist && !seenHandles.has(h.handle_name.toLowerCase());
+    });
+    otherDiscom.forEach(h => seenHandles.add(h.handle_name.toLowerCase()));
+
+    // 4. Apex / Corporate Escalation handles
+    const apex = hierarchy.filter(h => {
+      const isApex = (h.hierarchy_level || '').toUpperCase().includes('APEX');
+      return isApex && !seenHandles.has(h.handle_name.toLowerCase());
+    });
+
+    let chosenHandle = selectedHandle;
+    if (!chosenHandle) {
+      if (districtMatches.length > 0) {
+        chosenHandle = districtMatches[0].handle_name;
+      } else if (discomHQ.length > 0) {
+        chosenHandle = discomHQ[0].handle_name;
+      }
+    }
+
+    let html = '';
+
+    // Group 1: Direct District / Division Handle
+    if (districtMatches.length > 0) {
+      html += `<optgroup label="Direct District / Field Office Handle (${district})">`;
+      districtMatches.forEach(h => {
+        const isSel = (chosenHandle && chosenHandle.toLowerCase() === h.handle_name.toLowerCase()) ? 'selected' : '';
+        html += `<option value="${h.handle_name}" ${isSel}>${h.handle_name} — ${h.district_name} (${h.discom_name})</option>`;
+      });
+      html += `</optgroup>`;
+    }
+
+    // Group 2: DISCOM Corporate HQ
+    if (discomHQ.length > 0) {
+      html += `<optgroup label="DISCOM Corporate HQ">`;
+      discomHQ.forEach(h => {
+        const isSel = (chosenHandle && chosenHandle.toLowerCase() === h.handle_name.toLowerCase()) ? 'selected' : '';
+        html += `<option value="${h.handle_name}" ${isSel}>${h.handle_name} — ${h.discom_name} Corporate HQ</option>`;
+      });
+      html += `</optgroup>`;
+    }
+
+    // Group 3: Other Field / Division Handles under this DISCOM
+    if (otherDiscom.length > 0) {
+      html += `<optgroup label="Other Field Handles under ${discom}">`;
+      otherDiscom.forEach(h => {
+        const isSel = (chosenHandle && chosenHandle.toLowerCase() === h.handle_name.toLowerCase()) ? 'selected' : '';
+        html += `<option value="${h.handle_name}" ${isSel}>${h.handle_name} — ${h.district_name}</option>`;
+      });
+      html += `</optgroup>`;
+    }
+
+    // Group 4: Apex / Corporate Escalation Handles
+    if (apex.length > 0) {
+      html += `<optgroup label="Apex / Corporate Escalation Handles">`;
+      apex.forEach(h => {
+        const isSel = (chosenHandle && chosenHandle.toLowerCase() === h.handle_name.toLowerCase()) ? 'selected' : '';
+        html += `<option value="${h.handle_name}" ${isSel}>${h.handle_name} — ${h.discom_name || 'UPPCL Apex HQ'}${h.district_name ? ` (${h.district_name})` : ''}</option>`;
+      });
+      html += `</optgroup>`;
+    }
+
+    if (!html) {
+      html = `<option value="@${discom}HQ">@${discom}HQ — ${discom} Corporate HQ</option>`;
+    }
+
+    handleSel.innerHTML = html;
+    this.handleFwdHandleChange(handleSel.value);
+  },
+
+  handleFwdHandleChange(handleVal) {
     const mobInp = document.getElementById('fwd-nodal-mobile');
     const idInp = document.getElementById('fwd-nodal-id');
+    if (!mobInp || !idInp) return;
+
+    const discom = (document.getElementById('fwd-discom')?.value || '').trim();
+    const district = (document.getElementById('fwd-district')?.value || '').trim();
+
+    let officer = null;
+    if (this.cachedMaster.nodalOfficers && this.cachedMaster.nodalOfficers.length > 0) {
+      if (handleVal) {
+        officer = this.cachedMaster.nodalOfficers.find(o =>
+          o.twitter_handle && o.twitter_handle.toLowerCase().replace('@', '') === handleVal.toLowerCase().replace('@', '')
+        );
+      }
+      if (!officer && discom && district) {
+        officer = this.cachedMaster.nodalOfficers.find(o =>
+          o.discom_name.toUpperCase() === discom.toUpperCase() &&
+          o.district_name.toUpperCase() === district.toUpperCase()
+        );
+      }
+    }
 
     if (officer) {
-      nameInp.value = `${officer.officer_name} (${officer.mobile})`;
-      mobInp.value = officer.mobile;
-      idInp.value = officer.id;
+      mobInp.value = officer.mobile || '';
+      idInp.value = officer.id || '';
     } else {
-      nameInp.value = `Nodal Officer (${discom} - ${dist})`;
       mobInp.value = '';
       idInp.value = '';
     }
