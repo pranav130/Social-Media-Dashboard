@@ -352,7 +352,15 @@ async function runSeed() {
     { key: 'closure_verification_mandatory', value: 'true', desc: 'Require verification by SMC before closure' },
     { key: 'system_timezone', value: 'Asia/Kolkata', desc: 'Application timezone' },
     { key: 'organization_name', value: 'Uttar Pradesh Power Corporation Ltd. (UPPCL)', desc: 'Official Organization Name' },
-    { key: 'cell_name', value: 'Social Media Cell (SMC)', desc: 'Cell / Department Name' }
+    { key: 'cell_name', value: 'Social Media Cell (SMC)', desc: 'Cell / Department Name' },
+    { key: 'x_account_handle', value: '@UPPCLLKO', desc: 'Authorized Official X Account Handle' },
+    { key: 'x_account_id', value: '108658826', desc: 'Authorized Official X Account ID' },
+    { key: 'x_connection_status', value: 'Needs Configuration', desc: 'X API Connection Status' },
+    { key: 'automation_mode', value: 'Mode A - Monitor Only', desc: 'Active Automation Mode (Mode A, Mode B, or Mode C)' },
+    { key: 'emergency_stop', value: 'false', desc: 'Global Emergency Stop for all Outbound Automation' },
+    { key: 'ingestion_interval_seconds', value: '60', desc: 'Polling interval for continuous X ingestion (seconds)' },
+    { key: 'sla_unacknowledged_alert_mins', value: '45', desc: 'Alert threshold for unacknowledged grievances (minutes)' },
+    { key: 'sla_warning_hours', value: '4', desc: 'Early warning window before SLA breach (hours)' }
   ];
 
   for (const s of settings) {
@@ -915,10 +923,206 @@ async function runSeed() {
     }
   }
 
-  // 10. Initial Audit Logs
+  // 10. Reply Templates (Bilingual Approved Templates)
+  console.log('Seeding Approved Reply Templates...');
+  const defaultTemplates = [
+    {
+      title: 'Power Outage Acknowledgement (English)',
+      category_name: 'Power Supply / Outage',
+      stage: 'acknowledgement',
+      language: 'English',
+      body: 'Dear {consumer_name}, your grievance regarding power supply interruption in {district} has been registered as {complaint_no}. It is forwarded to {discom} field engineers for immediate restoration under {sla_hours}-hr SLA.',
+      variables_json: JSON.stringify(['consumer_name', 'district', 'complaint_no', 'discom', 'sla_hours'])
+    },
+    {
+      title: 'Power Outage Acknowledgement (Hindi)',
+      category_name: 'Power Supply / Outage',
+      stage: 'acknowledgement',
+      language: 'Hindi',
+      body: 'प्रिय {consumer_name}, {district} में विद्युत आपूर्ति संबंधी आपकी शिकायत संख्या {complaint_no} दर्ज कर ली गई है। त्वरित निस्तारण हेतु इसे {discom} के क्षेत्रीय अधिकारियों को {sla_hours} घंटे की समयसीमा में प्रेषित किया जा रहा है।',
+      variables_json: JSON.stringify(['consumer_name', 'district', 'complaint_no', 'discom', 'sla_hours'])
+    },
+    {
+      title: 'Distribution Transformer Failure (English)',
+      category_name: 'Distribution Transformer',
+      stage: 'acknowledgement',
+      language: 'English',
+      body: 'Dear {consumer_name}, transformer issue complaint {complaint_no} for {district} ({discom}) is recorded as Critical Priority. Executive Engineer / SDO alerted for urgent safety and replacement.',
+      variables_json: JSON.stringify(['consumer_name', 'district', 'discom', 'complaint_no'])
+    },
+    {
+      title: 'Distribution Transformer Failure (Hindi)',
+      category_name: 'Distribution Transformer',
+      stage: 'acknowledgement',
+      language: 'Hindi',
+      body: 'प्रिय {consumer_name}, {district} ({discom}) में ट्रांसफार्मर समस्या संबंधी शिकायत {complaint_no} को त्वरित प्राथमिकता पर दर्ज किया गया है। संबंधित अधिशासी अभियंता/एसडीओ को तत्काल निरीक्षण हेतु निर्देशित किया गया है।',
+      variables_json: JSON.stringify(['consumer_name', 'district', 'discom', 'complaint_no'])
+    },
+    {
+      title: 'Billing & Smart Meter Verification (English)',
+      category_name: 'Billing & Payment',
+      stage: 'acknowledgement',
+      language: 'English',
+      body: 'Dear {consumer_name}, your billing/meter grievance {complaint_no} has been forwarded to Commercial Division, {discom} for account ledger audit and verification.',
+      variables_json: JSON.stringify(['consumer_name', 'complaint_no', 'discom'])
+    },
+    {
+      title: 'Billing & Smart Meter Verification (Hindi)',
+      category_name: 'Billing & Payment',
+      stage: 'acknowledgement',
+      language: 'Hindi',
+      body: 'प्रिय {consumer_name}, आपकी बिलिंग/मीटर संबंधी शिकायत {complaint_no} {discom} वाणिज्यिक अनुभाग को मीटर व लेजर सत्यापन हेतु प्रेषित कर दी गई है।',
+      variables_json: JSON.stringify(['consumer_name', 'complaint_no', 'discom'])
+    },
+    {
+      title: 'Voltage Fluctuation (English)',
+      category_name: 'Voltage Issues',
+      stage: 'acknowledgement',
+      language: 'English',
+      body: 'Dear {consumer_name}, low/high voltage complaint {complaint_no} in {district} ({discom}) is forwarded to Substation in-charge for feeder voltage balancing.',
+      variables_json: JSON.stringify(['consumer_name', 'complaint_no', 'district', 'discom'])
+    },
+    {
+      title: 'Voltage Fluctuation (Hindi)',
+      category_name: 'Voltage Issues',
+      stage: 'acknowledgement',
+      language: 'Hindi',
+      body: 'प्रिय {consumer_name}, {district} ({discom}) में वोल्टेज संबंधी शिकायत {complaint_no} उपकेंद्र प्रभारी को फीडर लोड संतुलन हेतु अग्रेषित की गई है।',
+      variables_json: JSON.stringify(['consumer_name', 'district', 'discom', 'complaint_no'])
+    },
+    {
+      title: 'Electrical Safety & Hazard Alert (English)',
+      category_name: 'Safety & Theft',
+      stage: 'acknowledgement',
+      language: 'English',
+      body: 'URGENT: Electrical safety complaint {complaint_no} registered for {district}. 1912 Control Room & Junior Engineer directed for immediate power isolation and field rectification.',
+      variables_json: JSON.stringify(['complaint_no', 'district'])
+    },
+    {
+      title: 'Electrical Safety & Hazard Alert (Hindi)',
+      category_name: 'Safety & Theft',
+      stage: 'acknowledgement',
+      language: 'Hindi',
+      body: 'अति-आवश्यक: {district} में विद्युत सुरक्षा संबंधी शिकायत {complaint_no} दर्ज की गई। दुर्घटना रोकथाम हेतु विद्युत विच्छेदन व लाइन मरम्मत हेतु टीम रवाना की जा रही है।',
+      variables_json: JSON.stringify(['district', 'complaint_no'])
+    },
+    {
+      title: 'New Connection & Modification (English)',
+      category_name: 'New Connection & Modification',
+      stage: 'acknowledgement',
+      language: 'English',
+      body: 'Dear {consumer_name}, your new connection / modification grievance {complaint_no} for {district} ({discom}) has been registered and forwarded to Executive Engineer (Distribution).',
+      variables_json: JSON.stringify(['consumer_name', 'complaint_no', 'district', 'discom'])
+    },
+    {
+      title: 'New Connection & Modification (Hindi)',
+      category_name: 'New Connection & Modification',
+      stage: 'acknowledgement',
+      language: 'Hindi',
+      body: 'प्रिय {consumer_name}, {district} ({discom}) में नए संयोजन / भार वृद्धि संबंधी आपकी शिकायत संख्या {complaint_no} दर्ज कर अधिशासी अभियंता (वितरण) को त्वरित निस्तारण हेतु प्रेषित की गई है।',
+      variables_json: JSON.stringify(['consumer_name', 'complaint_no', 'district', 'discom'])
+    },
+    {
+      title: 'Staff Service & Conduct (English)',
+      category_name: 'Staff Service & Conduct',
+      stage: 'acknowledgement',
+      language: 'English',
+      body: 'Dear {consumer_name}, staff conduct complaint {complaint_no} has been recorded with DISCOM Vigilance / Superintending Engineer ({discom}) for inquiry and strict action.',
+      variables_json: JSON.stringify(['consumer_name', 'complaint_no', 'discom'])
+    },
+    {
+      title: 'Staff Service & Conduct (Hindi)',
+      category_name: 'Staff Service & Conduct',
+      stage: 'acknowledgement',
+      language: 'Hindi',
+      body: 'प्रिय {consumer_name}, कार्मिक आचरण संबंधी शिकायत {complaint_no} को {discom} सतर्कता अनुभाग / अधीक्षण अभियंता को जांच व आवश्यक कार्रवाई हेतु प्रेषित किया गया है।',
+      variables_json: JSON.stringify(['consumer_name', 'complaint_no', 'discom'])
+    },
+    {
+      title: 'General Service Resolution (English)',
+      category_name: 'Service Quality',
+      stage: 'resolution',
+      language: 'English',
+      body: 'Dear {consumer_name}, your grievance {complaint_no} has been resolved by {discom} field team. If supply is restored satisfactorily, kindly confirm. UPPCL 1912 24x7 helpline is at your service.',
+      variables_json: JSON.stringify(['consumer_name', 'complaint_no', 'discom'])
+    },
+    {
+      title: 'General Service Resolution (Hindi)',
+      category_name: 'Service Quality',
+      stage: 'resolution',
+      language: 'Hindi',
+      body: 'प्रिय {consumer_name}, आपकी शिकायत {complaint_no} का {discom} टीम द्वारा समाधान कर दिया गया है। कृपया संतुष्टि की पुष्टि करें। यूपीपीसीएल 24x7 हेल्पलाइन 1912 आपकी सेवा में सदैव तत्पर है।',
+      variables_json: JSON.stringify(['consumer_name', 'complaint_no', 'discom'])
+    }
+  ];
+
+  for (const t of defaultTemplates) {
+    const existing = db.get('SELECT id FROM reply_templates WHERE title = ?;', [t.title]);
+    if (!existing) {
+      db.run(`
+        INSERT INTO reply_templates (title, category_name, stage, language, body, variables_json, version, is_active, usage_count, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, 1, 1, 0, datetime('now'), datetime('now'));
+      `, [t.title, t.category_name, t.stage, t.language, t.body, t.variables_json]);
+    } else {
+      db.run(`UPDATE reply_templates SET language = ?, body = ? WHERE id = ?;`, [t.language, t.body, existing.id]);
+    }
+  }
+
+  // 11. Initial Notifications
+  console.log('Seeding Initial Notifications...');
+  const notifCount = db.get('SELECT COUNT(*) AS cnt FROM notifications;');
+  if (!notifCount || notifCount.cnt === 0) {
+    const initNotifs = [
+      {
+        user_id: 1, // Super Admin
+        title: 'System Ingestion Checkpoint',
+        message: 'Continuous background complaint worker initialized in Mode A (Monitor Only).',
+        type: 'system',
+        link_url: 'settings'
+      },
+      {
+        user_id: 1,
+        title: 'SLA Escalation Warning',
+        message: 'Grievance UPPCL-SMC-202610-0004 has breached SLA threshold. Action required.',
+        type: 'sla_warning',
+        link_url: 'pending-overdue'
+      },
+      {
+        user_id: 2, // Operator
+        title: 'New Complaint Inflow',
+        message: 'Grievance UPPCL-SMC-202610-0001 requires forwarding confirmation.',
+        type: 'assignment',
+        link_url: 'register'
+      }
+    ];
+    for (const n of initNotifs) {
+      db.run(`
+        INSERT INTO notifications (user_id, title, message, type, link_url, is_read, created_at)
+        VALUES (?, ?, ?, ?, ?, 0, datetime('now'));
+      `, [n.user_id, n.title, n.message, n.type, n.link_url]);
+    }
+  }
+
+  // 12. Internal Support Tickets
+  console.log('Seeding Internal Support Tickets...');
+  const ticketCount = db.get('SELECT COUNT(*) AS cnt FROM internal_tickets;');
+  if (!ticketCount || ticketCount.cnt === 0) {
+    db.run(`
+      INSERT INTO internal_tickets (ticket_no, user_id, username, user_role, category, priority, subject, description, status, resolver_name, created_at, updated_at)
+      VALUES ('TKT-UPPCL-202610-001', 2, 'operator', 'Social Media Cell Operator', 'X Ingestion', 'Normal', 'Handle @MVVNLHQ rate-limit check', 'Verifying recent mentions quota on corporate HQ handle.', 'Open', 'Super Administrator', datetime('now'), datetime('now'));
+    `);
+  }
+
+  // 13. Worker Heartbeat
+  db.run(`
+    INSERT OR REPLACE INTO worker_heartbeats (id, worker_name, last_heartbeat, status, metadata_json)
+    VALUES (1, 'uppcl-command-centre-worker', datetime('now'), 'Healthy', '{"mode":"Mode A - Monitor Only","uptime_secs":0,"interval":60}');
+  `);
+
+  // 14. Initial Audit Logs
   db.run(`
     INSERT INTO audit_logs (user_id, username, user_role, action, entity_type, entity_id, details, ip_address, created_at)
-    VALUES (1, 'system', 'Super Administrator', 'SYSTEM_INITIALIZATION', 'SYSTEM', '0', 'UPPCL SMC Complaint Management System master seed loaded', '127.0.0.1', datetime('now'));
+    VALUES (1, 'system', 'Super Administrator', 'SYSTEM_INITIALIZATION', 'SYSTEM', '0', 'UPPCL Grievance Command Centre production seed verified', '127.0.0.1', datetime('now'));
   `);
 
   db.flush();

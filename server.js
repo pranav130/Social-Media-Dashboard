@@ -7,6 +7,8 @@ const bcrypt = require('bcryptjs');
 const multer = require('multer');
 const XLSX = require('xlsx');
 const db = require('./db');
+const classifier = require('./classifier');
+const XService = require('./x_service');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -88,7 +90,7 @@ function authMiddleware(req, res, next) {
   const token = authHeader.split(' ')[1];
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
-    const user = db.get('SELECT id, username, full_name, email, role, discom_name, designation, mobile, is_active FROM users WHERE id = ?;', [decoded.id]);
+    const user = db.get('SELECT id, username, full_name, email, role, discom_name, designation, mobile, is_active, assigned_districts FROM users WHERE id = ?;', [decoded.id]);
     if (!user || user.is_active !== 1) {
       return res.status(401).json({ error: 'Account inactive or not found' });
     }
@@ -169,7 +171,8 @@ app.post('/api/auth/login', (req, res) => {
       role: user.role,
       discom_name: user.discom_name,
       designation: user.designation,
-      mobile: user.mobile
+      mobile: user.mobile,
+      assigned_districts: user.assigned_districts || ''
     }
   });
 });
@@ -230,6 +233,7 @@ app.get('/api/complaints', authMiddleware, (req, res) => {
     category,
     priority,
     overdue,
+    reply_status,
     from_date,
     to_date,
     sort_by = 'received_at',
@@ -247,6 +251,13 @@ app.get('/api/complaints', authMiddleware, (req, res) => {
   if (req.user.role === 'DISCOM Nodal Officer') {
     whereClauses.push('(discom_name = ? OR discom_name = ?)');
     params.push(req.user.discom_name, req.user.discom_name.toUpperCase());
+  } else if ((req.user.role === 'Complaint Handler' || req.user.role === 'Social Media Cell Operator') && req.user.assigned_districts && req.user.assigned_districts.trim() && req.user.assigned_districts !== 'All') {
+    const districts = req.user.assigned_districts.split(',').map(d => d.trim()).filter(Boolean);
+    if (districts.length > 0) {
+      const placeholders = districts.map(() => '?').join(',');
+      whereClauses.push(`district_name IN (${placeholders})`);
+      params.push(...districts);
+    }
   } else if (discom && discom !== 'All') {
     whereClauses.push('discom_name = ?');
     params.push(discom);
@@ -277,6 +288,11 @@ app.get('/api/complaints', authMiddleware, (req, res) => {
     params.push(priority);
   }
 
+  if (reply_status && reply_status !== 'All') {
+    whereClauses.push('reply_status = ?');
+    params.push(reply_status);
+  }
+
   if (from_date) {
     whereClauses.push('received_at >= ?');
     params.push(from_date + ' 00:00:00');
@@ -302,6 +318,10 @@ app.get('/api/complaints', authMiddleware, (req, res) => {
       whereClauses.push("is_overdue = 1");
     } else if (status === 'escalated') {
       whereClauses.push("current_status = 'Escalated'");
+    } else if (status === 'draft_review') {
+      whereClauses.push("reply_status = 'DRAFT_GENERATED'");
+    } else if (status === 'needs_review' || status === 'unassigned') {
+      whereClauses.push("district_name = 'Unassigned'");
     } else if (status === 'verification_pending') {
       whereClauses.push("current_status = 'Resolved — Verification Pending'");
     } else if (status === 'closed') {
@@ -560,11 +580,20 @@ app.get('/api/complaints/:id', authMiddleware, (req, res) => {
     }
   }
 
+  // Role Scoping for Complaint Handler with assigned districts
+  if ((req.user.role === 'Complaint Handler' || req.user.role === 'Social Media Cell Operator') && req.user.assigned_districts && req.user.assigned_districts.trim() && req.user.assigned_districts !== 'All') {
+    const allowed = req.user.assigned_districts.split(',').map(d => d.trim().toLowerCase()).filter(Boolean);
+    if (allowed.length > 0 && complaint.district_name && !allowed.includes(complaint.district_name.toLowerCase())) {
+      return res.status(403).json({ error: `Access denied: You are not assigned to district ${complaint.district_name}` });
+    }
+  }
+
   const timeline = db.query('SELECT * FROM complaint_timeline WHERE complaint_id = ? ORDER BY id ASC;', [id]);
   const forwardingLogs = db.query('SELECT * FROM complaint_forwarding_logs WHERE complaint_id = ? ORDER BY id DESC;', [id]);
   const followupLogs = db.query('SELECT * FROM complaint_followup_logs WHERE complaint_id = ? ORDER BY id DESC;', [id]);
   const escalationLogs = db.query('SELECT * FROM complaint_escalation_logs WHERE complaint_id = ? ORDER BY id DESC;', [id]);
   const evidence = db.query('SELECT * FROM complaint_evidence WHERE complaint_id = ? ORDER BY id DESC;', [id]);
+  const replies = db.query('SELECT * FROM x_outgoing_replies WHERE complaint_id = ? ORDER BY id DESC;', [id]);
 
   res.json({
     complaint: {
@@ -575,7 +604,8 @@ app.get('/api/complaints/:id', authMiddleware, (req, res) => {
     forwardingLogs,
     followupLogs,
     escalationLogs,
-    evidence
+    evidence,
+    replies
   });
 });
 
@@ -1550,7 +1580,7 @@ app.get('/api/master/jurisdiction', authMiddleware, (req, res) => {
 // -------------------------------------------------------------
 
 app.get('/api/users', authMiddleware, requireRoles('Super Administrator'), (req, res) => {
-  const users = db.query('SELECT id, username, full_name, email, role, discom_name, designation, mobile, is_active, created_at, updated_at FROM users ORDER BY id ASC;');
+  const users = db.query('SELECT id, username, full_name, email, role, discom_name, designation, mobile, is_active, assigned_districts, created_at, updated_at FROM users ORDER BY id ASC;');
   res.json({ data: users });
 });
 
@@ -1569,11 +1599,12 @@ app.post('/api/users', authMiddleware, requireRoles('Super Administrator'), (req
   const istTime = getIstTimestamp();
 
   const ins = db.run(`
-    INSERT INTO users (username, password_hash, full_name, email, role, discom_name, designation, mobile, is_active, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?);
+    INSERT INTO users (username, password_hash, full_name, email, role, discom_name, designation, mobile, assigned_districts, is_active, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?);
   `, [
     b.username.trim(), hash, b.full_name.trim(), b.email || '', b.role,
     b.discom_name || 'All DISCOMs', b.designation || '', b.mobile || '',
+    b.assigned_districts || '',
     istTime, istTime
   ]);
 
@@ -1599,11 +1630,13 @@ app.put('/api/users/:id', authMiddleware, requireRoles('Super Administrator'), (
       discom_name = COALESCE(?, discom_name),
       designation = COALESCE(?, designation),
       mobile = COALESCE(?, mobile),
+      assigned_districts = COALESCE(?, assigned_districts),
       is_active = COALESCE(?, is_active),
       updated_at = ?
     WHERE id = ?;
   `, [
     b.full_name, b.email, b.role, b.discom_name, b.designation, b.mobile,
+    b.assigned_districts,
     b.is_active !== undefined ? (b.is_active ? 1 : 0) : null,
     istTime, id
   ]);
@@ -1667,6 +1700,393 @@ app.get('/api/audit-logs', authMiddleware, requireRoles('Super Administrator', '
   });
 });
 
+// -------------------------------------------------------------
+// COMPLAINT REPLY DISPATCH & WORKFLOW
+// -------------------------------------------------------------
+
+app.post('/api/complaints/:id/send-reply', authMiddleware, requireRoles('Super Administrator', 'Social Media Cell Operator', 'Supervisor / Management', 'Complaint Handler'), async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  const complaint = db.get('SELECT * FROM complaints WHERE id = ?;', [id]);
+  if (!complaint) return res.status(404).json({ error: 'Complaint not found' });
+
+  // Role scoping for handler
+  if ((req.user.role === 'Complaint Handler' || req.user.role === 'Social Media Cell Operator') && req.user.assigned_districts && req.user.assigned_districts.trim() && req.user.assigned_districts !== 'All') {
+    const allowed = req.user.assigned_districts.split(',').map(d => d.trim().toLowerCase()).filter(Boolean);
+    if (allowed.length > 0 && complaint.district_name && !allowed.includes(complaint.district_name.toLowerCase())) {
+      return res.status(403).json({ error: `Access denied: You are not assigned to district ${complaint.district_name}` });
+    }
+  }
+
+  const { reply_text } = req.body;
+  const textToSend = (reply_text && reply_text.trim()) || complaint.reply_draft;
+  if (!textToSend || !textToSend.trim()) {
+    return res.status(400).json({ error: 'Reply text cannot be empty' });
+  }
+
+  const result = await XService.publishReply(id, req.user, textToSend);
+  if (result.success) {
+    logAudit(req, req.user, 'X_REPLY_SENT', 'COMPLAINT', id, `Sent X reply [${result.status}]: ${result.reply_id || ''}`);
+    res.json({ message: 'Reply processed successfully', result });
+  } else {
+    logAudit(req, req.user, 'X_REPLY_FAILED', 'COMPLAINT', id, `Failed to send X reply: ${result.error}`);
+    res.status(400).json({ error: result.error, code: result.code });
+  }
+});
+
+// -------------------------------------------------------------
+// REPLY TEMPLATES MANAGEMENT
+// -------------------------------------------------------------
+
+app.get('/api/templates', authMiddleware, (req, res) => {
+  const { category, language } = req.query;
+  let sql = 'SELECT * FROM reply_templates WHERE is_active = 1';
+  const params = [];
+  if (category && category !== 'All') {
+    sql += ' AND category_name = ?';
+    params.push(category);
+  }
+  if (language && language !== 'All') {
+    sql += ' AND language = ?';
+    params.push(language);
+  }
+  sql += ' ORDER BY category_name, language, title ASC;';
+  const templates = db.query(sql, params);
+  res.json({ data: templates });
+});
+
+app.post('/api/templates', authMiddleware, requireRoles('Super Administrator', 'Supervisor / Management'), (req, res) => {
+  const b = req.body;
+  if (!b.template_code || !b.category_name || !b.title || !b.template_body) {
+    return res.status(400).json({ error: 'Template code, category, title, and body are required' });
+  }
+  const istTime = getIstTimestamp();
+  const ins = db.run(`
+    INSERT INTO reply_templates (template_code, category_name, language, title, template_body, description, is_active, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?);
+  `, [
+    b.template_code.trim(), b.category_name.trim(), b.language || 'Hindi',
+    b.title.trim(), b.template_body.trim(), b.description || '', istTime, istTime
+  ]);
+  logAudit(req, req.user, 'TEMPLATE_CREATED', 'TEMPLATE', ins.lastInsertRowid, `Created template ${b.template_code}`);
+  res.status(201).json({ message: 'Template created successfully' });
+});
+
+app.put('/api/templates/:id', authMiddleware, requireRoles('Super Administrator', 'Supervisor / Management'), (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  const b = req.body;
+  const istTime = getIstTimestamp();
+  db.run(`
+    UPDATE reply_templates SET
+      template_code = COALESCE(?, template_code),
+      category_name = COALESCE(?, category_name),
+      language = COALESCE(?, language),
+      title = COALESCE(?, title),
+      template_body = COALESCE(?, template_body),
+      description = COALESCE(?, description),
+      is_active = COALESCE(?, is_active),
+      updated_at = ?
+    WHERE id = ?;
+  `, [
+    b.template_code, b.category_name, b.language, b.title, b.template_body,
+    b.description, b.is_active !== undefined ? (b.is_active ? 1 : 0) : null,
+    istTime, id
+  ]);
+  logAudit(req, req.user, 'TEMPLATE_UPDATED', 'TEMPLATE', id, `Updated template ${id}`);
+  res.json({ message: 'Template updated successfully' });
+});
+
+app.delete('/api/templates/:id', authMiddleware, requireRoles('Super Administrator'), (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  const istTime = getIstTimestamp();
+  db.run('UPDATE reply_templates SET is_active = 0, updated_at = ? WHERE id = ?;', [istTime, id]);
+  logAudit(req, req.user, 'TEMPLATE_DELETED', 'TEMPLATE', id, `Deactivated template ${id}`);
+  res.json({ message: 'Template deactivated successfully' });
+});
+
+app.post('/api/templates/preview', authMiddleware, (req, res) => {
+  const { template_id, template_body, complaint_id } = req.body;
+  let text = template_body || '';
+  if (template_id) {
+    const t = db.get('SELECT template_body FROM reply_templates WHERE id = ?;', [template_id]);
+    if (t) text = t.template_body;
+  }
+  if (!text) return res.status(400).json({ error: 'Template text or ID required' });
+
+  if (complaint_id) {
+    const c = db.get('SELECT * FROM complaints WHERE id = ?;', [complaint_id]);
+    if (c) {
+      text = XService.renderTemplate(text, c);
+    }
+  }
+  res.json({ rendered_text: text });
+});
+
+// -------------------------------------------------------------
+// NOTIFICATIONS SYSTEM
+// -------------------------------------------------------------
+
+app.get('/api/notifications', authMiddleware, (req, res) => {
+  const userId = req.user.id;
+  const rows = db.query(`
+    SELECT * FROM notifications
+    WHERE user_id = ? OR user_id IS NULL OR user_id = 0
+    ORDER BY id DESC LIMIT 50;
+  `, [userId]);
+
+  const unreadCount = rows.filter(r => r.is_read === 0).length;
+  res.json({ data: rows, unread_count: unreadCount });
+});
+
+app.post('/api/notifications/:id/read', authMiddleware, (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  const istTime = getIstTimestamp();
+  db.run('UPDATE notifications SET is_read = 1, read_at = ? WHERE id = ?;', [istTime, id]);
+  res.json({ message: 'Notification marked as read' });
+});
+
+app.post('/api/notifications/read-all', authMiddleware, (req, res) => {
+  const userId = req.user.id;
+  const istTime = getIstTimestamp();
+  db.run('UPDATE notifications SET is_read = 1, read_at = ? WHERE (user_id = ? OR user_id IS NULL OR user_id = 0) AND is_read = 0;', [istTime, userId]);
+  res.json({ message: 'All notifications marked as read' });
+});
+
+// -------------------------------------------------------------
+// INTERNAL SUPPORT TICKETING
+// -------------------------------------------------------------
+
+app.get('/api/internal-tickets', authMiddleware, (req, res) => {
+  const { status } = req.query;
+  let whereClauses = [];
+  let params = [];
+
+  // Scoping: non-admins only see tickets they raised
+  if (!['Super Administrator', 'Supervisor / Management'].includes(req.user.role)) {
+    whereClauses.push('created_by_user_id = ?');
+    params.push(req.user.id);
+  }
+
+  if (status && status !== 'All') {
+    whereClauses.push('status = ?');
+    params.push(status);
+  }
+
+  const whereSql = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
+  const tickets = db.query(`SELECT * FROM internal_tickets ${whereSql} ORDER BY id DESC;`, params);
+  res.json({ data: tickets });
+});
+
+app.post('/api/internal-tickets', authMiddleware, (req, res) => {
+  const b = req.body;
+  if (!b.subject || !b.description) {
+    return res.status(400).json({ error: 'Subject and description are required' });
+  }
+
+  const istTime = getIstTimestamp();
+  const seq = Date.now().toString().slice(-6);
+  const ticketNo = `TKT-${seq}`;
+
+  const ins = db.run(`
+    INSERT INTO internal_tickets (
+      ticket_no, subject, description, category, priority, status,
+      complaint_id, created_by_user_id, created_by_name, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, 'Open', ?, ?, ?, ?, ?);
+  `, [
+    ticketNo, b.subject.trim(), b.description.trim(), b.category || 'Bug / Technical Issue',
+    b.priority || 'Normal', b.complaint_id || null, req.user.id, req.user.full_name, istTime, istTime
+  ]);
+
+  // Create notification for admins
+  try {
+    db.run(`
+      INSERT INTO notifications (user_id, title, message, type, complaint_id, is_read, created_at)
+      VALUES (NULL, ?, ?, 'INFO', ?, 0, ?);
+    `, [`New Internal Ticket ${ticketNo}`, `${req.user.full_name} raised ticket: ${b.subject}`, b.complaint_id || null, istTime]);
+  } catch (e) {}
+
+  logAudit(req, req.user, 'INTERNAL_TICKET_CREATED', 'INTERNAL_TICKET', ins.lastInsertRowid, `Raised ticket ${ticketNo}`);
+  res.status(201).json({ message: 'Internal ticket raised successfully', ticket_no: ticketNo });
+});
+
+app.put('/api/internal-tickets/:id', authMiddleware, requireRoles('Super Administrator', 'Supervisor / Management'), (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  const b = req.body;
+  const istTime = getIstTimestamp();
+
+  db.run(`
+    UPDATE internal_tickets SET
+      status = COALESCE(?, status),
+      priority = COALESCE(?, priority),
+      assigned_to_user_id = COALESCE(?, assigned_to_user_id),
+      assigned_to_name = COALESCE(?, assigned_to_name),
+      resolution_notes = COALESCE(?, resolution_notes),
+      resolved_at = CASE WHEN ? = 'Resolved' OR ? = 'Closed' THEN ? ELSE resolved_at END,
+      updated_at = ?
+    WHERE id = ?;
+  `, [
+    b.status, b.priority, b.assigned_to_user_id, b.assigned_to_name,
+    b.resolution_notes, b.status, b.status, istTime, istTime, id
+  ]);
+
+  logAudit(req, req.user, 'INTERNAL_TICKET_UPDATED', 'INTERNAL_TICKET', id, `Updated ticket ${id}`);
+  res.json({ message: 'Ticket updated successfully' });
+});
+
+// -------------------------------------------------------------
+// X SERVICE & AUTOMATION ADMIN ENDPOINTS
+// -------------------------------------------------------------
+
+app.get('/api/admin/x-status', authMiddleware, requireRoles('Super Administrator', 'Supervisor / Management'), (req, res) => {
+  const status = XService.getStatus();
+  res.json({ data: status });
+});
+
+app.post('/api/admin/x-config', authMiddleware, requireRoles('Super Administrator'), (req, res) => {
+  const b = req.body;
+  const istTime = getIstTimestamp();
+
+  if (b.automation_mode && ['A', 'B', 'C'].includes(b.automation_mode)) {
+    db.run("UPDATE system_settings SET value = ?, updated_at = ? WHERE key = 'automation_mode';", [b.automation_mode, istTime]);
+  }
+  if (b.x_account_handle) {
+    db.run("UPDATE system_settings SET value = ?, updated_at = ? WHERE key = 'x_account_handle';", [b.x_account_handle.trim(), istTime]);
+  }
+  if (b.x_account_id) {
+    db.run("UPDATE system_settings SET value = ?, updated_at = ? WHERE key = 'x_account_id';", [b.x_account_id.trim(), istTime]);
+  }
+  if (b.ingestion_interval_seconds) {
+    db.run("UPDATE system_settings SET value = ?, updated_at = ? WHERE key = 'ingestion_interval_seconds';", [String(b.ingestion_interval_seconds), istTime]);
+  }
+
+  logAudit(req, req.user, 'X_CONFIG_UPDATED', 'SETTINGS', 0, 'Updated X configuration and automation settings');
+  res.json({ message: 'X configuration updated successfully', current_status: XService.getStatus() });
+});
+
+app.post('/api/admin/emergency-stop', authMiddleware, requireRoles('Super Administrator', 'Supervisor / Management'), (req, res) => {
+  const { active } = req.body;
+  const isStop = active === true || active === 'true' || active === 1;
+  const istTime = getIstTimestamp();
+
+  db.run("UPDATE system_settings SET value = ?, updated_at = ? WHERE key = 'emergency_stop';", [isStop ? 'true' : 'false', istTime]);
+
+  const auditAction = isStop ? 'EMERGENCY_STOP_ACTIVATED' : 'EMERGENCY_STOP_DEACTIVATED';
+  logAudit(req, req.user, auditAction, 'SYSTEM', 0, `Emergency stop set to ${isStop}`);
+
+  // Create high-priority notification
+  try {
+    db.run(`
+      INSERT INTO notifications (user_id, title, message, type, is_read, created_at)
+      VALUES (NULL, ?, ?, ?, 0, ?);
+    `, [
+      isStop ? 'EMERGENCY STOP ACTIVATED' : 'Emergency Stop Deactivated',
+      isStop ? `Automated X replies immediately halted by ${req.user.full_name}.` : `Automated replies resumed by ${req.user.full_name}.`,
+      isStop ? 'CRITICAL' : 'INFO',
+      istTime
+    ]);
+  } catch (e) {}
+
+  res.json({ message: `Emergency stop ${isStop ? 'ACTIVATED' : 'DEACTIVATED'}`, emergency_stop: isStop });
+});
+
+app.post('/api/admin/sync-now', authMiddleware, requireRoles('Super Administrator', 'Social Media Cell Operator'), async (req, res) => {
+  try {
+    const result = await XService.pollRecentPosts();
+    logAudit(req, req.user, 'MANUAL_X_SYNC', 'X_SYNC', 0, `Manual sync executed: ${result.new_posts} new posts ingested`);
+    res.json({ message: 'Manual sync completed', result });
+  } catch (err) {
+    res.status(500).json({ error: 'Sync failed: ' + err.message });
+  }
+});
+
+app.post('/api/admin/x-verify', authMiddleware, requireRoles('Super Administrator'), async (req, res) => {
+  const verification = await XService.verifyConnection();
+  res.json({ data: verification });
+});
+
+// -------------------------------------------------------------
+// OPERATIONAL HEALTH & SLA MONITORING
+// -------------------------------------------------------------
+
+function getHealthStatus() {
+  let dbStatus = 'connected';
+  let totalComplaints = 0;
+  let activeOverdue = 0;
+  let draftReviewCount = 0;
+  let unassignedCount = 0;
+  let recentWorker = null;
+
+  try {
+    const cTotal = db.get('SELECT COUNT(*) as c FROM complaints;');
+    totalComplaints = cTotal ? cTotal.c : 0;
+
+    const cOverdue = db.get("SELECT COUNT(*) as c FROM complaints WHERE is_overdue = 1 AND current_status NOT IN ('Closed', 'Resolved — Verification Pending', 'Duplicate / Invalid');");
+    activeOverdue = cOverdue ? cOverdue.c : 0;
+
+    const cDraft = db.get("SELECT COUNT(*) as c FROM complaints WHERE reply_status = 'DRAFT_GENERATED';");
+    draftReviewCount = cDraft ? cDraft.c : 0;
+
+    const cUnassigned = db.get("SELECT COUNT(*) as c FROM complaints WHERE district_name = 'Unassigned';");
+    unassignedCount = cUnassigned ? cUnassigned.c : 0;
+
+    recentWorker = db.get('SELECT * FROM worker_heartbeats ORDER BY id DESC LIMIT 1;');
+  } catch (e) {
+    dbStatus = 'error: ' + e.message;
+  }
+
+  const xStatus = XService.getStatus();
+  let workerStatus = 'idle / not started';
+  let workerLagSeconds = null;
+
+  if (recentWorker && recentWorker.last_heartbeat) {
+    const hbTime = new Date(recentWorker.last_heartbeat).getTime();
+    workerLagSeconds = Math.round((Date.now() - hbTime) / 1000);
+    workerStatus = workerLagSeconds < 180 ? 'running' : 'delayed';
+  }
+
+  const overall = (dbStatus === 'connected' && !xStatus.emergency_stop) ? 'healthy' : 'warning';
+
+  return {
+    status: overall,
+    system_name: 'UPPCL Grievance Command Centre',
+    timestamp: getIstTimestamp(),
+    uptime_seconds: Math.round(process.uptime()),
+    database: {
+      status: dbStatus,
+      total_complaints: totalComplaints,
+      active_overdue: activeOverdue,
+      draft_review_queue: draftReviewCount,
+      unassigned_queue: unassignedCount
+    },
+    worker: {
+      status: workerStatus,
+      last_heartbeat: recentWorker ? recentWorker.last_heartbeat : null,
+      lag_seconds: workerLagSeconds,
+      service: recentWorker ? recentWorker.worker_name : 'worker-daemon'
+    },
+    x_integration: {
+      connection_status: xStatus.connection_status,
+      has_bearer_token: xStatus.has_bearer_token,
+      has_user_oauth: xStatus.has_user_oauth,
+      monitored_account: xStatus.monitored_account,
+      automation_mode: xStatus.automation_mode,
+      emergency_stop: xStatus.emergency_stop,
+      last_poll_at: xStatus.last_poll_at,
+      incoming_posts_count: xStatus.incoming_posts_count,
+      outgoing_replies_count: xStatus.outgoing_replies_count
+    }
+  };
+}
+
+app.get('/health', (req, res) => {
+  const health = getHealthStatus();
+  res.json(health);
+});
+
+app.get('/api/health', (req, res) => {
+  const health = getHealthStatus();
+  res.json(health);
+});
+
 // Single Page Application Fallback
 app.use((req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
@@ -1693,6 +2113,18 @@ db.initDb().then(async () => {
     console.log(` Environment: ${process.env.NODE_ENV || 'production'}`);
     console.log(` System Time (IST): ${getIstTimestamp()}`);
     console.log(`===========================================================`);
+
+    // Start background worker daemon if enabled (default enabled for single-service deployments)
+    if (process.env.ENABLE_INTERNAL_WORKER !== 'false') {
+      try {
+        const worker = require('./worker');
+        worker.startWorker().catch(wErr => {
+          console.warn('[Server] Internal worker start warning:', wErr.message);
+        });
+      } catch (wErr) {
+        console.warn('[Server] Worker import error:', wErr.message);
+      }
+    }
   });
 }).catch(err => {
   console.error('Failed to start server:', err);

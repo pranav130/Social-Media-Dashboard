@@ -21,11 +21,14 @@ const App = {
     sort_order: 'DESC'
   },
   charts: {},
+  notifications: [],
+  unreadNotifs: 0,
   cachedMaster: {
     categories: [],
     discoms: [],
     xHierarchy: [],
-    nodalOfficers: []
+    nodalOfficers: [],
+    replyTemplates: []
   },
 
   init() {
@@ -37,6 +40,7 @@ const App = {
     }
 
     this.startClock();
+    this.startNotificationPoller();
 
     if (this.token && this.user) {
       this.loadMasterData().then(() => {
@@ -60,6 +64,31 @@ const App = {
         el.innerHTML = `<i class="fa-regular fa-clock"></i> IST: ${ist.toLocaleDateString('en-GB')} ${ist.toLocaleTimeString('en-GB')}`;
       }
     }, 1000);
+  },
+
+  startNotificationPoller() {
+    this.pollNotifications();
+    setInterval(() => {
+      if (this.token) this.pollNotifications();
+    }, 30000);
+  },
+
+  async pollNotifications() {
+    if (!this.token) return;
+    try {
+      const res = await this.api('/api/notifications');
+      this.notifications = res.data || [];
+      this.unreadNotifs = res.unread_count || 0;
+      const badge = document.getElementById('notif-badge');
+      if (badge) {
+        if (this.unreadNotifs > 0) {
+          badge.style.display = 'inline-flex';
+          badge.textContent = this.unreadNotifs > 99 ? '99+' : this.unreadNotifs;
+        } else {
+          badge.style.display = 'none';
+        }
+      }
+    } catch (e) {}
   },
 
   initTheme() {
@@ -139,16 +168,18 @@ const App = {
 
   async loadMasterData() {
     try {
-      const [cats, discs, xh, nodals] = await Promise.all([
+      const [cats, discs, xh, nodals, tpls] = await Promise.all([
         this.api('/api/master/categories'),
         this.api('/api/master/discoms'),
         this.api('/api/master/x-hierarchy'),
-        this.api('/api/master/nodal-officers')
+        this.api('/api/master/nodal-officers'),
+        this.api('/api/templates').catch(() => ({ data: [] }))
       ]);
       this.cachedMaster.categories = cats.data || [];
       this.cachedMaster.discoms = discs.data || [];
       this.cachedMaster.xHierarchy = xh.data || [];
       this.cachedMaster.nodalOfficers = nodals.data || [];
+      this.cachedMaster.replyTemplates = (tpls && tpls.data) || [];
     } catch (e) {
       console.warn('Error loading master data:', e.message);
     }
@@ -205,6 +236,18 @@ const App = {
     } else if (page === 'closure-verification') {
       this.currentFilters.status = 'verification_pending';
       this.renderComplaintRegister(container, 'Closure Verification Queue');
+    } else if (page === 'draft-review') {
+      this.currentFilters.status = 'draft_review';
+      this.renderComplaintRegister(container, 'X Response Draft & Review Queue');
+    } else if (page === 'unassigned-queue') {
+      this.currentFilters.status = 'needs_review';
+      this.renderComplaintRegister(container, 'Unassigned / Needs District Review');
+    } else if (page === 'templates') {
+      this.renderTemplates(container);
+    } else if (page === 'system-health') {
+      this.renderSystemHealth(container);
+    } else if (page === 'internal-tickets') {
+      this.renderInternalTickets(container);
     } else if (page === 'reports') {
       this.renderReports(container);
     } else if (page === 'x-hierarchy') {
@@ -226,7 +269,7 @@ const App = {
   renderApp() {
     const root = document.getElementById('app');
     const isSuperAdmin = this.user.role === 'Super Administrator';
-    const isOperator = ['Super Administrator', 'Social Media Cell Operator'].includes(this.user.role);
+    const isOperator = ['Super Administrator', 'Social Media Cell Operator', 'Complaint Handler'].includes(this.user.role);
     const isSupervisor = ['Super Administrator', 'Supervisor / Management'].includes(this.user.role);
     const isDiscomNodal = this.user.role === 'DISCOM Nodal Officer';
 
@@ -256,6 +299,12 @@ const App = {
             </a>` : ''}
 
             <div class="nav-section-title">Workflow Tracking</div>
+            <a class="nav-item" data-page="draft-review" onclick="App.navigate('draft-review')">
+              <i class="fa-solid fa-pen-to-square"></i> Draft & Review Queue
+            </a>
+            <a class="nav-item" data-page="unassigned-queue" onclick="App.navigate('unassigned-queue')">
+              <i class="fa-solid fa-question-circle"></i> Needs Review (Unassigned)
+            </a>
             <a class="nav-item" data-page="forwarding" onclick="App.navigate('forwarding')">
               <i class="fa-solid fa-share-nodes"></i> Forwarding & Follow-Up
             </a>
@@ -274,6 +323,9 @@ const App = {
             <a class="nav-item" data-page="reports" onclick="App.navigate('reports')">
               <i class="fa-solid fa-file-invoice"></i> Reports & Exports
             </a>
+            <a class="nav-item" data-page="templates" onclick="App.navigate('templates')">
+              <i class="fa-solid fa-message"></i> Reply Templates
+            </a>
             <a class="nav-item" data-page="x-hierarchy" onclick="App.navigate('x-hierarchy')">
               <i class="fa-brands fa-x-twitter"></i> X Hierarchy
             </a>
@@ -283,9 +335,15 @@ const App = {
 
             ${isSupervisor || isSuperAdmin ? `
             <div class="nav-section-title">Governance & Administration</div>
+            <a class="nav-item" data-page="system-health" onclick="App.navigate('system-health')">
+              <i class="fa-solid fa-heart-pulse"></i> System Health & Monitor
+            </a>
             <a class="nav-item" data-page="audit-logs" onclick="App.navigate('audit-logs')">
               <i class="fa-solid fa-shield-halved"></i> Audit Trail
             </a>` : ''}
+            <a class="nav-item" data-page="internal-tickets" onclick="App.navigate('internal-tickets')">
+              <i class="fa-solid fa-headset"></i> Support Tickets
+            </a>
 
             ${isSuperAdmin ? `
             <a class="nav-item" data-page="users" onclick="App.navigate('users')">
@@ -316,6 +374,17 @@ const App = {
               <button class="btn btn-accent btn-sm" onclick="App.navigate('add-complaint')">
                 <i class="fa-solid fa-plus"></i> New Complaint
               </button>` : ''}
+
+              <!-- Notification Bell Button -->
+              <button class="btn btn-secondary btn-sm" id="btn-notifications" onclick="App.toggleNotificationModal()" title="Notifications" style="position: relative;">
+                <i class="fa-solid fa-bell"></i>
+                <span id="notif-badge" class="badge-notif" style="display: none;">0</span>
+              </button>
+
+              <!-- Report System Issue Button -->
+              <button class="btn btn-secondary btn-sm" onclick="App.openInternalTicketModal()" title="Report Issue with Dashboard">
+                <i class="fa-solid fa-circle-question"></i> Help
+              </button>
 
               <!-- Theme Toggle Button -->
               <button class="theme-toggle-btn" onclick="App.toggleTheme()" title="${this.theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}" aria-label="Toggle Theme">
@@ -1438,6 +1507,69 @@ const App = {
                     ` : ''}
                   </div>
 
+                  <!-- Official X Response & Acknowledgment Panel -->
+                  <div class="details-card">
+                    <div class="details-card-header">
+                      <span><i class="fa-brands fa-x-twitter"></i> Official X Acknowledgment & Public Reply</span>
+                      <span class="badge-status badge-reply-${c.reply_status || 'PENDING'}">${c.reply_status || 'PENDING'}</span>
+                    </div>
+
+                    ${c.first_acknowledged_at ? `
+                    <div class="info-row" style="margin-bottom: 8px;">
+                      <span class="info-label">First Acknowledged:</span>
+                      <span class="info-value"><b style="color: #10b981;"><i class="fa-solid fa-check-double"></i> ${c.first_acknowledged_at} IST</b></span>
+                    </div>
+                    ` : ''}
+
+                    ${c.published_reply_id ? `
+                    <div class="info-row" style="margin-bottom: 8px;">
+                      <span class="info-label">Published Reply ID:</span>
+                      <span class="info-value"><code>${c.published_reply_id}</code></span>
+                    </div>
+                    ` : ''}
+
+                    <div class="reply-box">
+                      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                        <label style="font-weight: 700; font-size: 12px; color: var(--primary);">
+                          Approved Bilingual Response Draft
+                        </label>
+                        <select id="template-picker" class="form-control" style="width: auto; font-size: 11px; padding: 3px 8px;" onchange="App.applyTemplateToReply(${c.id}, this.value)">
+                          <option value="">-- Insert Approved Template --</option>
+                          ${(this.cachedMaster.replyTemplates || []).map(t => `<option value="${t.id}">${t.title} (${t.language})</option>`).join('')}
+                        </select>
+                      </div>
+
+                      <textarea id="reply-text-input" class="form-control" rows="4" style="font-size: 13px; line-height: 1.4;" oninput="App.updateCharCount(this.value)">${c.reply_draft || ''}</textarea>
+
+                      <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 8px;">
+                        <span id="char-counter" style="font-size: 11px; color: ${(c.reply_draft || '').length > 280 ? '#ef4444' : 'var(--text-muted)'}; font-weight: 600;">
+                          ${(c.reply_draft || '').length} / 280 characters
+                        </span>
+
+                        <button class="btn btn-primary btn-sm" onclick="App.sendComplaintReply(${c.id})">
+                          <i class="fa-brands fa-x-twitter"></i> Approve & Send Reply
+                        </button>
+                      </div>
+                    </div>
+
+                    ${(res.replies && res.replies.length > 0) ? `
+                    <div style="margin-top: 14px;">
+                      <b style="font-size: 12px; color: var(--text-muted); display: block; margin-bottom: 6px;">Published Reply History:</b>
+                      <div style="display: flex; flex-direction: column; gap: 6px;">
+                        ${res.replies.map(r => `
+                          <div style="background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 4px; padding: 8px 12px; font-size: 12px;">
+                            <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+                              <span class="badge-status badge-reply-${r.status}" style="font-size: 10px;">${r.status}</span>
+                              <span style="font-size: 11px; color: var(--text-muted);">${r.created_at}</span>
+                            </div>
+                            <div style="color: var(--text-main);">${r.reply_text}</div>
+                          </div>
+                        `).join('')}
+                      </div>
+                    </div>
+                    ` : ''}
+                  </div>
+
                   <!-- Resolution & Action Taken Report -->
                   ${c.discom_action_taken ? `
                   <div class="details-card" style="border-left: 4px solid var(--status-resolved);">
@@ -2531,6 +2663,620 @@ const App = {
       alert('Settings updated successfully.');
     } catch (err) {
       alert(`Error saving settings: ${err.message}`);
+    }
+  },
+
+  // -----------------------------------------------------------
+  // NOTIFICATIONS MODAL & ACTIONS
+  // -----------------------------------------------------------
+  toggleNotificationModal() {
+    const root = document.getElementById('modal-root');
+    const notifs = this.notifications || [];
+    
+    root.innerHTML = `
+      <div class="modal-overlay" onclick="if(event.target === this) App.closeModal()">
+        <div class="modal-content" style="max-width: 600px;">
+          <div class="modal-header">
+            <h3><i class="fa-solid fa-bell"></i> System Notifications & Alerts</h3>
+            <div style="display: flex; gap: 8px;">
+              <button class="btn btn-secondary btn-sm" onclick="App.markAllNotificationsRead()">Mark All as Read</button>
+              <button class="modal-close" onclick="App.closeModal()">&times;</button>
+            </div>
+          </div>
+          <div class="modal-body" style="padding: 16px; max-height: 480px; overflow-y: auto;">
+            ${notifs.length === 0 ? '<div style="text-align: center; color: var(--text-muted); padding: 30px;">No notifications yet.</div>' : ''}
+            <div style="display: flex; flex-direction: column; gap: 10px;">
+              ${notifs.map(n => {
+                const icon = n.type === 'CRITICAL' ? 'fa-solid fa-triangle-exclamation' : (n.type === 'WARNING' ? 'fa-solid fa-clock' : 'fa-solid fa-info-circle');
+                const color = n.type === 'CRITICAL' ? '#ef4444' : (n.type === 'WARNING' ? '#f59e0b' : '#3b82f6');
+                const bg = n.is_read ? 'var(--bg-subtle)' : 'var(--bg-card)';
+                return `
+                  <div style="background: ${bg}; border-left: 4px solid ${color}; border-radius: 6px; padding: 12px; display: flex; gap: 12px; align-items: flex-start; cursor: pointer;" onclick="App.handleNotifClick(${n.id}, ${n.complaint_id || 'null'})">
+                    <i class="${icon}" style="color: ${color}; font-size: 18px; margin-top: 2px;"></i>
+                    <div style="flex: 1;">
+                      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                        <b style="font-size: 13px; color: var(--text-main);">${n.title}</b>
+                        <span style="font-size: 11px; color: var(--text-muted);">${n.created_at || ''}</span>
+                      </div>
+                      <div style="font-size: 12px; color: var(--text-muted);">${n.message}</div>
+                    </div>
+                  </div>
+                `;
+              }).join('')}
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+  },
+
+  async markAllNotificationsRead() {
+    try {
+      await this.api('/api/notifications/read-all', { method: 'POST' });
+      await this.pollNotifications();
+      this.closeModal();
+    } catch (e) {
+      alert(`Error: ${e.message}`);
+    }
+  },
+
+  async handleNotifClick(notifId, complaintId) {
+    try {
+      await this.api(`/api/notifications/${notifId}/read`, { method: 'POST' });
+      await this.pollNotifications();
+    } catch(e) {}
+    this.closeModal();
+    if (complaintId) {
+      this.viewComplaint(complaintId);
+    }
+  },
+
+  // -----------------------------------------------------------
+  // INTERNAL SUPPORT TICKETS
+  // -----------------------------------------------------------
+  openInternalTicketModal(complaintId = null) {
+    const root = document.getElementById('modal-root');
+    root.innerHTML = `
+      <div class="modal-overlay" onclick="if(event.target === this) App.closeModal()">
+        <div class="modal-content" style="max-width: 580px;">
+          <div class="modal-header">
+            <h3><i class="fa-solid fa-headset"></i> Report Dashboard / Operational Issue</h3>
+            <button class="modal-close" onclick="App.closeModal()">&times;</button>
+          </div>
+          <form onsubmit="App.submitInternalTicket(event)">
+            <div class="modal-body" style="padding: 20px;">
+              <input type="hidden" id="tkt-complaint-id" value="${complaintId || ''}">
+              <div class="filter-group" style="margin-bottom: 14px;">
+                <label>Issue Subject *</label>
+                <input type="text" id="tkt-subject" class="form-control" required placeholder="Brief summary of the issue (e.g. Ingestion lag, wrong district)">
+              </div>
+              <div class="filter-group" style="margin-bottom: 14px;">
+                <label>Category</label>
+                <select id="tkt-category" class="form-control">
+                  <option value="Bug / Technical Issue">Bug / Technical Issue</option>
+                  <option value="X API / Ingestion Issue">X API / Ingestion Issue</option>
+                  <option value="District / Routing Mistake">District / Routing Mistake</option>
+                  <option value="Template / Reply Issue">Template / Reply Issue</option>
+                  <option value="Feature Request">Feature Request</option>
+                  <option value="Other">Other</option>
+                </select>
+              </div>
+              <div class="filter-group" style="margin-bottom: 14px;">
+                <label>Priority</label>
+                <select id="tkt-priority" class="form-control">
+                  <option value="Normal">Normal</option>
+                  <option value="High">High</option>
+                  <option value="Critical">Critical</option>
+                </select>
+              </div>
+              <div class="filter-group">
+                <label>Detailed Description *</label>
+                <textarea id="tkt-description" class="form-control" rows="4" required placeholder="Describe what occurred, any error messages, or steps to reproduce..."></textarea>
+              </div>
+            </div>
+            <div class="modal-footer">
+              <button type="button" class="btn btn-secondary" onclick="App.closeModal()">Cancel</button>
+              <button type="submit" class="btn btn-primary"><i class="fa-solid fa-paper-plane"></i> Submit Ticket</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    `;
+  },
+
+  async submitInternalTicket(e) {
+    e.preventDefault();
+    const payload = {
+      subject: document.getElementById('tkt-subject').value.trim(),
+      category: document.getElementById('tkt-category').value,
+      priority: document.getElementById('tkt-priority').value,
+      description: document.getElementById('tkt-description').value.trim(),
+      complaint_id: document.getElementById('tkt-complaint-id').value || null
+    };
+
+    try {
+      const res = await this.api('/api/internal-tickets', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+      alert(`Success! Internal Ticket ${res.ticket_no} submitted.`);
+      this.closeModal();
+      this.pollNotifications();
+      if (this.currentPage === 'internal-tickets') {
+        this.renderInternalTickets(document.getElementById('page-content'));
+      }
+    } catch (err) {
+      alert(`Error submitting ticket: ${err.message}`);
+    }
+  },
+
+  async renderInternalTickets(container) {
+    container.innerHTML = `
+      <div class="page-header">
+        <div class="page-title">
+          <h2>Internal Support & Operations Tickets</h2>
+          <p>Tickets raised by operators, nodal officers, and supervisors regarding dashboard functions and data issues</p>
+        </div>
+        <div class="page-actions">
+          <button class="btn btn-primary" onclick="App.openInternalTicketModal()"><i class="fa-solid fa-plus"></i> Raise New Ticket</button>
+        </div>
+      </div>
+
+      <div class="card-table">
+        <div class="table-responsive">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Ticket ID</th>
+                <th>Subject</th>
+                <th>Category</th>
+                <th>Priority</th>
+                <th>Status</th>
+                <th>Raised By</th>
+                <th>Created At</th>
+              </tr>
+            </thead>
+            <tbody id="internal-tkt-body">
+              <tr><td colspan="7" style="text-align: center; padding: 25px;"><i class="fa-solid fa-spinner fa-spin"></i> Loading tickets...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    `;
+
+    try {
+      const res = await this.api('/api/internal-tickets');
+      const tickets = res.data || [];
+      const tbody = document.getElementById('internal-tkt-body');
+      if (!tbody) return;
+
+      if (tickets.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; padding: 25px;">No internal tickets found.</td></tr>';
+        return;
+      }
+
+      tbody.innerHTML = tickets.map(t => `
+        <tr>
+          <td><b style="color: var(--primary);">${t.ticket_no}</b></td>
+          <td><b>${t.subject}</b><div style="font-size: 11px; color: var(--text-muted);">${t.description}</div></td>
+          <td>${t.category}</td>
+          <td><span class="badge-prio badge-prio-${t.priority}">${t.priority}</span></td>
+          <td><span class="badge-status ${t.status === 'Resolved' || t.status === 'Closed' ? 'badge-Closed' : 'badge-New'}">${t.status}</span></td>
+          <td>${t.created_by_name}</td>
+          <td>${t.created_at}</td>
+        </tr>
+      `).join('');
+    } catch (e) {
+      container.innerHTML += `<div class="alert-banner alert-warning">${e.message}</div>`;
+    }
+  },
+
+  // -----------------------------------------------------------
+  // X TEMPLATE PREVIEW & REPLY SENDING
+  // -----------------------------------------------------------
+  async applyTemplateToReply(complaintId, templateId) {
+    if (!templateId) return;
+    try {
+      const res = await this.api('/api/templates/preview', {
+        method: 'POST',
+        body: JSON.stringify({ complaint_id: complaintId, template_id: parseInt(templateId, 10) })
+      });
+      const textarea = document.getElementById('reply-text-input');
+      if (textarea && res.rendered_text) {
+        textarea.value = res.rendered_text;
+        this.updateCharCount(textarea.value);
+      }
+    } catch (e) {
+      alert(`Error previewing template: ${e.message}`);
+    }
+  },
+
+  updateCharCount(val) {
+    const el = document.getElementById('char-counter');
+    if (el) {
+      const len = val.length;
+      el.textContent = `${len} / 280 characters`;
+      el.style.color = len > 280 ? '#ef4444' : 'var(--text-muted)';
+    }
+  },
+
+  async sendComplaintReply(id) {
+    const text = document.getElementById('reply-text-input').value.trim();
+    if (!text) {
+      alert('Reply text cannot be empty');
+      return;
+    }
+
+    if (text.length > 280) {
+      if (!confirm(`Warning: Reply is ${text.length} characters (exceeds standard 280 X limit). Send anyway?`)) return;
+    }
+
+    try {
+      const res = await this.api(`/api/complaints/${id}/send-reply`, {
+        method: 'POST',
+        body: JSON.stringify({ reply_text: text })
+      });
+      alert(`Success! Reply processed: ${res.result.status}`);
+      this.viewComplaint(id);
+    } catch (err) {
+      alert(`Error sending reply: ${err.message}`);
+    }
+  },
+
+  // -----------------------------------------------------------
+  // TEMPLATES MANAGEMENT VIEW
+  // -----------------------------------------------------------
+  async renderTemplates(container) {
+    container.innerHTML = `
+      <div class="page-header">
+        <div class="page-title">
+          <h2>Bilingual Approved Reply Templates</h2>
+          <p>Standardized, approved bilingual (Hindi/English) acknowledgement and holding replies for X consumers</p>
+        </div>
+        <div class="page-actions">
+          <button class="btn btn-primary" onclick="App.openAddTemplateModal()"><i class="fa-solid fa-plus"></i> New Template</button>
+        </div>
+      </div>
+
+      <div class="card-table">
+        <div class="table-responsive">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Code</th>
+                <th>Category</th>
+                <th>Language</th>
+                <th>Title</th>
+                <th>Approved Template Body</th>
+                <th>Status</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="tpl-table-body">
+              <tr><td colspan="7" style="text-align: center; padding: 25px;"><i class="fa-solid fa-spinner fa-spin"></i> Loading templates...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    `;
+
+    try {
+      const res = await this.api('/api/templates');
+      const templates = res.data || [];
+      const tbody = document.getElementById('tpl-table-body');
+      if (!tbody) return;
+
+      if (templates.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; padding: 25px;">No templates configured.</td></tr>';
+        return;
+      }
+
+      tbody.innerHTML = templates.map(t => `
+        <tr>
+          <td><span style="font-weight: 700; color: var(--primary);">${t.template_code}</span></td>
+          <td><b>${t.category_name}</b></td>
+          <td><span class="badge-status ${t.language === 'Hindi' ? 'badge-New' : 'badge-Forwarded'}">${t.language}</span></td>
+          <td><b>${t.title}</b></td>
+          <td style="max-width: 380px; font-size: 12px; line-height: 1.4; white-space: pre-wrap;">${t.template_body}</td>
+          <td><span class="badge-status ${t.is_active ? 'badge-Closed' : 'badge-Pending'}">${t.is_active ? 'Active' : 'Inactive'}</span></td>
+          <td>
+            <button class="btn btn-secondary btn-sm" onclick="App.openEditTemplateModal(${t.id})" title="Edit Template"><i class="fa-solid fa-pen"></i></button>
+          </td>
+        </tr>
+      `).join('');
+    } catch (e) {
+      container.innerHTML += `<div class="alert-banner alert-warning">${e.message}</div>`;
+    }
+  },
+
+  openAddTemplateModal() {
+    const root = document.getElementById('modal-root');
+    root.innerHTML = `
+      <div class="modal-overlay" onclick="if(event.target === this) App.closeModal()">
+        <div class="modal-content" style="max-width: 600px;">
+          <div class="modal-header">
+            <h3><i class="fa-solid fa-plus"></i> Add Approved Reply Template</h3>
+            <button class="modal-close" onclick="App.closeModal()">&times;</button>
+          </div>
+          <form onsubmit="App.saveNewTemplate(event)">
+            <div class="modal-body" style="padding: 20px;">
+              <div class="filter-group" style="margin-bottom: 12px;">
+                <label>Template Code * (e.g. TPL-OUTAGE-HI)</label>
+                <input type="text" id="tpl-code" class="form-control" required placeholder="TPL-...">
+              </div>
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px;">
+                <div class="filter-group">
+                  <label>Grievance Category *</label>
+                  <select id="tpl-category" class="form-control" required>
+                    ${this.cachedMaster.categories.map(c => `<option value="${c.name}">${c.name}</option>`).join('')}
+                  </select>
+                </div>
+                <div class="filter-group">
+                  <label>Language *</label>
+                  <select id="tpl-lang" class="form-control" required>
+                    <option value="Hindi">Hindi</option>
+                    <option value="English">English</option>
+                  </select>
+                </div>
+              </div>
+              <div class="filter-group" style="margin-bottom: 12px;">
+                <label>Template Title *</label>
+                <input type="text" id="tpl-title" class="form-control" required placeholder="Descriptive title">
+              </div>
+              <div class="filter-group" style="margin-bottom: 12px;">
+                <label>Template Body * (Supports {COMPLAINT_NO}, {DISTRICT}, {DISCOM}, {DISCOM_HANDLE})</label>
+                <textarea id="tpl-body" class="form-control" rows="4" required placeholder="Enter approved response message..."></textarea>
+              </div>
+            </div>
+            <div class="modal-footer">
+              <button type="button" class="btn btn-secondary" onclick="App.closeModal()">Cancel</button>
+              <button type="submit" class="btn btn-primary"><i class="fa-solid fa-save"></i> Save Template</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    `;
+  },
+
+  async saveNewTemplate(e) {
+    e.preventDefault();
+    const payload = {
+      template_code: document.getElementById('tpl-code').value.trim(),
+      category_name: document.getElementById('tpl-category').value,
+      language: document.getElementById('tpl-lang').value,
+      title: document.getElementById('tpl-title').value.trim(),
+      template_body: document.getElementById('tpl-body').value.trim()
+    };
+
+    try {
+      await this.api('/api/templates', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+      alert('Template added successfully.');
+      this.closeModal();
+      await this.loadMasterData();
+      this.renderTemplates(document.getElementById('page-content'));
+    } catch (err) {
+      alert(`Error saving template: ${err.message}`);
+    }
+  },
+
+  async openEditTemplateModal(id) {
+    const t = (this.cachedMaster.replyTemplates || []).find(item => item.id === id);
+    if (!t) return;
+
+    const root = document.getElementById('modal-root');
+    root.innerHTML = `
+      <div class="modal-overlay" onclick="if(event.target === this) App.closeModal()">
+        <div class="modal-content" style="max-width: 600px;">
+          <div class="modal-header">
+            <h3><i class="fa-solid fa-pen"></i> Edit Template: ${t.template_code}</h3>
+            <button class="modal-close" onclick="App.closeModal()">&times;</button>
+          </div>
+          <form onsubmit="App.saveEditTemplate(event, ${id})">
+            <div class="modal-body" style="padding: 20px;">
+              <div class="filter-group" style="margin-bottom: 12px;">
+                <label>Template Title *</label>
+                <input type="text" id="edit-tpl-title" class="form-control" required value="${t.title}">
+              </div>
+              <div class="filter-group" style="margin-bottom: 12px;">
+                <label>Template Body * (Supports {COMPLAINT_NO}, {DISTRICT}, {DISCOM}, {DISCOM_HANDLE})</label>
+                <textarea id="edit-tpl-body" class="form-control" rows="4" required>${t.template_body}</textarea>
+              </div>
+            </div>
+            <div class="modal-footer">
+              <button type="button" class="btn btn-secondary" onclick="App.closeModal()">Cancel</button>
+              <button type="submit" class="btn btn-primary"><i class="fa-solid fa-save"></i> Update Template</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    `;
+  },
+
+  async saveEditTemplate(e, id) {
+    e.preventDefault();
+    const payload = {
+      title: document.getElementById('edit-tpl-title').value.trim(),
+      template_body: document.getElementById('edit-tpl-body').value.trim()
+    };
+
+    try {
+      await this.api(`/api/templates/${id}`, {
+        method: 'PUT',
+        body: JSON.stringify(payload)
+      });
+      alert('Template updated successfully.');
+      this.closeModal();
+      await this.loadMasterData();
+      this.renderTemplates(document.getElementById('page-content'));
+    } catch (err) {
+      alert(`Error updating template: ${err.message}`);
+    }
+  },
+
+  // -----------------------------------------------------------
+  // SYSTEM HEALTH & 24/7 OPERATIONS MONITOR VIEW
+  // -----------------------------------------------------------
+  async renderSystemHealth(container) {
+    container.innerHTML = `
+      <div class="page-header">
+        <div class="page-title">
+          <h2>System Health & 24/7 Operations Monitor</h2>
+          <p>Real-time operational vitals, X (Twitter) API connectivity, background worker lag, and SLA queues</p>
+        </div>
+        <div class="page-actions">
+          <button class="btn btn-secondary" onclick="App.renderSystemHealth(document.getElementById('page-content'))"><i class="fa-solid fa-rotate"></i> Refresh Vitals</button>
+          <button class="btn btn-primary" onclick="App.triggerManualSync()"><i class="fa-solid fa-arrows-rotate"></i> Trigger X Ingestion Sync</button>
+        </div>
+      </div>
+
+      <div id="health-root" style="padding: 10px 0;">
+        <div style="text-align: center; padding: 40px;"><i class="fa-solid fa-spinner fa-spin fa-2x"></i> Loading operational vitals...</div>
+      </div>
+    `;
+
+    try {
+      const res = await this.api('/api/health');
+      const root = document.getElementById('health-root');
+      if (!root) return;
+
+      const isStop = res.x_integration && res.x_integration.emergency_stop;
+      const workerActive = res.worker && res.worker.status === 'running';
+
+      root.innerHTML = `
+        ${isStop ? `
+        <div class="emergency-banner">
+          <div>
+            <i class="fa-solid fa-hand fa-xl" style="margin-right: 12px;"></i>
+            <b>EMERGENCY STOP IS CURRENTLY ACTIVE:</b> All automated outbound replies to consumers on X are completely halted.
+          </div>
+          <button class="btn btn-secondary btn-sm" style="color: #ef4444; background: #fff;" onclick="App.toggleEmergencyStop(false)">Deactivate Emergency Stop</button>
+        </div>
+        ` : ''}
+
+        <div class="health-grid">
+          <!-- Card 1: X Integration Status -->
+          <div class="health-card">
+            <h4>
+              <span><i class="fa-brands fa-x-twitter"></i> Official X (Twitter) Service</span>
+              <span class="health-indicator ${res.x_integration.has_bearer_token ? 'online' : 'warning'}"></span>
+            </h4>
+            <div class="info-row"><span class="info-label">Monitored Account:</span><span class="info-value"><b>${res.x_integration.monitored_account}</b></span></div>
+            <div class="info-row"><span class="info-label">Bearer Token Configured:</span><span class="info-value">${res.x_integration.has_bearer_token ? '<span style="color:#10b981; font-weight:700;">YES (Configured)</span>' : '<span style="color:#f59e0b; font-weight:700;">Needs Config</span>'}</span></div>
+            <div class="info-row"><span class="info-label">User OAuth 1.0a / 2.0:</span><span class="info-value">${res.x_integration.has_user_oauth ? '<span style="color:#10b981; font-weight:700;">Ready for Outbound Replies</span>' : '<span style="color:#64748b;">Not Configured (Drafts Only)</span>'}</span></div>
+            <div class="info-row"><span class="info-label">Automation Mode:</span><span class="info-value"><span class="badge-status badge-Forwarded">Mode ${res.x_integration.automation_mode}</span></span></div>
+            <div class="info-row"><span class="info-label">Last Polled At:</span><span class="info-value">${res.x_integration.last_poll_at || 'Never'}</span></div>
+            <div class="info-row"><span class="info-label">Ingested X Posts:</span><span class="info-value"><b>${res.x_integration.incoming_posts_count}</b></span></div>
+            <div class="info-row"><span class="info-label">Published X Replies:</span><span class="info-value"><b>${res.x_integration.outgoing_replies_count}</b></span></div>
+          </div>
+
+          <!-- Card 2: Background Worker Daemon -->
+          <div class="health-card">
+            <h4>
+              <span><i class="fa-solid fa-server"></i> 24/7 Background Worker</span>
+              <span class="health-indicator ${workerActive ? 'online' : 'offline'}"></span>
+            </h4>
+            <div class="info-row"><span class="info-label">Worker Status:</span><span class="info-value"><b style="color: ${workerActive ? '#10b981' : '#ef4444'};">${res.worker.status.toUpperCase()}</b></span></div>
+            <div class="info-row"><span class="info-label">Daemon Name:</span><span class="info-value">${res.worker.service}</span></div>
+            <div class="info-row"><span class="info-label">Last Heartbeat:</span><span class="info-value">${res.worker.last_heartbeat || 'No heartbeat detected'}</span></div>
+            <div class="info-row"><span class="info-label">Heartbeat Lag:</span><span class="info-value">${res.worker.lag_seconds !== null ? `${res.worker.lag_seconds}s ago` : 'N/A'}</span></div>
+            <div class="info-row"><span class="info-label">Process Uptime:</span><span class="info-value">${Math.round(res.uptime_seconds / 60)} minutes</span></div>
+          </div>
+
+          <!-- Card 3: Queues & Database -->
+          <div class="health-card">
+            <h4>
+              <span><i class="fa-solid fa-database"></i> Database & Queues</span>
+              <span class="health-indicator online"></span>
+            </h4>
+            <div class="info-row"><span class="info-label">Database Connection:</span><span class="info-value"><b style="color:#10b981;">CONNECTED (Persistent SQLite)</b></span></div>
+            <div class="info-row"><span class="info-label">Total Registered Grievances:</span><span class="info-value"><b>${res.database.total_complaints}</b></span></div>
+            <div class="info-row"><span class="info-label">Active SLA Breaches (Overdue):</span><span class="info-value"><b style="color:#ef4444;">${res.database.active_overdue}</b></span></div>
+            <div class="info-row"><span class="info-label">Draft Replies Awaiting Review:</span><span class="info-value"><b style="color:#f59e0b;">${res.database.draft_review_queue}</b></span></div>
+            <div class="info-row"><span class="info-label">Unassigned / Needs Review:</span><span class="info-value"><b style="color:#6366f1;">${res.database.unassigned_queue}</b></span></div>
+          </div>
+        </div>
+
+        <!-- Automation Controls Panel -->
+        <div class="details-card" style="margin-top: 10px;">
+          <div class="details-card-header">
+            <span><i class="fa-solid fa-sliders"></i> Master Automation Control & Safety Failsafe</span>
+          </div>
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 20px; padding: 8px 0;">
+            <div>
+              <label style="font-weight: 700; margin-bottom: 8px; display: block;">Active Automation Mode</label>
+              <div style="display: flex; flex-direction: column; gap: 8px;">
+                <label style="display: flex; gap: 8px; align-items: center; cursor: pointer;">
+                  <input type="radio" name="auto-mode" value="A" ${res.x_integration.automation_mode === 'A' ? 'checked' : ''} onchange="App.setAutomationMode('A')">
+                  <span><b>Mode A: Monitor Only</b> (Ingest posts, no auto-drafts, manual handling)</span>
+                </label>
+                <label style="display: flex; gap: 8px; align-items: center; cursor: pointer;">
+                  <input type="radio" name="auto-mode" value="B" ${res.x_integration.automation_mode === 'B' ? 'checked' : ''} onchange="App.setAutomationMode('B')">
+                  <span><b>Mode B: Draft & Review</b> (Ingest, auto-generate reply draft, human approval required)</span>
+                </label>
+                <label style="display: flex; gap: 8px; align-items: center; cursor: pointer;">
+                  <input type="radio" name="auto-mode" value="C" ${res.x_integration.automation_mode === 'C' ? 'checked' : ''} onchange="App.setAutomationMode('C')">
+                  <span><b>Mode C: Approved Workflow Automation</b> (Auto-publish verified templates when confident)</span>
+                </label>
+              </div>
+            </div>
+
+            <div style="border-left: 1px solid var(--border-color); padding-left: 20px;">
+              <label style="font-weight: 700; margin-bottom: 8px; display: block; color: #ef4444;">Emergency Kill Switch</label>
+              <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 12px;">Instantly suspends all automated and background outbound messages to X across the entire platform.</p>
+              ${isStop ? `
+                <button class="btn btn-secondary" onclick="App.toggleEmergencyStop(false)">
+                  <i class="fa-solid fa-play" style="color: #10b981;"></i> Deactivate Emergency Stop (Resume Normal Replies)
+                </button>
+              ` : `
+                <button class="btn btn-danger" onclick="App.toggleEmergencyStop(true)">
+                  <i class="fa-solid fa-ban"></i> ACTIVATE EMERGENCY STOP
+                </button>
+              `}
+            </div>
+          </div>
+        </div>
+      `;
+    } catch (e) {
+      container.innerHTML += `<div class="alert-banner alert-warning">${e.message}</div>`;
+    }
+  },
+
+  async setAutomationMode(mode) {
+    try {
+      await this.api('/api/admin/x-config', {
+        method: 'POST',
+        body: JSON.stringify({ automation_mode: mode })
+      });
+      alert(`Automation Mode updated to Mode ${mode}`);
+      this.renderSystemHealth(document.getElementById('page-content'));
+    } catch (e) {
+      alert(`Error updating mode: ${e.message}`);
+    }
+  },
+
+  async toggleEmergencyStop(active) {
+    if (active && !confirm('Are you sure you want to activate EMERGENCY STOP? All automated replies will be immediately blocked.')) return;
+    try {
+      await this.api('/api/admin/emergency-stop', {
+        method: 'POST',
+        body: JSON.stringify({ active })
+      });
+      this.renderSystemHealth(document.getElementById('page-content'));
+    } catch (e) {
+      alert(`Error toggling emergency stop: ${e.message}`);
+    }
+  },
+
+  async triggerManualSync() {
+    try {
+      const res = await this.api('/api/admin/sync-now', { method: 'POST' });
+      alert(`Sync completed! ${res.result.new_posts || 0} new posts processed.`);
+      this.renderSystemHealth(document.getElementById('page-content'));
+    } catch (e) {
+      alert(`Sync failed: ${e.message}`);
     }
   },
 

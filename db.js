@@ -308,6 +308,96 @@ function createSchema() {
       created_at TEXT NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS reply_templates (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      title TEXT NOT NULL,
+      category_name TEXT NOT NULL,
+      stage TEXT NOT NULL DEFAULT 'acknowledgement',
+      language TEXT NOT NULL DEFAULT 'en',
+      body TEXT NOT NULL,
+      variables_json TEXT,
+      version INTEGER DEFAULT 1,
+      is_active INTEGER DEFAULT 1,
+      usage_count INTEGER DEFAULT 0,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS notifications (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER,
+      complaint_id INTEGER,
+      title TEXT NOT NULL,
+      message TEXT NOT NULL,
+      type TEXT NOT NULL DEFAULT 'system',
+      link_url TEXT,
+      is_read INTEGER DEFAULT 0,
+      created_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS internal_tickets (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      ticket_no TEXT UNIQUE NOT NULL,
+      user_id INTEGER NOT NULL,
+      username TEXT NOT NULL,
+      user_role TEXT NOT NULL,
+      category TEXT NOT NULL,
+      priority TEXT NOT NULL DEFAULT 'Normal',
+      subject TEXT NOT NULL,
+      description TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'Open',
+      resolver_name TEXT,
+      resolution_notes TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS x_incoming_posts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      post_id TEXT UNIQUE NOT NULL,
+      conversation_id TEXT,
+      author_id TEXT,
+      author_username TEXT,
+      author_name TEXT,
+      post_text TEXT NOT NULL,
+      post_url TEXT,
+      created_at_x TEXT,
+      ingested_at TEXT NOT NULL,
+      matched_handle TEXT,
+      classification_category TEXT,
+      classification_district TEXT,
+      classification_discom TEXT,
+      classification_confidence REAL DEFAULT 1.0,
+      complaint_id INTEGER,
+      status TEXT NOT NULL DEFAULT 'Ingested'
+    );
+
+    CREATE TABLE IF NOT EXISTS x_outgoing_replies (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      complaint_id INTEGER NOT NULL,
+      in_reply_to_post_id TEXT NOT NULL,
+      template_id INTEGER,
+      reply_text TEXT NOT NULL,
+      automation_mode TEXT NOT NULL DEFAULT 'Draft and Review',
+      status TEXT NOT NULL DEFAULT 'Pending',
+      x_reply_id TEXT,
+      error_message TEXT,
+      retry_count INTEGER DEFAULT 0,
+      next_retry_at TEXT,
+      sent_by_user_id INTEGER,
+      sent_by_username TEXT,
+      created_at TEXT NOT NULL,
+      published_at TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS worker_heartbeats (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      worker_name TEXT NOT NULL UNIQUE,
+      last_heartbeat TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'Healthy',
+      metadata_json TEXT
+    );
+
     CREATE INDEX IF NOT EXISTS idx_comp_status ON complaints(current_status);
     CREATE INDEX IF NOT EXISTS idx_comp_discom ON complaints(discom_name);
     CREATE INDEX IF NOT EXISTS idx_comp_district ON complaints(district_name);
@@ -316,8 +406,31 @@ function createSchema() {
     CREATE INDEX IF NOT EXISTS idx_comp_post_url ON complaints(post_url);
     CREATE INDEX IF NOT EXISTS idx_timeline_comp ON complaint_timeline(complaint_id);
     CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_logs(created_at);
+    CREATE INDEX IF NOT EXISTS idx_x_post_id ON x_incoming_posts(post_id);
+    CREATE INDEX IF NOT EXISTS idx_notif_user ON notifications(user_id, is_read);
+    CREATE INDEX IF NOT EXISTS idx_ticket_status ON internal_tickets(status);
   `;
   dbInstance.run(schemaSql);
+
+  // Safe migrations for existing tables
+  tryAddColumn('users', 'assigned_districts TEXT');
+  tryAddColumn('complaints', 'original_post_id TEXT');
+  tryAddColumn('complaints', 'conversation_id TEXT');
+  tryAddColumn('complaints', 'author_id TEXT');
+  tryAddColumn('complaints', 'reply_draft TEXT');
+  tryAddColumn('complaints', 'reply_status TEXT DEFAULT "None"');
+  tryAddColumn('complaints', 'published_reply_id TEXT');
+  tryAddColumn('complaints', 'first_acknowledged_at TEXT');
+  tryAddColumn('complaints', 'assigned_at TEXT');
+  tryAddColumn('notifications', 'complaint_id INTEGER');
+}
+
+function tryAddColumn(tableName, colDef) {
+  try {
+    dbInstance.run(`ALTER TABLE ${tableName} ADD COLUMN ${colDef};`);
+  } catch (e) {
+    // Column already exists or table locked - expected on subsequent boots
+  }
 }
 
 function normalizeParams(params) {
