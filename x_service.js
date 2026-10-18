@@ -5,6 +5,7 @@
  */
 
 const https = require('https');
+const crypto = require('crypto');
 const db = require('./db');
 const { Classifier } = require('./classifier');
 
@@ -18,11 +19,16 @@ class XService {
       return (row && row.value !== undefined) ? row.value : def;
     };
 
-    const apiKey = process.env.X_API_KEY || getSetting('x_api_key', '');
-    const apiSecret = process.env.X_API_SECRET || getSetting('x_api_secret', '');
-    const bearerToken = process.env.X_BEARER_TOKEN || getSetting('x_bearer_token', '');
-    const accessToken = process.env.X_ACCESS_TOKEN || getSetting('x_access_token', '');
-    const accessSecret = process.env.X_ACCESS_TOKEN_SECRET || getSetting('x_access_token_secret', '');
+    const cleanStr = (val) => {
+      if (!val || typeof val !== 'string') return '';
+      return val.trim().replace(/^["']|["']$/g, '');
+    };
+
+    const apiKey = cleanStr(process.env.X_API_KEY || getSetting('x_api_key', ''));
+    const apiSecret = cleanStr(process.env.X_API_SECRET || getSetting('x_api_secret', ''));
+    const bearerToken = cleanStr(process.env.X_BEARER_TOKEN || getSetting('x_bearer_token', ''));
+    const accessToken = cleanStr(process.env.X_ACCESS_TOKEN || getSetting('x_access_token', ''));
+    const accessSecret = cleanStr(process.env.X_ACCESS_TOKEN_SECRET || getSetting('x_access_token_secret', ''));
 
     const accountHandle = getSetting('x_account_handle', '@UPPCLLKO');
     const accountId = getSetting('x_account_id', '108658826');
@@ -48,7 +54,7 @@ class XService {
       lastSyncStatus,
       sinceId,
       hasBearerToken: Boolean(bearerToken && bearerToken.length > 20),
-      hasOAuthCredentials: Boolean(apiKey && accessToken)
+      hasOAuthCredentials: Boolean(apiKey && apiSecret && accessToken && accessSecret)
     };
   }
 
@@ -198,64 +204,141 @@ class XService {
   }
 
   /**
-   * Verify X API connection by calling official /2/users/by/username/:username
+   * RFC 5849 OAuth 1.0a Authorization Header Generator (HMAC-SHA1)
+   */
+  static generateOAuth1Header(method, url, apiKey, apiSecret, accessToken, accessSecret, extraParams = {}) {
+    const oauthParams = {
+      oauth_consumer_key: apiKey,
+      oauth_nonce: crypto.randomBytes(16).toString('hex'),
+      oauth_signature_method: 'HMAC-SHA1',
+      oauth_timestamp: Math.floor(Date.now() / 1000).toString(),
+      oauth_token: accessToken,
+      oauth_version: '1.0',
+      ...extraParams
+    };
+
+    const percentEncode = (str) => {
+      return encodeURIComponent(String(str)).replace(/[!'()*]/g, c => '%' + c.charCodeAt(0).toString(16).toUpperCase());
+    };
+
+    const sortedKeys = Object.keys(oauthParams).sort();
+    const paramString = sortedKeys
+      .map(k => `${percentEncode(k)}=${percentEncode(oauthParams[k])}`)
+      .join('&');
+
+    const baseString = [
+      method.toUpperCase(),
+      percentEncode(url),
+      percentEncode(paramString)
+    ].join('&');
+
+    const signingKey = `${percentEncode(apiSecret)}&${percentEncode(accessSecret)}`;
+    const signature = crypto.createHmac('sha1', signingKey).update(baseString).digest('base64');
+    oauthParams.oauth_signature = signature;
+
+    return 'OAuth ' + Object.keys(oauthParams)
+      .filter(k => k.startsWith('oauth_'))
+      .sort()
+      .map(k => `${percentEncode(k)}="${percentEncode(oauthParams[k])}"`)
+      .join(', ');
+  }
+
+  /**
+   * Verify X API connection
+   * Supports OAuth 1.0a User Context (works on Free, Basic, Pro) and Bearer Token
    */
   static async verifyConnection() {
     const cfg = this.getConfig();
-    if (!cfg.hasBearerToken) {
+    if (!cfg.hasBearerToken && !cfg.hasOAuthCredentials) {
       return {
         success: false,
         status: 'Needs Configuration',
-        message: 'X Bearer Token is not configured. Please add X_BEARER_TOKEN in settings or .env'
+        message: 'No X credentials found. Please set X_BEARER_TOKEN or OAuth keys in Render environment variables.'
       };
     }
 
-    try {
-      const username = cfg.accountHandle.replace(/^@/, '');
-      const options = {
-        hostname: 'api.twitter.com',
-        path: `/2/users/by/username/${encodeURIComponent(username)}?user.fields=name,username,verified,public_metrics`,
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${cfg.bearerToken}`,
-          'User-Agent': 'UPPCL-Grievance-Command-Centre/1.0'
-        }
-      };
+    // 1. First attempt: Verify via OAuth 1.0a User Context against /2/users/me (official user verification)
+    if (cfg.hasOAuthCredentials) {
+      try {
+        const url = 'https://api.twitter.com/2/users/me';
+        const authHeader = this.generateOAuth1Header('GET', url, cfg.apiKey, cfg.apiSecret, cfg.accessToken, cfg.accessSecret);
+        const options = {
+          hostname: 'api.twitter.com',
+          path: '/2/users/me?user.fields=name,username,verified',
+          method: 'GET',
+          headers: {
+            'Authorization': authHeader,
+            'User-Agent': 'UPPCL-Grievance-Command-Centre/1.0'
+          }
+        };
 
-      const resp = await this.makeRequest(options);
-      if (resp.statusCode === 200 && resp.data && resp.data.data) {
-        db.run(`UPDATE system_settings SET value = 'Connected' WHERE key = 'x_connection_status';`);
-        db.run(`UPDATE system_settings SET value = ? WHERE key = 'x_account_id';`, [resp.data.data.id]);
-        db.flush();
-        return {
-          success: true,
-          status: 'Connected',
-          account: resp.data.data,
-          message: `Successfully connected and verified official X account @${resp.data.data.username}`
+        const resp = await this.makeRequest(options);
+        if (resp.statusCode === 200 && resp.data && resp.data.data) {
+          const user = resp.data.data;
+          db.run(`UPDATE system_settings SET value = 'Connected' WHERE key = 'x_connection_status';`);
+          db.run(`UPDATE system_settings SET value = ? WHERE key = 'x_account_id';`, [user.id]);
+          db.flush();
+          return {
+            success: true,
+            status: 'Connected',
+            user: user,
+            message: `Verified successfully via OAuth 1.0a! Connected to @${user.username} (${user.name})`
+          };
+        }
+      } catch (oauthErr) {
+        console.warn('OAuth1 verification attempt error:', oauthErr.message);
+      }
+    }
+
+    // 2. Second attempt: Verify via App-Only Bearer Token against /2/users/by/username/:username
+    if (cfg.hasBearerToken) {
+      try {
+        const username = cfg.accountHandle.replace(/^@/, '');
+        const options = {
+          hostname: 'api.twitter.com',
+          path: `/2/users/by/username/${encodeURIComponent(username)}?user.fields=name,username,verified`,
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${cfg.bearerToken}`,
+            'User-Agent': 'UPPCL-Grievance-Command-Centre/1.0'
+          }
         };
-      } else if (resp.statusCode === 429) {
-        db.run(`UPDATE system_settings SET value = 'Degraded' WHERE key = 'x_connection_status';`);
-        return {
-          success: false,
-          status: 'Degraded',
-          message: 'X API rate limit reached. System is operating in backoff mode.'
-        };
-      } else {
-        db.run(`UPDATE system_settings SET value = 'Error' WHERE key = 'x_connection_status';`);
+
+        const resp = await this.makeRequest(options);
+        if (resp.statusCode === 200 && resp.data && resp.data.data) {
+          const user = resp.data.data;
+          db.run(`UPDATE system_settings SET value = 'Connected' WHERE key = 'x_connection_status';`);
+          db.run(`UPDATE system_settings SET value = ? WHERE key = 'x_account_id';`, [user.id]);
+          db.flush();
+          return {
+            success: true,
+            status: 'Connected',
+            user: user,
+            message: `Verified successfully via Bearer Token! Connected to @${user.username} (${user.name})`
+          };
+        } else {
+          const detail = resp.data && (resp.data.detail || resp.data.title || resp.data.message || (resp.data.errors && resp.data.errors[0] && resp.data.errors[0].message));
+          return {
+            success: false,
+            status: 'Error',
+            message: detail || `HTTP ${resp.statusCode}: Unauthorized`,
+            hint: 'If on X API Free Tier, reading user profiles requires regenerating your Bearer Token in Developer Portal or verifying your API Key/Secret.'
+          };
+        }
+      } catch (err) {
         return {
           success: false,
           status: 'Error',
-          message: resp.data.detail || `X API authentication failed with HTTP ${resp.statusCode}`
+          message: `Network error connecting to X API: ${err.message}`
         };
       }
-    } catch (err) {
-      db.run(`UPDATE system_settings SET value = 'Error' WHERE key = 'x_connection_status';`);
-      return {
-        success: false,
-        status: 'Error',
-        message: `Network error connecting to X API: ${err.message}`
-      };
     }
+
+    return {
+      success: false,
+      status: 'Error',
+      message: 'Authentication failed. Please verify that your keys in Developer Portal have not been regenerated.'
+    };
   }
 
   /**
@@ -590,12 +673,24 @@ class XService {
           }
         };
 
+        let authHeader = `Bearer ${cfg.bearerToken || cfg.accessToken}`;
+        if (cfg.hasOAuthCredentials) {
+          authHeader = this.generateOAuth1Header(
+            'POST',
+            'https://api.twitter.com/2/tweets',
+            cfg.apiKey,
+            cfg.apiSecret,
+            cfg.accessToken,
+            cfg.accessSecret
+          );
+        }
+
         const options = {
           hostname: 'api.twitter.com',
           path: '/2/tweets',
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${cfg.bearerToken || cfg.accessToken}`,
+            'Authorization': authHeader,
             'Content-Type': 'application/json',
             'User-Agent': 'UPPCL-Grievance-Command-Centre/1.0'
           }
