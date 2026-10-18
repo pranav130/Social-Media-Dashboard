@@ -423,6 +423,12 @@ function createSchema() {
   tryAddColumn('complaints', 'first_acknowledged_at TEXT');
   tryAddColumn('complaints', 'assigned_at TEXT');
   tryAddColumn('notifications', 'complaint_id INTEGER');
+  tryAddColumn('reply_templates', 'template_body TEXT');
+  tryAddColumn('reply_templates', 'template_code TEXT');
+  tryAddColumn('reply_templates', 'description TEXT');
+  try {
+    dbInstance.run('UPDATE reply_templates SET template_body = body WHERE template_body IS NULL AND body IS NOT NULL;');
+  } catch (e) {}
 }
 
 function tryAddColumn(tableName, colDef) {

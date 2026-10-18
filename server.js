@@ -1756,18 +1756,20 @@ app.get('/api/templates', authMiddleware, (req, res) => {
 
 app.post('/api/templates', authMiddleware, requireRoles('Super Administrator', 'Supervisor / Management'), (req, res) => {
   const b = req.body;
-  if (!b.template_code || !b.category_name || !b.title || !b.template_body) {
-    return res.status(400).json({ error: 'Template code, category, title, and body are required' });
+  const bodyText = (b.body || b.template_body || '').trim();
+  if (!b.category_name || !b.title || !bodyText) {
+    return res.status(400).json({ error: 'Category, title, and body are required' });
   }
   const istTime = getIstTimestamp();
+  const code = (b.template_code || b.title.substring(0, 10).toUpperCase().replace(/\s+/g, '_')).trim();
   const ins = db.run(`
-    INSERT INTO reply_templates (template_code, category_name, language, title, template_body, description, is_active, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?);
+    INSERT INTO reply_templates (title, category_name, stage, language, body, template_body, template_code, description, variables_json, version, is_active, usage_count, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, '[]', 1, 1, 0, ?, ?);
   `, [
-    b.template_code.trim(), b.category_name.trim(), b.language || 'Hindi',
-    b.title.trim(), b.template_body.trim(), b.description || '', istTime, istTime
+    b.title.trim(), b.category_name.trim(), b.stage || 'acknowledgement',
+    b.language || 'Hindi', bodyText, bodyText, code, b.description || '', istTime, istTime
   ]);
-  logAudit(req, req.user, 'TEMPLATE_CREATED', 'TEMPLATE', ins.lastInsertRowid, `Created template ${b.template_code}`);
+  logAudit(req, req.user, 'TEMPLATE_CREATED', 'TEMPLATE', ins.lastInsertRowid, `Created template ${b.title}`);
   res.status(201).json({ message: 'Template created successfully' });
 });
 
@@ -1775,19 +1777,21 @@ app.put('/api/templates/:id', authMiddleware, requireRoles('Super Administrator'
   const id = parseInt(req.params.id, 10);
   const b = req.body;
   const istTime = getIstTimestamp();
+  const bodyText = b.body || b.template_body;
   db.run(`
     UPDATE reply_templates SET
       template_code = COALESCE(?, template_code),
       category_name = COALESCE(?, category_name),
       language = COALESCE(?, language),
       title = COALESCE(?, title),
+      body = COALESCE(?, body),
       template_body = COALESCE(?, template_body),
       description = COALESCE(?, description),
       is_active = COALESCE(?, is_active),
       updated_at = ?
     WHERE id = ?;
   `, [
-    b.template_code, b.category_name, b.language, b.title, b.template_body,
+    b.template_code, b.category_name, b.language, b.title, bodyText, bodyText,
     b.description, b.is_active !== undefined ? (b.is_active ? 1 : 0) : null,
     istTime, id
   ]);
@@ -1804,21 +1808,26 @@ app.delete('/api/templates/:id', authMiddleware, requireRoles('Super Administrat
 });
 
 app.post('/api/templates/preview', authMiddleware, (req, res) => {
-  const { template_id, template_body, complaint_id } = req.body;
-  let text = template_body || '';
-  if (template_id) {
-    const t = db.get('SELECT template_body FROM reply_templates WHERE id = ?;', [template_id]);
-    if (t) text = t.template_body;
-  }
-  if (!text) return res.status(400).json({ error: 'Template text or ID required' });
-
-  if (complaint_id) {
-    const c = db.get('SELECT * FROM complaints WHERE id = ?;', [complaint_id]);
-    if (c) {
-      text = XService.renderTemplate(text, c);
+  try {
+    const { template_id, template_body, body, complaint_id } = req.body;
+    let text = template_body || body || '';
+    if (template_id) {
+      const t = db.get('SELECT body, template_body FROM reply_templates WHERE id = ?;', [template_id]);
+      if (t) text = t.body || t.template_body || '';
     }
+    if (!text) return res.status(400).json({ error: 'Template text or ID required' });
+
+    if (complaint_id) {
+      const c = db.get('SELECT * FROM complaints WHERE id = ?;', [complaint_id]);
+      if (c) {
+        text = XService.renderTemplate(text, c);
+      }
+    }
+    res.json({ rendered_text: text });
+  } catch (err) {
+    console.error('Template preview error:', err);
+    res.status(500).json({ error: err.message });
   }
-  res.json({ rendered_text: text });
 });
 
 // -------------------------------------------------------------
