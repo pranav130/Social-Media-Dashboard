@@ -323,6 +323,16 @@ function createSchema() {
       updated_at TEXT NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS forwarding_templates (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      title TEXT NOT NULL,
+      category_name TEXT,
+      template_text TEXT NOT NULL,
+      priority TEXT DEFAULT 'Normal',
+      is_active INTEGER DEFAULT 1,
+      created_at TEXT NOT NULL
+    );
+
     CREATE TABLE IF NOT EXISTS notifications (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       user_id INTEGER,
@@ -433,6 +443,71 @@ function createSchema() {
     // Purge any accidental complaints authored by official hierarchy handles
     dbInstance.run(`DELETE FROM complaints WHERE consumer_handle IS NOT NULL AND REPLACE(LOWER(consumer_handle), '@', '') IN (SELECT REPLACE(LOWER(handle_name), '@', '') FROM x_hierarchy WHERE handle_name IS NOT NULL AND handle_name != '');`);
   } catch (e) {}
+
+  try {
+    const fwdRows = dbInstance.exec('SELECT COUNT(*) FROM forwarding_templates;')[0]?.values[0][0] || 0;
+    if (fwdRows === 0) {
+      const defaultFwdTemplates = [
+        {
+          title: 'Power Outage & Feeder Breakdown (विद्युत आपूर्ति बहाली)',
+          category_name: 'Power Supply Failure',
+          priority: 'Critical',
+          template_text: 'Urgent: Consumer reports prolonged power outage / feeder tripping in this area. Kindly depute line staff to inspect substation/feeder and ensure prompt restoration of electricity supply within SLA.'
+        },
+        {
+          title: 'Transformer Burnt / Replacement (ट्रांसफार्मर खराबी / प्रतिस्थापन)',
+          category_name: 'Transformer Issues',
+          priority: 'Critical',
+          template_text: 'Priority Action: Damaged / burnt distribution transformer or oil leakage reported at site. Depute junior engineer immediately for spot assessment and execute replacement/repair on war footing.'
+        },
+        {
+          title: 'Voltage Fluctuation & Phase Fault (लो वोल्टेज / फेज दोष)',
+          category_name: 'Voltage Issues',
+          priority: 'High',
+          template_text: 'Field Action Required: Consumer reported abnormal low voltage / single-phasing causing disruption to appliances. Please check distribution transformer tapping, feeder load balance, and rectify neutral issues.'
+        },
+        {
+          title: 'Public Safety Hazard & Broken Wire (खतरनाक तार / सुरक्षा आपातकाल)',
+          category_name: 'Safety & Accidents',
+          priority: 'Critical',
+          template_text: 'Safety Emergency: Dangerous broken/snapped live conductor or pole sparking reported posing severe public danger. Isolate affected section immediately and deploy emergency breakdown gang for rectification.'
+        },
+        {
+          title: 'Billing Grievance & Meter Check (बिलिंग विवाद / मीटर जांच)',
+          category_name: 'Billing Issues',
+          priority: 'Normal',
+          template_text: 'Meter & Billing Inspection: Consumer disputing excessive bill / stopped meter / reading mismatch. Please arrange prompt site verification by sub-divisional staff, check MRI data if required, and rectify bill.'
+        },
+        {
+          title: 'New Connection Release Delay (नया संयोजन / मीटर निर्गमन)',
+          category_name: 'New Connection',
+          priority: 'Normal',
+          template_text: 'Expedite Service Release: Consumer grievance regarding delay in meter installation / release of new service line under Jhatpat portal. Check application status and release connection promptly.'
+        },
+        {
+          title: 'Overhead Line Clearance & Tree Trimming (लाइन रखरखाव)',
+          category_name: 'Infrastructure / Line Maintenance',
+          priority: 'Normal',
+          template_text: 'Maintenance Required: Overhead line defect / loose conductor / tree branches touching live lines causing intermittent tripping. Please schedule necessary shutdown and execute maintenance.'
+        },
+        {
+          title: 'Site Inspection & Action Taken Report (सामान्य स्थल निरीक्षण एवं आख्या)',
+          category_name: 'General Grievance',
+          priority: 'Normal',
+          template_text: 'Forwarded for spot inspection and necessary grievance redressal. Please communicate the Action Taken Report (ATR) along with site photos to UPPCL Social Media Cell.'
+        }
+      ];
+
+      for (const t of defaultFwdTemplates) {
+        dbInstance.run(
+          'INSERT INTO forwarding_templates (title, category_name, template_text, priority, is_active, created_at) VALUES (?, ?, ?, ?, 1, datetime("now"));',
+          [t.title, t.category_name, t.template_text, t.priority]
+        );
+      }
+    }
+  } catch (e) {
+    console.warn('Error seeding forwarding_templates:', e.message);
+  }
 }
 
 function tryAddColumn(tableName, colDef) {

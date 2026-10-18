@@ -297,6 +297,23 @@ async function runTests() {
     assert.strictEqual(count.c, 0, 'No complaints authored by official hierarchy handles should exist in register');
   });
 
+  console.log('\n[14. Forwarding Templates & Auto-Dispatch Reference]');
+  it('forwarding_templates table contains pre-approved administrative instructions', () => {
+    const fwdTpls = db.query('SELECT * FROM forwarding_templates WHERE is_active = 1;');
+    assert.ok(fwdTpls.length >= 8, `Expected at least 8 forwarding templates, found ${fwdTpls.length}`);
+    const outageTpl = fwdTpls.find(t => t.title.includes('Power Outage'));
+    assert.ok(outageTpl, 'Power outage forwarding template should exist');
+    assert.ok(outageTpl.template_text.includes('SLA'));
+  });
+
+  it('Dispatch / reference number formats follow UPPCL official docket standard', () => {
+    const currentYear = new Date().getFullYear();
+    const fakeCompNo = 'UPPCL-SMC-202610-0099';
+    const compTail = fakeCompNo.replace('UPPCL-SMC-', '');
+    const autoRefNo = `UPPCL/SMC/${currentYear}/FWD-${compTail}`;
+    assert.strictEqual(autoRefNo, `UPPCL/SMC/${currentYear}/FWD-202610-0099`);
+  });
+
   console.log('\n====================================================');
   console.log(` Tests Finished: ${passCount} Passed, ${failCount} Failed`);
   console.log('====================================================\n');

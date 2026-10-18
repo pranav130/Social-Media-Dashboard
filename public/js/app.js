@@ -29,7 +29,57 @@ const App = {
     discoms: [],
     xHierarchy: [],
     nodalOfficers: [],
-    replyTemplates: []
+    replyTemplates: [],
+    forwardingTemplates: [
+      {
+        id: 1,
+        title: 'Power Outage & Feeder Breakdown (विद्युत आपूर्ति बहाली)',
+        category_name: 'Power Supply Failure',
+        template_text: 'Urgent: Consumer reports prolonged power outage / feeder tripping in this area. Kindly depute line staff to inspect substation/feeder and ensure prompt restoration of electricity supply within SLA.'
+      },
+      {
+        id: 2,
+        title: 'Transformer Burnt / Replacement (ट्रांसफार्मर खराबी / प्रतिस्थापन)',
+        category_name: 'Transformer Issues',
+        template_text: 'Priority Action: Damaged / burnt distribution transformer or oil leakage reported at site. Depute junior engineer immediately for spot assessment and execute replacement/repair on war footing.'
+      },
+      {
+        id: 3,
+        title: 'Voltage Fluctuation & Phase Fault (लो वोल्टेज / फेज दोष)',
+        category_name: 'Voltage Issues',
+        template_text: 'Field Action Required: Consumer reported abnormal low voltage / single-phasing causing disruption to appliances. Please check distribution transformer tapping, feeder load balance, and rectify neutral issues.'
+      },
+      {
+        id: 4,
+        title: 'Public Safety Hazard & Broken Wire (खतरनाक तार / सुरक्षा आपातकाल)',
+        category_name: 'Safety & Accidents',
+        template_text: 'Safety Emergency: Dangerous broken/snapped live conductor or pole sparking reported posing severe public danger. Isolate affected section immediately and deploy emergency breakdown gang for rectification.'
+      },
+      {
+        id: 5,
+        title: 'Billing Grievance & Meter Check (बिलिंग विवाद / मीटर जांच)',
+        category_name: 'Billing Issues',
+        template_text: 'Meter & Billing Inspection: Consumer disputing excessive bill / stopped meter / reading mismatch. Please arrange prompt site verification by sub-divisional staff, check MRI data if required, and rectify bill.'
+      },
+      {
+        id: 6,
+        title: 'New Connection Release Delay (नया संयोजन / मीटर निर्गमन)',
+        category_name: 'New Connection',
+        template_text: 'Expedite Service Release: Consumer grievance regarding delay in meter installation / release of new service line under Jhatpat portal. Check application status and release connection promptly.'
+      },
+      {
+        id: 7,
+        title: 'Overhead Line Maintenance & Clearance (लाइन रखरखाव)',
+        category_name: 'Infrastructure / Line Maintenance',
+        template_text: 'Maintenance Required: Overhead line defect / loose conductor / tree branches touching live lines causing intermittent tripping. Please schedule necessary shutdown and execute maintenance.'
+      },
+      {
+        id: 8,
+        title: 'Site Inspection & Action Taken Report (सामान्य स्थल निरीक्षण एवं आख्या)',
+        category_name: 'General Grievance',
+        template_text: 'Forwarded for spot inspection and necessary grievance redressal. Please communicate the Action Taken Report (ATR) along with site photos to UPPCL Social Media Cell.'
+      }
+    ]
   },
 
   init() {
@@ -169,18 +219,22 @@ const App = {
 
   async loadMasterData() {
     try {
-      const [cats, discs, xh, nodals, tpls] = await Promise.all([
+      const [cats, discs, xh, nodals, tpls, fwdTpls] = await Promise.all([
         this.api('/api/master/categories'),
         this.api('/api/master/discoms'),
         this.api('/api/master/x-hierarchy'),
         this.api('/api/master/nodal-officers'),
-        this.api('/api/templates').catch(() => ({ data: [] }))
+        this.api('/api/templates').catch(() => ({ data: [] })),
+        this.api('/api/master/forwarding-templates').catch(() => ({ data: [] }))
       ]);
       this.cachedMaster.categories = cats.data || [];
       this.cachedMaster.discoms = discs.data || [];
       this.cachedMaster.xHierarchy = xh.data || [];
       this.cachedMaster.nodalOfficers = nodals.data || [];
       this.cachedMaster.replyTemplates = (tpls && tpls.data) || [];
+      if (fwdTpls && fwdTpls.data && fwdTpls.data.length > 0) {
+        this.cachedMaster.forwardingTemplates = fwdTpls.data;
+      }
     } catch (e) {
       console.warn('Error loading master data:', e.message);
     }
@@ -1840,14 +1894,30 @@ const App = {
                   </select>
                 </div>
                 <div class="filter-group">
-                  <label>Dispatch / Reference Number</label>
-                  <input type="text" id="fwd-ref-no" class="form-control" placeholder="e.g. SMC/2026/FWD/123">
+                  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                    <label style="margin-bottom: 0;">Dispatch / Reference Number</label>
+                    <span style="font-size: 10px; color: var(--primary); font-weight: 700;"><i class="fa-solid fa-wand-magic-sparkles"></i> Auto-Generated</span>
+                  </div>
+                  <input type="text" id="fwd-ref-no" class="form-control" style="font-weight: 600; background-color: var(--bg-subtle);" placeholder="Auto-generating dispatch number...">
+                  <div style="font-size: 10px; color: var(--text-muted); margin-top: 3px;">Unique official docket number for future tracking & e-Office citations.</div>
                 </div>
               </div>
 
-              <div class="filter-group">
-                <label>Action Instructions / Remarks *</label>
-                <textarea id="fwd-remarks" class="form-control" rows="3" required placeholder="Detailed instructions for field inspection and resolution..."></textarea>
+              <div class="filter-group" style="margin-bottom: 14px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; flex-wrap: wrap; gap: 6px;">
+                  <label style="margin-bottom: 0;">Action Instructions / Remarks *</label>
+                  <div style="display: flex; align-items: center; gap: 6px;">
+                    <span style="font-size: 11px; font-weight: 600; color: var(--primary);"><i class="fa-solid fa-file-invoice"></i> Forwarding Template:</span>
+                    <select id="fwd-template-select" class="form-control" style="font-size: 12px; padding: 3px 8px; width: auto; max-width: 290px; height: 30px;" onchange="App.handleFwdTemplateSelect(this.value)">
+                      <option value="">-- Choose Forwarding Template --</option>
+                      ${(this.cachedMaster.forwardingTemplates || []).map(t => `<option value="${t.id}">${t.title}</option>`).join('')}
+                    </select>
+                  </div>
+                </div>
+                <textarea id="fwd-remarks" class="form-control" rows="3" required placeholder="Select a forwarding template above or enter detailed instructions for field inspection..."></textarea>
+                <div style="font-size: 11px; color: var(--text-muted); margin-top: 3px;">
+                  <i class="fa-solid fa-circle-info"></i> Pre-approved operational instructions transmitted to the field team / assigned X-handle.
+                </div>
               </div>
             </div>
             <div class="modal-footer">
@@ -1859,6 +1929,12 @@ const App = {
       </div>
     `;
 
+    // Immediately pre-fill default dispatch reference number so it is never blank
+    const curYear = new Date().getFullYear();
+    const initRefNo = `UPPCL/SMC/${curYear}/FWD-${String(id).padStart(4, '0')}`;
+    const refInpInit = document.getElementById('fwd-ref-no');
+    if (refInpInit) refInpInit.value = initRefNo;
+
     // Ensure xHierarchy is loaded in memory
     if (!this.cachedMaster.xHierarchy || this.cachedMaster.xHierarchy.length === 0) {
       try {
@@ -1867,12 +1943,20 @@ const App = {
       } catch (e) {}
     }
 
-    // Auto-prepopulate DISCOM and District from current complaint record if available
+    // Auto-prepopulate DISCOM, District, exact Reference Number, and suggested Forwarding Template
     try {
       if (id) {
         const res = await this.api(`/api/complaints/${id}`);
         const c = res.complaint;
         if (c && document.getElementById('fwd-discom')) {
+          const compNum = c.complaint_no ? c.complaint_no.replace('UPPCL-SMC-', '') : String(id).padStart(4, '0');
+          const exactRefNo = `UPPCL/SMC/${curYear}/FWD-${compNum}`;
+          const refInp = document.getElementById('fwd-ref-no');
+          if (refInp) refInp.value = exactRefNo;
+
+          // Auto-suggest forwarding template based on complaint category
+          this.autoSelectForwardingTemplate(c.category_name);
+
           const validDiscoms = ['PUVVNL', 'MVVNL', 'DVVNL', 'PVVNL', 'KESCo'];
           const matchedDiscom = validDiscoms.find(d => d.toUpperCase() === (c.discom_name || '').toUpperCase());
           if (matchedDiscom) {
@@ -1892,6 +1976,31 @@ const App = {
       }
     } catch (e) {
       console.warn('Could not auto-fill forward modal with complaint data:', e.message);
+    }
+  },
+
+  handleFwdTemplateSelect(tplId) {
+    if (!tplId) return;
+    const list = this.cachedMaster.forwardingTemplates || [];
+    const tpl = list.find(t => String(t.id) === String(tplId));
+    const remarks = document.getElementById('fwd-remarks');
+    if (tpl && remarks) {
+      remarks.value = tpl.template_text;
+      remarks.focus();
+    }
+  },
+
+  autoSelectForwardingTemplate(category) {
+    if (!category) return;
+    const list = this.cachedMaster.forwardingTemplates || [];
+    const matched = list.find(t => (t.category_name || '').toLowerCase() === category.toLowerCase());
+    const sel = document.getElementById('fwd-template-select');
+    const remarks = document.getElementById('fwd-remarks');
+    if (matched && sel) {
+      sel.value = matched.id;
+      if (remarks && !remarks.value.trim()) {
+        remarks.value = matched.template_text;
+      }
     }
   },
 

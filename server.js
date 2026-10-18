@@ -656,6 +656,12 @@ app.post('/api/complaints/:id/forward', authMiddleware, requireRoles('Super Admi
   const oldStatus = complaint.current_status;
   const newStatus = 'Forwarded';
 
+  const currentYear = new Date().getFullYear();
+  const compTail = (complaint.complaint_no || '').replace('UPPCL-SMC-', '') || String(id).padStart(4, '0');
+  const finalRefNo = (b.forwarding_ref_no && b.forwarding_ref_no.trim())
+    ? b.forwarding_ref_no.trim()
+    : `UPPCL/SMC/${currentYear}/FWD-${compTail}`;
+
   db.run(`
     UPDATE complaints SET
       discom_name = ?,
@@ -679,8 +685,8 @@ app.post('/api/complaints/:id/forward', authMiddleware, requireRoles('Super Admi
     b.assigned_nodal_officer_name,
     b.assigned_nodal_officer_mobile || '',
     fDate,
-    b.forwarding_channel || 'e-Office',
-    b.forwarding_ref_no || '',
+    b.forwarding_channel || 'Twitter / X Escalation',
+    finalRefNo,
     b.forwarding_remarks || '',
     expectedDate,
     newStatus,
@@ -694,7 +700,7 @@ app.post('/api/complaints/:id/forward', authMiddleware, requireRoles('Super Admi
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
   `, [
     id, req.user.full_name, b.assigned_nodal_officer_name, b.discom_name, b.district_name || complaint.district_name,
-    b.forwarding_channel || 'e-Office', b.forwarding_ref_no || '', b.forwarding_remarks || '', expectedDate, istTime
+    b.forwarding_channel || 'Twitter / X Escalation', finalRefNo, b.forwarding_remarks || '', expectedDate, istTime
   ]);
 
   db.run(`
@@ -1886,6 +1892,23 @@ app.post('/api/templates/preview', authMiddleware, (req, res) => {
     console.error('Template preview error:', err);
     res.status(500).json({ error: err.message });
   }
+});
+
+// -------------------------------------------------------------
+// FORWARDING INSTRUCTION TEMPLATES (DISPATCH & FIELD ACTION)
+// -------------------------------------------------------------
+
+app.get('/api/master/forwarding-templates', authMiddleware, (req, res) => {
+  const { category } = req.query;
+  let sql = 'SELECT * FROM forwarding_templates WHERE is_active = 1';
+  const params = [];
+  if (category && category !== 'All') {
+    sql += ' AND category_name = ?';
+    params.push(category);
+  }
+  sql += ' ORDER BY id ASC;';
+  const templates = db.query(sql, params);
+  res.json({ data: templates });
 });
 
 // -------------------------------------------------------------
