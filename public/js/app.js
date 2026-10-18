@@ -3170,6 +3170,17 @@ const App = {
             <div class="info-row"><span class="info-label">Last Polled At:</span><span class="info-value">${res.x_integration.last_poll_at || 'Never'}</span></div>
             <div class="info-row"><span class="info-label">Ingested X Posts:</span><span class="info-value"><b>${res.x_integration.incoming_posts_count}</b></span></div>
             <div class="info-row"><span class="info-label">Published X Replies:</span><span class="info-value"><b>${res.x_integration.outgoing_replies_count}</b></span></div>
+            <div style="margin-top: 14px; display: flex; gap: 8px; flex-wrap: wrap;">
+              <button class="btn btn-primary btn-sm" onclick="App.showXConfigModal()">
+                <i class="fa-solid fa-key"></i> Configure API Credentials
+              </button>
+              <button class="btn btn-secondary btn-sm" onclick="App.testXConnection()">
+                <i class="fa-solid fa-plug-circle-check"></i> Verify Connection
+              </button>
+              <button class="btn btn-secondary btn-sm" onclick="App.triggerManualSync()">
+                <i class="fa-solid fa-arrows-rotate"></i> Sync Mentions Now
+              </button>
+            </div>
           </div>
 
           <!-- Card 2: Background Worker Daemon -->
@@ -3277,6 +3288,139 @@ const App = {
       this.renderSystemHealth(document.getElementById('page-content'));
     } catch (e) {
       alert(`Sync failed: ${e.message}`);
+    }
+  },
+
+  async testXConnection() {
+    try {
+      const res = await this.api('/api/admin/x-verify', { method: 'POST' });
+      if (res.data && res.data.success) {
+        const u = res.data.user || {};
+        alert(`Verification Success!\n\nConnected to: @${u.username || 'UPPCLLKO'} (${u.name || 'UPPCL'})\nAccount ID: ${u.id || 'N/A'}\nStatus: Active and Authorized`);
+      } else {
+        alert(`Verification Result:\nStatus: ${res.data ? res.data.status : 'Failed'}\nMessage: ${res.data ? res.data.message : 'Unknown error'}`);
+      }
+      this.renderSystemHealth(document.getElementById('page-content'));
+    } catch (e) {
+      alert(`Verification Request Failed: ${e.message}`);
+    }
+  },
+
+  showXConfigModal() {
+    let modal = document.getElementById('x-config-modal');
+    if (!modal) {
+      modal = document.createElement('div');
+      modal.id = 'x-config-modal';
+      modal.className = 'modal-overlay';
+      document.body.appendChild(modal);
+    }
+
+    modal.innerHTML = `
+      <div class="modal-box" style="max-width: 620px;">
+        <div class="modal-header">
+          <h3><i class="fa-brands fa-x-twitter"></i> Official X (Twitter) API Configuration</h3>
+          <button class="btn-close" onclick="document.getElementById('x-config-modal').style.display='none'">&times;</button>
+        </div>
+        <div class="modal-body" style="max-height: 75vh; overflow-y: auto;">
+          <div class="alert-banner alert-info" style="margin-bottom: 16px; font-size: 13px;">
+            <b>Instructions:</b> Credentials can be set here in the database or passed as cloud environment variables on Render (<code>X_BEARER_TOKEN</code>, <code>X_API_KEY</code>, <code>X_API_SECRET</code>, <code>X_ACCESS_TOKEN</code>, <code>X_ACCESS_TOKEN_SECRET</code>).
+          </div>
+
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+            <div class="form-group">
+              <label><b>Monitored X Handle</b></label>
+              <input type="text" id="x-cfg-handle" class="form-control" value="@UPPCLLKO" placeholder="@UPPCLLKO">
+            </div>
+            <div class="form-group">
+              <label><b>Account ID</b></label>
+              <input type="text" id="x-cfg-id" class="form-control" value="108658826" placeholder="108658826">
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label><b>Polling Interval (seconds)</b></label>
+            <input type="number" id="x-cfg-interval" class="form-control" value="60" min="15">
+            <small style="color:var(--text-muted); font-size: 11px;">Default is 60s to comply with X API Free/Basic rate limits.</small>
+          </div>
+
+          <hr style="margin: 16px 0; border: none; border-top: 1px solid var(--border-color);">
+
+          <div class="form-group">
+            <label><b>X Bearer Token (v2 App-Only)</b> <span style="color:#ef4444;">* Mandatory for reading mentions</span></label>
+            <input type="password" id="x-cfg-bearer" class="form-control" placeholder="AAAAAAAAAAAAAAAAAAAAA... (Bearer Token)">
+            <small style="color:var(--text-muted); font-size: 11px;">Developer Portal &gt; Project &gt; Keys and Tokens &gt; Bearer Token</small>
+          </div>
+
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+            <div class="form-group">
+              <label><b>API Key (Consumer Key)</b></label>
+              <input type="password" id="x-cfg-apikey" class="form-control" placeholder="API Key">
+            </div>
+            <div class="form-group">
+              <label><b>API Key Secret</b></label>
+              <input type="password" id="x-cfg-apisecret" class="form-control" placeholder="API Secret">
+            </div>
+          </div>
+
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+            <div class="form-group">
+              <label><b>Access Token (User Context)</b> <span style="color:#6366f1;">* For dispatching replies</span></label>
+              <input type="password" id="x-cfg-accesstoken" class="form-control" placeholder="OAuth 1.0a User Token">
+            </div>
+            <div class="form-group">
+              <label><b>Access Token Secret</b></label>
+              <input type="password" id="x-cfg-accesssecret" class="form-control" placeholder="OAuth 1.0a User Secret">
+            </div>
+          </div>
+          <small style="color:var(--text-muted); font-size: 11px;">Developer Portal &gt; Project &gt; User authentication settings &gt; Set App permissions to <b>Read and write</b> before generating user tokens.</small>
+        </div>
+        <div class="modal-footer" style="display:flex; justify-content:space-between;">
+          <button class="btn btn-secondary" onclick="App.testXConnection()">
+            <i class="fa-solid fa-plug-circle-check"></i> Test Connection
+          </button>
+          <div>
+            <button class="btn btn-secondary" onclick="document.getElementById('x-config-modal').style.display='none'">Cancel</button>
+            <button class="btn btn-primary" onclick="App.saveXConfig()">
+              <i class="fa-solid fa-floppy-disk"></i> Save Configuration
+            </button>
+          </div>
+        </div>
+      </div>
+    `;
+    modal.style.display = 'flex';
+  },
+
+  async saveXConfig() {
+    const handle = document.getElementById('x-cfg-handle').value.trim();
+    const id = document.getElementById('x-cfg-id').value.trim();
+    const interval = parseInt(document.getElementById('x-cfg-interval').value.trim(), 10) || 60;
+    const bearer = document.getElementById('x-cfg-bearer').value.trim();
+    const apiKey = document.getElementById('x-cfg-apikey').value.trim();
+    const apiSecret = document.getElementById('x-cfg-apisecret').value.trim();
+    const accessToken = document.getElementById('x-cfg-accesstoken').value.trim();
+    const accessSecret = document.getElementById('x-cfg-accesssecret').value.trim();
+
+    const payload = {
+      x_account_handle: handle,
+      x_account_id: id,
+      ingestion_interval_seconds: interval
+    };
+    if (bearer) payload.x_bearer_token = bearer;
+    if (apiKey) payload.x_api_key = apiKey;
+    if (apiSecret) payload.x_api_secret = apiSecret;
+    if (accessToken) payload.x_access_token = accessToken;
+    if (accessSecret) payload.x_access_token_secret = accessSecret;
+
+    try {
+      await this.api('/api/admin/x-config', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+      alert('Official X API credentials and configuration saved successfully!');
+      document.getElementById('x-config-modal').style.display = 'none';
+      this.renderSystemHealth(document.getElementById('page-content'));
+    } catch (e) {
+      alert(`Failed to save configuration: ${e.message}`);
     }
   },
 

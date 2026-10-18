@@ -1945,18 +1945,27 @@ app.post('/api/admin/x-config', authMiddleware, requireRoles('Super Administrato
   const b = req.body;
   const istTime = getIstTimestamp();
 
+  function setSetting(k, v) {
+    if (v === undefined || v === null) return;
+    const existing = db.get("SELECT id FROM system_settings WHERE key = ?;", [k]);
+    if (existing) {
+      db.run("UPDATE system_settings SET value = ?, updated_at = ? WHERE key = ?;", [String(v), istTime, k]);
+    } else {
+      db.run("INSERT INTO system_settings (key, value, description, updated_at) VALUES (?, ?, ?, ?);", [k, String(v), 'X API Credential', istTime]);
+    }
+  }
+
   if (b.automation_mode && ['A', 'B', 'C'].includes(b.automation_mode)) {
-    db.run("UPDATE system_settings SET value = ?, updated_at = ? WHERE key = 'automation_mode';", [b.automation_mode, istTime]);
+    setSetting('automation_mode', b.automation_mode);
   }
-  if (b.x_account_handle) {
-    db.run("UPDATE system_settings SET value = ?, updated_at = ? WHERE key = 'x_account_handle';", [b.x_account_handle.trim(), istTime]);
-  }
-  if (b.x_account_id) {
-    db.run("UPDATE system_settings SET value = ?, updated_at = ? WHERE key = 'x_account_id';", [b.x_account_id.trim(), istTime]);
-  }
-  if (b.ingestion_interval_seconds) {
-    db.run("UPDATE system_settings SET value = ?, updated_at = ? WHERE key = 'ingestion_interval_seconds';", [String(b.ingestion_interval_seconds), istTime]);
-  }
+  if (b.x_account_handle) setSetting('x_account_handle', b.x_account_handle.trim());
+  if (b.x_account_id) setSetting('x_account_id', b.x_account_id.trim());
+  if (b.ingestion_interval_seconds) setSetting('ingestion_interval_seconds', String(b.ingestion_interval_seconds));
+  if (b.x_bearer_token !== undefined && b.x_bearer_token !== '') setSetting('x_bearer_token', b.x_bearer_token.trim());
+  if (b.x_api_key !== undefined && b.x_api_key !== '') setSetting('x_api_key', b.x_api_key.trim());
+  if (b.x_api_secret !== undefined && b.x_api_secret !== '') setSetting('x_api_secret', b.x_api_secret.trim());
+  if (b.x_access_token !== undefined && b.x_access_token !== '') setSetting('x_access_token', b.x_access_token.trim());
+  if (b.x_access_token_secret !== undefined && b.x_access_token_secret !== '') setSetting('x_access_token_secret', b.x_access_token_secret.trim());
 
   logAudit(req, req.user, 'X_CONFIG_UPDATED', 'SETTINGS', 0, 'Updated X configuration and automation settings');
   res.json({ message: 'X configuration updated successfully', current_status: XService.getStatus() });
