@@ -1450,6 +1450,20 @@ app.put('/api/master/x-hierarchy/:id', authMiddleware, requireRoles('Super Admin
   res.json({ message: 'Hierarchy handle updated successfully' });
 });
 
+app.post('/api/master/x-hierarchy/set-all-monitored', authMiddleware, requireRoles('Super Administrator'), (req, res) => {
+  const { all } = req.body;
+  const istTime = getIstTimestamp();
+  if (all) {
+    db.run("UPDATE x_hierarchy SET is_monitored = 1, updated_at = ?;", [istTime]);
+  } else {
+    // Reset to default intake: Apex handles + DISCOM Corporate HQs
+    db.run("UPDATE x_hierarchy SET is_monitored = 0, updated_at = ?;", [istTime]);
+    db.run("UPDATE x_hierarchy SET is_monitored = 1, updated_at = ? WHERE CAST(sr_no AS INTEGER) BETWEEN 1 AND 7 OR CAST(sr_no AS INTEGER) BETWEEN 86 AND 90;", [istTime]);
+  }
+  logAudit(req, req.user, 'X_HIERARCHY_BULK_MONITOR', 'X_HIERARCHY', 0, `Updated monitored status for all handles (all=${all})`);
+  res.json({ message: 'Hierarchy monitoring updated successfully' });
+});
+
 // 2. Facebook Handles Master
 app.get('/api/master/facebook-handles', authMiddleware, (req, res) => {
   const rows = db.query('SELECT * FROM facebook_handles ORDER BY id ASC;');

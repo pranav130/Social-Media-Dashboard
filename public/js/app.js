@@ -1266,11 +1266,8 @@ const App = {
               <div class="filter-group">
                 <label>Communication Channel</label>
                 <select id="add-forward-channel" class="form-control">
-                  <option value="e-Office">e-Office</option>
-                  <option value="WhatsApp">WhatsApp</option>
-                  <option value="Email">Official Email</option>
-                  <option value="Portal">DISCOM Grievance Portal</option>
-                  <option value="Phone Call">Direct Phone Call</option>
+                  <option value="Twitter / X Escalation">Twitter / X Escalation</option>
+                  <option value="Facebook">Facebook</option>
                 </select>
               </div>
 
@@ -1758,11 +1755,8 @@ const App = {
                 <div class="filter-group">
                   <label>Communication Channel *</label>
                   <select id="fwd-channel" class="form-control" required>
-                    <option value="e-Office">e-Office</option>
-                    <option value="WhatsApp">WhatsApp</option>
-                    <option value="Official Email">Official Email</option>
-                    <option value="Portal">Grievance Portal</option>
-                    <option value="Phone Call">Phone Call</option>
+                    <option value="Twitter / X Escalation">Twitter / X Escalation</option>
+                    <option value="Facebook">Facebook</option>
                   </select>
                 </div>
                 <div class="filter-group">
@@ -1865,9 +1859,10 @@ const App = {
                 <div class="filter-group">
                   <label>Channel *</label>
                   <select id="fol-channel" class="form-control" required>
+                    <option value="Twitter / X Escalation">Twitter / X Escalation</option>
+                    <option value="Facebook">Facebook</option>
                     <option value="Phone Call">Telephone / Mobile Call</option>
                     <option value="WhatsApp">WhatsApp Message</option>
-                    <option value="Portal Reminder">Official Portal Reminder</option>
                     <option value="Email">Email</option>
                   </select>
                 </div>
