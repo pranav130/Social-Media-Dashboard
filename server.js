@@ -2333,7 +2333,7 @@ app.use((req, res) => {
 });
 
 // Start Server
-if (require.main === module) {
+if (process.env.NO_SERVER_AUTOSTART !== 'true') {
   db.initDb().then(async () => {
     // Check if database needs seeding (e.g. fresh cloud deployment)
     try {

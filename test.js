@@ -1,3 +1,4 @@
+process.env.NO_SERVER_AUTOSTART = 'true';
 const assert = require('assert');
 const bcrypt = require('bcryptjs');
 const db = require('./db');
