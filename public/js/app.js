@@ -31,52 +31,135 @@ const App = {
     nodalOfficers: [],
     replyTemplates: [],
     forwardingTemplates: [
+      // --- 1. HINDI TEMPLATES (प्राथमिकता - हिंदी निर्देश) ---
       {
         id: 1,
-        title: 'Power Outage & Feeder Breakdown (विद्युत आपूर्ति बहाली)',
+        title: 'विद्युत आपूर्ति बाधित — तत्काल बहाल करें',
         category_name: 'Power Supply Failure',
-        template_text: 'Urgent: Consumer reports prolonged power outage / feeder tripping in this area. Kindly depute line staff to inspect substation/feeder and ensure prompt restoration of electricity supply within SLA.'
+        language: 'Hindi',
+        priority: 'Critical',
+        template_text: 'अति-आवश्यक: संबंधित क्षेत्र में विद्युत आपूर्ति बाधित/ट्रिपिंग की शिकायत दर्ज है। कृपया तत्काल संबंधित उपकेंद्र/फीडर की पेट्रोलिंग कराकर आपूर्ति बहाल कराएं एवं नियत समय सीमा में निस्तारण सुनिश्चित करें।'
       },
       {
         id: 2,
-        title: 'Transformer Burnt / Replacement (ट्रांसफार्मर खराबी / प्रतिस्थापन)',
+        title: 'ट्रांसफार्मर क्षतिग्रस्त/जलना — युद्धस्तर पर प्रतिस्थापन',
         category_name: 'Transformer Issues',
-        template_text: 'Priority Action: Damaged / burnt distribution transformer or oil leakage reported at site. Depute junior engineer immediately for spot assessment and execute replacement/repair on war footing.'
+        language: 'Hindi',
+        priority: 'Critical',
+        template_text: 'प्राथमिकता निर्देश: संबंधित स्थल पर वितरण ट्रांसफार्मर के क्षतिग्रस्त/जलने अथवा तेल रिसाव की शिकायत प्राप्त हुई है। कृपया अवर अभियंता/तकनीकी टीम को स्थलीय निरीक्षण हेतु निर्देशित कर मानक समयावधि में ट्रांसफार्मर का प्रतिस्थापन/मरम्मत सुनिश्चित कराएं।'
       },
       {
         id: 3,
-        title: 'Voltage Fluctuation & Phase Fault (लो वोल्टेज / फेज दोष)',
+        title: 'लो वोल्टेज एवं फेज समस्या — स्थलीय जांच व निवारण',
         category_name: 'Voltage Issues',
-        template_text: 'Field Action Required: Consumer reported abnormal low voltage / single-phasing causing disruption to appliances. Please check distribution transformer tapping, feeder load balance, and rectify neutral issues.'
+        language: 'Hindi',
+        priority: 'High',
+        template_text: 'आवश्यक स्थलीय कार्यवाही: उपभोक्ता द्वारा अत्यधिक लो-वोल्टेज एवं सिंगल फेज आपूर्ति की शिकायत की गई है। कृपया ट्रांसफार्मर टैपिंग, लोड संतुलन एवं न्यूट्रल की तत्काल जांच कर समस्या का स्थायी समाधान कराएं।'
       },
       {
         id: 4,
-        title: 'Public Safety Hazard & Broken Wire (खतरनाक तार / सुरक्षा आपातकाल)',
+        title: 'टूटा तार / स्पार्किंग सुरक्षा आपातकाल — तत्काल दुरुस्त करें',
         category_name: 'Safety & Accidents',
-        template_text: 'Safety Emergency: Dangerous broken/snapped live conductor or pole sparking reported posing severe public danger. Isolate affected section immediately and deploy emergency breakdown gang for rectification.'
+        language: 'Hindi',
+        priority: 'Critical',
+        template_text: 'सुरक्षा आपातकाल: संबंधित स्थल पर जर्जर/टूटे तार अथवा पोल से स्पार्किंग की शिकायत प्राप्त हुई है, जिससे जनहानि का खतरा है। कृपया संबंधित लाइन को तत्काल आइसोलेट कर आपातकालीन गैंग भेजकर युद्धस्तर पर सुरक्षा कार्य पूर्ण कराएं।'
       },
       {
         id: 5,
-        title: 'Billing Grievance & Meter Check (बिलिंग विवाद / मीटर जांच)',
+        title: 'बिलिंग एवं मीटर विवाद — स्थलीय जांच व संशोधित बिल जारी करें',
         category_name: 'Billing Issues',
-        template_text: 'Meter & Billing Inspection: Consumer disputing excessive bill / stopped meter / reading mismatch. Please arrange prompt site verification by sub-divisional staff, check MRI data if required, and rectify bill.'
+        language: 'Hindi',
+        priority: 'Normal',
+        template_text: 'बिलिंग/मीटर स्थलीय सत्यापन: उपभोक्ता द्वारा अत्यधिक बिल/अस्वाभाविक मीटर रीडिंग/मीटर खराब होने की शिकायत दर्ज की गई है। कृपया उपखंडीय अधिकारी द्वारा स्थलीय जांच कराकर नियमानुसार संशोधित बिल जारी कराएं।'
       },
       {
         id: 6,
-        title: 'New Connection Release Delay (नया संयोजन / मीटर निर्गमन)',
+        title: 'नया संयोजन निर्गमन में विलंब — शीघ्र संयोजन दें',
         category_name: 'New Connection',
-        template_text: 'Expedite Service Release: Consumer grievance regarding delay in meter installation / release of new service line under Jhatpat portal. Check application status and release connection promptly.'
+        language: 'Hindi',
+        priority: 'Normal',
+        template_text: 'शीघ्र संयोजन निर्गमन: उपभोक्ता द्वारा झटपट पोर्टल के अंतर्गत नए विद्युत संयोजन/मीटर स्थापना में अनावश्यक विलंब की शिकायत की गई है। कृपया आवेदन की अद्यतन स्थिति जांचकर प्राथमिकता पर संयोजन निर्गत कराएं।'
       },
       {
         id: 7,
-        title: 'Overhead Line Maintenance & Clearance (लाइन रखरखाव)',
+        title: 'लाइन रखरखाव एवं पेड़ छंटाई — आवश्यक शटडाउन लेकर कार्य करें',
         category_name: 'Infrastructure / Line Maintenance',
-        template_text: 'Maintenance Required: Overhead line defect / loose conductor / tree branches touching live lines causing intermittent tripping. Please schedule necessary shutdown and execute maintenance.'
+        language: 'Hindi',
+        priority: 'Normal',
+        template_text: 'लाइन रखरखाव कार्यवाही: वृक्षों की डालियों के एलटी/11 केवी लाइन से स्पर्श होने के कारण बार-बार फॉल्ट/ट्रिपिंग की सूचना है। कृपया आवश्यक शटडाउन लेकर डालियों की छंटाई एवं लाइन दुरुस्तीकरण कार्य कराएं।'
       },
       {
         id: 8,
-        title: 'Site Inspection & Action Taken Report (सामान्य स्थल निरीक्षण एवं आख्या)',
+        title: 'स्थल निरीक्षण एवं आख्या (ATR) — मय फोटोग्राफ्स प्रेषित करें',
         category_name: 'General Grievance',
+        language: 'Hindi',
+        priority: 'Normal',
+        template_text: 'उक्त प्रकरण में स्थलीय निरीक्षण कर उपभोक्ता की शिकायत का त्वरित निस्तारण कराएं तथा कृत कार्यवाही की विस्तृत आख्या (ATR) मय फोटोग्राफ्स यूपीपीसीएल सोशल मीडिया सेल को प्रेषित करें।'
+      },
+
+      // --- 2. ENGLISH TEMPLATES ---
+      {
+        id: 9,
+        title: 'Power Outage & Feeder Breakdown (English)',
+        category_name: 'Power Supply Failure',
+        language: 'English',
+        priority: 'Critical',
+        template_text: 'Urgent: Consumer reports prolonged power outage / feeder tripping in this area. Kindly depute line staff to inspect substation/feeder and ensure prompt restoration of electricity supply within SLA.'
+      },
+      {
+        id: 10,
+        title: 'Transformer Burnt / Replacement (English)',
+        category_name: 'Transformer Issues',
+        language: 'English',
+        priority: 'Critical',
+        template_text: 'Priority Action: Damaged / burnt distribution transformer or oil leakage reported at site. Depute junior engineer immediately for spot assessment and execute replacement/repair on war footing.'
+      },
+      {
+        id: 11,
+        title: 'Voltage Fluctuation & Phase Fault (English)',
+        category_name: 'Voltage Issues',
+        language: 'English',
+        priority: 'High',
+        template_text: 'Field Action Required: Consumer reported abnormal low voltage / single-phasing causing disruption to appliances. Please check distribution transformer tapping, feeder load balance, and rectify neutral issues.'
+      },
+      {
+        id: 12,
+        title: 'Public Safety Hazard & Broken Wire (English)',
+        category_name: 'Safety & Accidents',
+        language: 'English',
+        priority: 'Critical',
+        template_text: 'Safety Emergency: Dangerous broken/snapped live conductor or pole sparking reported posing severe public danger. Isolate affected section immediately and deploy emergency breakdown gang for rectification.'
+      },
+      {
+        id: 13,
+        title: 'Billing Grievance & Meter Check (English)',
+        category_name: 'Billing Issues',
+        language: 'English',
+        priority: 'Normal',
+        template_text: 'Meter & Billing Inspection: Consumer disputing excessive bill / stopped meter / reading mismatch. Please arrange prompt site verification by sub-divisional staff, check MRI data if required, and rectify bill.'
+      },
+      {
+        id: 14,
+        title: 'New Connection Release Delay (English)',
+        category_name: 'New Connection',
+        language: 'English',
+        priority: 'Normal',
+        template_text: 'Expedite Service Release: Consumer grievance regarding delay in meter installation / release of new service line under Jhatpat portal. Check application status and release connection promptly.'
+      },
+      {
+        id: 15,
+        title: 'Overhead Line Clearance & Tree Trimming (English)',
+        category_name: 'Infrastructure / Line Maintenance',
+        language: 'English',
+        priority: 'Normal',
+        template_text: 'Maintenance Required: Overhead line defect / loose conductor / tree branches touching live lines causing intermittent tripping. Please schedule necessary shutdown and execute maintenance.'
+      },
+      {
+        id: 16,
+        title: 'Site Inspection & Action Taken Report (English)',
+        category_name: 'General Grievance',
+        language: 'English',
+        priority: 'Normal',
         template_text: 'Forwarded for spot inspection and necessary grievance redressal. Please communicate the Action Taken Report (ATR) along with site photos to UPPCL Social Media Cell.'
       }
     ]
@@ -1908,15 +1991,20 @@ const App = {
                   <label style="margin-bottom: 0;">Action Instructions / Remarks *</label>
                   <div style="display: flex; align-items: center; gap: 6px;">
                     <span style="font-size: 11px; font-weight: 600; color: var(--primary);"><i class="fa-solid fa-file-invoice"></i> Forwarding Template:</span>
-                    <select id="fwd-template-select" class="form-control" style="font-size: 12px; padding: 3px 8px; width: auto; max-width: 290px; height: 30px;" onchange="App.handleFwdTemplateSelect(this.value)">
-                      <option value="">-- Choose Forwarding Template --</option>
-                      ${(this.cachedMaster.forwardingTemplates || []).map(t => `<option value="${t.id}">${t.title}</option>`).join('')}
+                    <select id="fwd-template-select" class="form-control" style="font-size: 12px; padding: 3px 8px; width: auto; max-width: 320px; height: 32px;" onchange="App.handleFwdTemplateSelect(this.value)">
+                      <option value="">-- Choose Forwarding Template (प्रारूप चुनें) --</option>
+                      <optgroup label="हिंदी निर्देश (Hindi Templates — अनुशंसित)">
+                        ${(this.cachedMaster.forwardingTemplates || []).filter(t => (t.language || 'Hindi') === 'Hindi').map(t => `<option value="${t.id}">${t.title}</option>`).join('')}
+                      </optgroup>
+                      <optgroup label="English Instructions">
+                        ${(this.cachedMaster.forwardingTemplates || []).filter(t => t.language === 'English').map(t => `<option value="${t.id}">${t.title}</option>`).join('')}
+                      </optgroup>
                     </select>
                   </div>
                 </div>
                 <textarea id="fwd-remarks" class="form-control" rows="3" required placeholder="Select a forwarding template above or enter detailed instructions for field inspection..."></textarea>
                 <div style="font-size: 11px; color: var(--text-muted); margin-top: 3px;">
-                  <i class="fa-solid fa-circle-info"></i> Pre-approved operational instructions transmitted to the field team / assigned X-handle.
+                  <i class="fa-solid fa-circle-info"></i> Pre-approved operational instructions transmitted to the field team / assigned X-handle (उपलब्ध प्रारूप: हिंदी व English).
                 </div>
               </div>
             </div>
@@ -1954,7 +2042,7 @@ const App = {
           const refInp = document.getElementById('fwd-ref-no');
           if (refInp) refInp.value = exactRefNo;
 
-          // Auto-suggest forwarding template based on complaint category
+          // Auto-suggest forwarding template based on complaint category (prioritizes Hindi)
           this.autoSelectForwardingTemplate(c.category_name);
 
           const validDiscoms = ['PUVVNL', 'MVVNL', 'DVVNL', 'PVVNL', 'KESCo'];
@@ -1993,7 +2081,11 @@ const App = {
   autoSelectForwardingTemplate(category) {
     if (!category) return;
     const list = this.cachedMaster.forwardingTemplates || [];
-    const matched = list.find(t => (t.category_name || '').toLowerCase() === category.toLowerCase());
+    // Prioritize Hindi template matching the complaint category
+    let matched = list.find(t => (t.category_name || '').toLowerCase() === category.toLowerCase() && (t.language || 'Hindi') === 'Hindi');
+    if (!matched) {
+      matched = list.find(t => (t.category_name || '').toLowerCase() === category.toLowerCase());
+    }
     const sel = document.getElementById('fwd-template-select');
     const remarks = document.getElementById('fwd-remarks');
     if (matched && sel) {

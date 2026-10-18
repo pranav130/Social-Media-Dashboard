@@ -298,12 +298,21 @@ async function runTests() {
   });
 
   console.log('\n[14. Forwarding Templates & Auto-Dispatch Reference]');
-  it('forwarding_templates table contains pre-approved administrative instructions', () => {
+  it('forwarding_templates table contains pre-approved administrative instructions in Hindi and English', () => {
     const fwdTpls = db.query('SELECT * FROM forwarding_templates WHERE is_active = 1;');
-    assert.ok(fwdTpls.length >= 8, `Expected at least 8 forwarding templates, found ${fwdTpls.length}`);
-    const outageTpl = fwdTpls.find(t => t.title.includes('Power Outage'));
-    assert.ok(outageTpl, 'Power outage forwarding template should exist');
-    assert.ok(outageTpl.template_text.includes('SLA'));
+    assert.ok(fwdTpls.length >= 16, `Expected at least 16 forwarding templates, found ${fwdTpls.length}`);
+    const hindiTpls = fwdTpls.filter(t => (t.language || 'Hindi') === 'Hindi');
+    const englishTpls = fwdTpls.filter(t => t.language === 'English');
+    assert.ok(hindiTpls.length >= 8, `Expected at least 8 Hindi forwarding templates, found ${hindiTpls.length}`);
+    assert.ok(englishTpls.length >= 8, `Expected at least 8 English forwarding templates, found ${englishTpls.length}`);
+
+    const hindiOutage = hindiTpls.find(t => t.title.includes('विद्युत आपूर्ति') || t.category_name === 'Power Supply Failure');
+    assert.ok(hindiOutage, 'Hindi power outage template should exist');
+    assert.ok(hindiOutage.template_text.includes('विद्युत आपूर्ति') || hindiOutage.template_text.includes('बहाल'));
+
+    const englishOutage = englishTpls.find(t => t.title.includes('Power Outage'));
+    assert.ok(englishOutage, 'English power outage forwarding template should exist');
+    assert.ok(englishOutage.template_text.includes('SLA'));
   });
 
   it('Dispatch / reference number formats follow UPPCL official docket standard', () => {

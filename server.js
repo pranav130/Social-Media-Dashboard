@@ -1906,7 +1906,7 @@ app.get('/api/master/forwarding-templates', authMiddleware, (req, res) => {
     sql += ' AND category_name = ?';
     params.push(category);
   }
-  sql += ' ORDER BY id ASC;';
+  sql += ' ORDER BY CASE WHEN language = \'Hindi\' THEN 0 ELSE 1 END, id ASC;';
   const templates = db.query(sql, params);
   res.json({ data: templates });
 });
