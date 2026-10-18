@@ -269,6 +269,34 @@ async function runTests() {
     assert.ok(tickets[0].ticket_no.startsWith('TKT-'), 'Invalid ticket_no format');
   });
 
+  console.log('\n[13. Hierarchy Exclusion & Untagged/Mention Ingestion]');
+  it('findMentionedHierarchyHandle accurately detects tagged hierarchy handles in consumer text', () => {
+    const textWithDistrict = 'Electricity out in Bahraich please fix @mvvnlbahraich urgently';
+    const match1 = XService.findMentionedHierarchyHandle(textWithDistrict);
+    assert.ok(match1, 'Expected match for district handle');
+    assert.strictEqual(match1.handle_name.toLowerCase(), '@mvvnlbahraich');
+
+    const textWithApex = 'Power trip in Lucknow @MVVNLHQ please look into it';
+    const match2 = XService.findMentionedHierarchyHandle(textWithApex);
+    assert.ok(match2, 'Expected match for MVVNL HQ handle');
+    assert.strictEqual(match2.handle_name.toLowerCase(), '@mvvnlhq');
+
+    const untaggedText = 'Power cut in Varanasi since 4 hours no light';
+    const match3 = XService.findMentionedHierarchyHandle(untaggedText);
+    assert.strictEqual(match3, null, 'Expected null for untagged post');
+  });
+
+  it('Complaints query strictly excludes posts authored by hierarchy handles', () => {
+    const count = db.get(`
+      SELECT COUNT(*) as c FROM complaints
+      WHERE consumer_handle IS NOT NULL
+        AND REPLACE(LOWER(consumer_handle), '@', '') IN (
+          SELECT REPLACE(LOWER(handle_name), '@', '') FROM x_hierarchy WHERE handle_name IS NOT NULL AND handle_name != ''
+        );
+    `);
+    assert.strictEqual(count.c, 0, 'No complaints authored by official hierarchy handles should exist in register');
+  });
+
   console.log('\n====================================================');
   console.log(` Tests Finished: ${passCount} Passed, ${failCount} Failed`);
   console.log('====================================================\n');

@@ -359,7 +359,7 @@ class XService {
     }
 
     try {
-      const query = '(@UPPCLLKO OR @PuVVNLHQ OR @MVVNLHQ OR @dvvnlhq OR @PVVNLHQ OR @KESCoHQ) -is:retweet';
+      const query = '(@UPPCLLKO OR @PuVVNLHQ OR @MVVNLHQ OR @dvvnlhq OR @PVVNLHQ OR @KESCoHQ OR (UPPCL (बिजली OR power OR "light cut" OR outage OR transformer))) -is:retweet -from:UPPCLLKO -from:PuVVNLHQ -from:MVVNLHQ -from:dvvnlhq -from:PVVNLHQ -from:KESCoHQ';
       let path = `/2/tweets/search/recent?query=${encodeURIComponent(query)}&tweet.fields=created_at,author_id,conversation_id,in_reply_to_user_id,public_metrics,lang&expansions=author_id&user.fields=name,username,profile_image_url&max_results=50`;
       if (cfg.sinceId) {
         path += `&since_id=${encodeURIComponent(cfg.sinceId)}`;
@@ -392,7 +392,23 @@ class XService {
           }
 
           const author = userMap[t.author_id] || { username: 'consumer', name: 'Consumer' };
+          const cleanAuthor = (author.username || '').toLowerCase().replace('@', '');
+
+          // Strictly skip tweets authored by any official hierarchy handle (broadcasts/field updates)
+          const isHierarchyAuthor = db.get(`
+            SELECT id FROM x_hierarchy 
+            WHERE REPLACE(LOWER(handle_name), '@', '') = ? 
+            LIMIT 1;
+          `, [cleanAuthor]);
+
+          if (isHierarchyAuthor) {
+            continue;
+          }
+
           const postUrl = `https://x.com/${author.username}/status/${t.id}`;
+          const mentioned = this.findMentionedHierarchyHandle(t.text);
+          const matchedHandle = mentioned ? mentioned.handle_name : (t.text.toLowerCase().includes('uppcl') ? '@UPPCLLKO' : 'Untagged Monitoring');
+          const isTagged = mentioned ? 1 : 0;
 
           const res = await this.ingestPostRecord({
             postId: t.id,
@@ -403,7 +419,10 @@ class XService {
             text: t.text,
             postUrl,
             createdAtX: t.created_at || nowIst,
-            matchedHandle: '@UPPCLLKO'
+            matchedHandle,
+            isTagged,
+            hintDiscom: mentioned ? mentioned.discom_name : null,
+            hintDistrict: mentioned ? mentioned.district_name : null
           });
 
           if (res.ingested) ingestedCount++;
@@ -450,6 +469,24 @@ class XService {
   }
 
   /**
+   * Scan post text to detect if any official hierarchy handle is mentioned.
+   * Prioritizes longer/more specific field handles before corporate handles.
+   */
+  static findMentionedHierarchyHandle(text) {
+    if (!text) return null;
+    const lower = text.toLowerCase();
+    try {
+      const hierarchyRows = db.query("SELECT handle_name, discom_name, district_name FROM x_hierarchy WHERE handle_name IS NOT NULL AND handle_name != '' ORDER BY LENGTH(handle_name) DESC");
+      for (const h of hierarchyRows) {
+        if (h.handle_name && lower.includes(h.handle_name.toLowerCase())) {
+          return h;
+        }
+      }
+    } catch (e) {}
+    return null;
+  }
+
+  /**
    * Ingest a single post record with deduplication, classification, and drafting
    */
   static async ingestPostRecord(post) {
@@ -460,10 +497,25 @@ class XService {
       return { ingested: false, reason: 'Duplicate post ID or URL' };
     }
 
+    // Strictly skip posts authored by official hierarchy handles
+    const cleanAuthor = (post.authorUsername || '').toLowerCase().replace('@', '');
+    const isHierarchyAuthor = db.get(`
+      SELECT id FROM x_hierarchy 
+      WHERE REPLACE(LOWER(handle_name), '@', '') = ? 
+      LIMIT 1;
+    `, [cleanAuthor]);
+
+    if (isHierarchyAuthor) {
+      return { ingested: false, reason: 'Ignored post authored by official hierarchy handle' };
+    }
+
     const processed = Classifier.processIncomingPost({
       text: post.text,
       matched_handle: post.matchedHandle
     });
+
+    const finalDiscom = (post.hintDiscom && post.hintDiscom !== 'UPPCL HQ' && post.hintDiscom !== 'Corporate Headquarters') ? post.hintDiscom : processed.discom_name;
+    const finalDistrict = (post.hintDistrict && post.hintDistrict !== 'Corporate Headquarters' && post.hintDistrict !== 'Energy Minister Sir') ? post.hintDistrict : processed.district_name;
 
     // Generate Sequential Complaint Number: UPPCL-SMC-YYYYMM-XXXX
     const now = new Date();
@@ -493,6 +545,7 @@ class XService {
 
     // Initial Status
     const initialStatus = processed.is_unassigned ? 'New' : 'New';
+    const isTagged = post.isTagged !== undefined ? (post.isTagged ? 1 : 0) : 1;
 
     // Insert into complaints
     const compRes = db.run(`
@@ -504,7 +557,7 @@ class XService {
         original_post_id, conversation_id, author_id, reply_status,
         created_by, created_at, updated_at
       ) VALUES (
-        ?, ?, 'Twitter/X', ?, 1,
+        ?, ?, 'Twitter/X', ?, ?,
         ?, ?, ?, ?,
         ?, ?, ?, ?, ?,
         ?, ?, ?, 0,
@@ -512,9 +565,9 @@ class XService {
         'X_INGESTION_WORKER', ?, ?
       );
     `, [
-      complaintNo, nowIst, post.matchedHandle || '@UPPCLLKO',
+      complaintNo, nowIst, post.matchedHandle || '@UPPCLLKO', isTagged,
       post.authorName || 'Consumer', post.authorUsername, post.postUrl, processed.clean_text,
-      processed.category_name, processed.discom_name, processed.district_name,
+      processed.category_name, finalDiscom, finalDistrict,
       processed.consumer_account_no, processed.consumer_mobile,
       processed.priority, initialStatus, expectedResponseDate,
       post.postId, post.conversationId, post.authorId,

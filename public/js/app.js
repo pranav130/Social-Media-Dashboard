@@ -14,6 +14,7 @@ const App = {
     platform: 'All',
     category: 'All',
     priority: 'All',
+    assigned_handle: 'All',
     overdue: '0',
     from_date: '',
     to_date: '',
@@ -564,7 +565,7 @@ const App = {
       <div class="kpi-card kpi-forwarded" onclick="App.navigate('register', { status: 'Forwarded' })">
         <div class="kpi-label">Forwarded</div>
         <div class="kpi-value">${k.forwarded}</div>
-        <div class="kpi-sub">Sent to DISCOM Nodal Officer</div>
+        <div class="kpi-sub">Forwarded to DISCOM / Field X-Handle</div>
       </div>
 
       <div class="kpi-card kpi-followup" onclick="App.navigate('register', { status: 'DISCOM Follow Up' })">
@@ -879,6 +880,27 @@ const App = {
             </select>
           </div>
 
+          <div class="filter-group" style="min-width: 160px;">
+            <label>Assigned X-Handle</label>
+            <select id="reg-assigned-handle" class="form-control">
+              <option value="All">All Handles</option>
+              <option value="Unassigned" ${this.currentFilters.assigned_handle === 'Unassigned' ? 'selected' : ''}>-- Unassigned --</option>
+              <optgroup label="Corporate / Apex HQ">
+                <option value="@UPPCLLKO" ${this.currentFilters.assigned_handle === '@UPPCLLKO' ? 'selected' : ''}>@UPPCLLKO (UPPCL HQ)</option>
+                <option value="@PuVVNLHQ" ${this.currentFilters.assigned_handle === '@PuVVNLHQ' ? 'selected' : ''}>@PuVVNLHQ (PuVVNL)</option>
+                <option value="@MVVNLHQ" ${this.currentFilters.assigned_handle === '@MVVNLHQ' ? 'selected' : ''}>@MVVNLHQ (MVVNL)</option>
+                <option value="@dvvnlhq" ${this.currentFilters.assigned_handle === '@dvvnlhq' ? 'selected' : ''}>@dvvnlhq (DVVNL)</option>
+                <option value="@PVVNLHQ" ${this.currentFilters.assigned_handle === '@PVVNLHQ' ? 'selected' : ''}>@PVVNLHQ (PVVNL)</option>
+                <option value="@KESCoHQ" ${this.currentFilters.assigned_handle === '@KESCoHQ' ? 'selected' : ''}>@KESCoHQ (KESCo)</option>
+              </optgroup>
+              <optgroup label="DISCOM & District Handles">
+                ${(this.cachedMaster.xHierarchy || [])
+                  .filter(h => h.handle_name && !['@UPPCLLKO', '@PuVVNLHQ', '@MVVNLHQ', '@dvvnlhq', '@PVVNLHQ', '@KESCoHQ'].includes(h.handle_name))
+                  .map(h => `<option value="${h.handle_name}" ${this.currentFilters.assigned_handle === h.handle_name ? 'selected' : ''}>${h.handle_name} (${h.district_name || h.discom_name || h.office_name})</option>`).join('')}
+              </optgroup>
+            </select>
+          </div>
+
           <div class="filter-group" style="align-self: flex-end;">
             <button class="btn btn-primary" onclick="App.applyFilters()">
               <i class="fa-solid fa-filter"></i> Apply
@@ -905,7 +927,7 @@ const App = {
                 <th>Priority</th>
                 <th>Status</th>
                 <th>SLA / Overdue</th>
-                <th>Assigned Officer</th>
+                <th>Assigned X-Handle</th>
                 <th>Actions</th>
               </tr>
             </thead>
@@ -949,6 +971,10 @@ const App = {
     this.currentFilters.category = document.getElementById('reg-cat').value;
     this.currentFilters.priority = document.getElementById('reg-priority').value;
     this.currentFilters.platform = document.getElementById('reg-platform').value;
+    const assignedSelect = document.getElementById('reg-assigned-handle');
+    if (assignedSelect) {
+      this.currentFilters.assigned_handle = assignedSelect.value;
+    }
     this.currentFilters.page = 1;
     this.loadRegisterData();
   },
@@ -964,6 +990,7 @@ const App = {
       platform: 'All',
       category: 'All',
       priority: 'All',
+      assigned_handle: 'All',
       overdue: '0',
       from_date: '',
       to_date: '',
@@ -1251,7 +1278,7 @@ const App = {
             <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 10px;">
               <input type="checkbox" id="add-forward-now" onchange="App.toggleForwardSection(this.checked)">
               <label for="add-forward-now" style="font-weight: 700; color: var(--primary); font-size: 13px; cursor: pointer;">
-                Forward immediately to DISCOM Nodal Officer upon registration
+                Forward immediately to DISCOM / Field X-Handle upon registration
               </label>
             </div>
 
@@ -2077,8 +2104,8 @@ const App = {
             <div class="modal-body">
               <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px;">
                 <div class="filter-group">
-                  <label>Officer Contacted *</label>
-                  <input type="text" id="fol-officer" class="form-control" required placeholder="Name & designation...">
+                  <label>X-Handle / Authority Contacted *</label>
+                  <input type="text" id="fol-officer" class="form-control" required placeholder="@handle or Authority designation...">
                 </div>
                 <div class="filter-group">
                   <label>Channel *</label>
@@ -2156,8 +2183,8 @@ const App = {
                   </select>
                 </div>
                 <div class="filter-group">
-                  <label>Escalated To Officer / Authority *</label>
-                  <input type="text" id="esc-to" class="form-control" required placeholder="Designation / Name">
+                  <label>Escalated To X-Handle / Authority *</label>
+                  <input type="text" id="esc-to" class="form-control" required placeholder="@handle or Authority designation...">
                 </div>
               </div>
 

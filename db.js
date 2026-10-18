@@ -429,6 +429,10 @@ function createSchema() {
   try {
     dbInstance.run('UPDATE reply_templates SET template_body = body WHERE template_body IS NULL AND body IS NOT NULL;');
   } catch (e) {}
+  try {
+    // Purge any accidental complaints authored by official hierarchy handles
+    dbInstance.run(`DELETE FROM complaints WHERE consumer_handle IS NOT NULL AND REPLACE(LOWER(consumer_handle), '@', '') IN (SELECT REPLACE(LOWER(handle_name), '@', '') FROM x_hierarchy WHERE handle_name IS NOT NULL AND handle_name != '');`);
+  } catch (e) {}
 }
 
 function tryAddColumn(tableName, colDef) {

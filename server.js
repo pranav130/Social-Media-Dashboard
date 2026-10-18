@@ -247,6 +247,25 @@ app.get('/api/complaints', authMiddleware, (req, res) => {
   let whereClauses = [];
   let params = [];
 
+  // Strictly exclude posts authored by official hierarchy handles (only outside consumer complaints)
+  whereClauses.push(`(
+    consumer_handle IS NULL OR 
+    REPLACE(LOWER(consumer_handle), '@', '') NOT IN (
+      SELECT REPLACE(LOWER(handle_name), '@', '') FROM x_hierarchy WHERE handle_name IS NOT NULL AND handle_name != ''
+    )
+  )`);
+
+  // Assigned X-Handle filter
+  const assigned_handle = req.query.assigned_handle;
+  if (assigned_handle && assigned_handle !== 'All') {
+    if (assigned_handle === 'Unassigned') {
+      whereClauses.push('(assigned_nodal_officer_name IS NULL OR assigned_nodal_officer_name = "")');
+    } else {
+      whereClauses.push('(assigned_nodal_officer_name = ? OR assigned_nodal_officer_name LIKE ?)');
+      params.push(assigned_handle, `%${assigned_handle}%`);
+    }
+  }
+
   // Scoping: DISCOM Nodal Officer can only see complaints for their assigned DISCOM
   if (req.user.role === 'DISCOM Nodal Officer') {
     whereClauses.push('(discom_name = ? OR discom_name = ?)');
@@ -347,9 +366,10 @@ app.get('/api/complaints', authMiddleware, (req, res) => {
       district_name LIKE ? OR
       division_name LIKE ? OR
       consumer_account_no LIKE ? OR
+      assigned_nodal_officer_name LIKE ? OR
       forwarding_ref_no LIKE ?
     )`);
-    params.push(term, term, term, term, term, term, term, term);
+    params.push(term, term, term, term, term, term, term, term, term);
   }
 
   const whereSql = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
@@ -988,6 +1008,14 @@ app.get('/api/dashboard/kpis', authMiddleware, (req, res) => {
   let whereClauses = [];
   let params = [];
 
+  // Strictly exclude posts authored by official hierarchy handles (only outside consumer complaints)
+  whereClauses.push(`(
+    consumer_handle IS NULL OR 
+    REPLACE(LOWER(consumer_handle), '@', '') NOT IN (
+      SELECT REPLACE(LOWER(handle_name), '@', '') FROM x_hierarchy WHERE handle_name IS NOT NULL AND handle_name != ''
+    )
+  )`);
+
   // Scoping for DISCOM Nodal Officer
   if (req.user.role === 'DISCOM Nodal Officer') {
     whereClauses.push('(discom_name = ? OR discom_name = ?)');
@@ -1075,6 +1103,14 @@ app.get('/api/dashboard/kpis', authMiddleware, (req, res) => {
 app.get('/api/dashboard/charts', authMiddleware, (req, res) => {
   let whereClauses = [];
   let params = [];
+
+  // Strictly exclude posts authored by official hierarchy handles (only outside consumer complaints)
+  whereClauses.push(`(
+    consumer_handle IS NULL OR 
+    REPLACE(LOWER(consumer_handle), '@', '') NOT IN (
+      SELECT REPLACE(LOWER(handle_name), '@', '') FROM x_hierarchy WHERE handle_name IS NOT NULL AND handle_name != ''
+    )
+  )`);
 
   if (req.user.role === 'DISCOM Nodal Officer') {
     whereClauses.push('(discom_name = ? OR discom_name = ?)');
@@ -1213,6 +1249,14 @@ app.get('/api/reports/export', authMiddleware, (req, res) => {
   let whereClauses = [];
   let params = [];
 
+  // Strictly exclude posts authored by official hierarchy handles (only outside consumer complaints)
+  whereClauses.push(`(
+    consumer_handle IS NULL OR 
+    REPLACE(LOWER(consumer_handle), '@', '') NOT IN (
+      SELECT REPLACE(LOWER(handle_name), '@', '') FROM x_hierarchy WHERE handle_name IS NOT NULL AND handle_name != ''
+    )
+  )`);
+
   if (req.user.role === 'DISCOM Nodal Officer') {
     whereClauses.push('(discom_name = ? OR discom_name = ?)');
     params.push(req.user.discom_name, req.user.discom_name.toUpperCase());
@@ -1324,7 +1368,7 @@ app.get('/api/reports/export', authMiddleware, (req, res) => {
         priority as 'Priority',
         current_status as 'Status',
         assigned_operator_name as 'Assigned Operator',
-        assigned_nodal_officer_name as 'Nodal Officer',
+        assigned_nodal_officer_name as 'Assigned X-Handle',
         forwarding_date as 'Forwarded Date',
         forwarding_channel as 'Forwarding Channel',
         expected_response_date as 'Expected SLA Date',
