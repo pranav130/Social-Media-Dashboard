@@ -314,6 +314,24 @@ async function runTests() {
     assert.strictEqual(autoRefNo, `UPPCL/SMC/${currentYear}/FWD-202610-0099`);
   });
 
+  it('District selection is optional when forwarding or recording complaints', () => {
+    // Inserts a test complaint with null district
+    const ins = db.run(`
+      INSERT INTO complaints (
+        complaint_no, received_at, platform, monitored_account, consumer_name, complaint_text,
+        category_name, discom_name, district_name, priority, current_status, created_at, updated_at
+      ) VALUES (?, datetime('now'), 'Twitter/X', '@UPPCLLKO', 'Optional Test User', 'General issue without district',
+        'Power Supply Failure', 'MVVNL', NULL, 'Normal', 'New', datetime('now'), datetime('now'));
+    `, ['UPPCL-SMC-TEST-OPTDIST']);
+
+    assert.ok(ins.lastInsertRowid > 0);
+    const fetched = db.get('SELECT * FROM complaints WHERE id = ?;', [ins.lastInsertRowid]);
+    assert.strictEqual(fetched.district_name, null);
+
+    // Clean up test complaint
+    db.run('DELETE FROM complaints WHERE id = ?;', [ins.lastInsertRowid]);
+  });
+
   console.log('\n====================================================');
   console.log(` Tests Finished: ${passCount} Passed, ${failCount} Failed`);
   console.log('====================================================\n');

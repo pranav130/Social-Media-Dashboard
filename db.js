@@ -186,7 +186,7 @@ function createSchema() {
       category_name TEXT NOT NULL,
       subcategory_name TEXT,
       discom_name TEXT NOT NULL,
-      district_name TEXT NOT NULL,
+      district_name TEXT,
       zone_name TEXT,
       circle_name TEXT,
       division_name TEXT,
@@ -507,6 +507,86 @@ function createSchema() {
     }
   } catch (e) {
     console.warn('Error seeding forwarding_templates:', e.message);
+  }
+
+  try {
+    const cols = dbInstance.exec("PRAGMA table_info(complaints);")[0]?.values || [];
+    const distCol = cols.find(c => c[1] === 'district_name');
+    if (distCol && distCol[3] === 1) {
+      const colNames = cols.map(c => c[1]).join(', ');
+      dbInstance.run('PRAGMA foreign_keys=off;');
+      dbInstance.run('ALTER TABLE complaints RENAME TO _complaints_old;');
+      dbInstance.run(`
+        CREATE TABLE complaints (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          complaint_no TEXT UNIQUE NOT NULL,
+          received_at TEXT NOT NULL,
+          platform TEXT NOT NULL,
+          monitored_account TEXT NOT NULL,
+          hierarchy_handle_id INTEGER,
+          hierarchy_handle_name TEXT,
+          is_tagged INTEGER DEFAULT 1,
+          consumer_name TEXT,
+          consumer_handle TEXT,
+          consumer_profile_url TEXT,
+          post_url TEXT,
+          complaint_text TEXT NOT NULL,
+          category_name TEXT NOT NULL,
+          subcategory_name TEXT,
+          discom_name TEXT NOT NULL,
+          district_name TEXT,
+          zone_name TEXT,
+          circle_name TEXT,
+          division_name TEXT,
+          subdivision_name TEXT,
+          consumer_account_no TEXT,
+          consumer_mobile TEXT,
+          priority TEXT NOT NULL DEFAULT 'Normal',
+          current_status TEXT NOT NULL DEFAULT 'New',
+          assigned_operator_id INTEGER,
+          assigned_operator_name TEXT,
+          assigned_nodal_officer_id INTEGER,
+          assigned_nodal_officer_name TEXT,
+          assigned_nodal_officer_mobile TEXT,
+          forwarding_date TEXT,
+          forwarding_channel TEXT,
+          forwarding_ref_no TEXT,
+          forwarding_remarks TEXT,
+          expected_response_date TEXT,
+          is_overdue INTEGER DEFAULT 0,
+          escalation_level INTEGER DEFAULT 0,
+          escalation_reason TEXT,
+          discom_response_date TEXT,
+          discom_action_taken TEXT,
+          discom_evidence_url TEXT,
+          discom_reported_by TEXT,
+          closure_date TEXT,
+          closure_verified_by TEXT,
+          closure_verification_notes TEXT,
+          closure_satisfaction_status TEXT,
+          duplicate_of_complaint_id INTEGER,
+          invalid_reason TEXT,
+          reopen_reason TEXT,
+          last_action_date TEXT,
+          created_by TEXT,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          original_post_id TEXT,
+          conversation_id TEXT,
+          author_id TEXT,
+          reply_draft TEXT,
+          reply_status TEXT DEFAULT 'None',
+          published_reply_id TEXT,
+          first_acknowledged_at TEXT,
+          assigned_at TEXT
+        );
+      `);
+      dbInstance.run(`INSERT INTO complaints (${colNames}) SELECT ${colNames} FROM _complaints_old;`);
+      dbInstance.run('DROP TABLE _complaints_old;');
+      dbInstance.run('PRAGMA foreign_keys=on;');
+    }
+  } catch (err) {
+    console.warn('Complaint table district_name migration error:', err.message);
   }
 }
 

@@ -469,8 +469,8 @@ app.post('/api/complaints/check-duplicate', authMiddleware, (req, res) => {
 // 3. Create Complaint
 app.post('/api/complaints', authMiddleware, requireRoles('Super Administrator', 'Social Media Cell Operator', 'Supervisor / Management'), (req, res) => {
   const b = req.body;
-  if (!b.complaint_text || !b.discom_name || !b.district_name || !b.category_name) {
-    return res.status(400).json({ error: 'Complaint text, DISCOM, District, and Category are required.' });
+  if (!b.complaint_text || !b.discom_name || !b.category_name) {
+    return res.status(400).json({ error: 'Complaint text, DISCOM, and Category are required.' });
   }
 
   // Auto-generate Complaint Number: UPPCL-SMC-YYYYMM-XXXX
@@ -532,7 +532,7 @@ app.post('/api/complaints', authMiddleware, requireRoles('Super Administrator', 
     b.category_name,
     b.subcategory_name || '',
     b.discom_name,
-    b.district_name,
+    b.district_name || null,
     b.zone_name || '',
     b.circle_name || '',
     b.division_name || '',

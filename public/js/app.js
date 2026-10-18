@@ -1300,9 +1300,9 @@ const App = {
             </div>
 
             <div class="filter-group">
-              <label>District *</label>
-              <select id="add-district" class="form-control" required onchange="App.handleAddDistrictChange(this.value)">
-                <option value="">-- Select District --</option>
+              <label>District (Optional)</label>
+              <select id="add-district" class="form-control" onchange="App.handleAddDistrictChange(this.value)">
+                <option value="">-- No Specific District / DISCOM HQ (Optional) --</option>
               </select>
             </div>
 
@@ -1391,7 +1391,7 @@ const App = {
   handleAddDiscomChange(discom) {
     const distSel = document.getElementById('add-district');
     if (!distSel) return;
-    distSel.innerHTML = '<option value="">-- Select District --</option>';
+    distSel.innerHTML = '<option value="">-- No Specific District / DISCOM HQ (Optional) --</option>';
 
     const dObj = this.cachedMaster.discoms.find(d => d.code.toUpperCase() === (discom || '').toUpperCase());
     if (dObj && dObj.districts) {
@@ -1870,9 +1870,9 @@ const App = {
               </div>
 
               <div class="filter-group" style="margin-bottom: 12px;">
-                <label>District *</label>
-                <select id="fwd-district" class="form-control" required onchange="App.handleFwdDistrictChange(this.value)">
-                  <option value="">-- Select District --</option>
+                <label>District (Optional)</label>
+                <select id="fwd-district" class="form-control" onchange="App.handleFwdDistrictChange(this.value)">
+                  <option value="">-- No Specific District / DISCOM HQ (Optional) --</option>
                 </select>
               </div>
 
@@ -2007,7 +2007,7 @@ const App = {
   handleFwdDiscomChange(discom) {
     const distSel = document.getElementById('fwd-district');
     if (!distSel) return;
-    distSel.innerHTML = '<option value="">-- Select District --</option>';
+    distSel.innerHTML = '<option value="">-- No Specific District / DISCOM HQ (Optional) --</option>';
     const dObj = this.cachedMaster.discoms.find(d => d.code.toUpperCase() === (discom || '').toUpperCase());
     if (dObj && dObj.districts) {
       dObj.districts.forEach(dist => {
@@ -2027,7 +2027,7 @@ const App = {
     if (!handleSel) return;
 
     if (!discom) {
-      handleSel.innerHTML = '<option value="">-- Select DISCOM & District First --</option>';
+      handleSel.innerHTML = '<option value="">-- Select DISCOM First --</option>';
       this.handleFwdHandleChange('');
       return;
     }
