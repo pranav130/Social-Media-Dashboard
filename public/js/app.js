@@ -1052,20 +1052,20 @@ const App = {
 
         <!-- Table Responsive -->
         <div class="table-responsive">
-          <table class="data-table">
+          <table class="data-table" id="reg-table">
             <thead>
               <tr>
-                <th>Complaint ID</th>
-                <th>Received (IST)</th>
-                <th>Platform & Handle</th>
-                <th>Consumer</th>
-                <th>Grievance Summary</th>
-                <th>DISCOM & District</th>
-                <th>Priority</th>
-                <th>Status</th>
-                <th>SLA / Overdue</th>
-                <th>Assigned X-Handle</th>
-                <th>Actions</th>
+                ${this.renderSortableHeader('complaint_no', 'Complaint ID')}
+                ${this.renderSortableHeader('received_at', 'Received (IST)')}
+                ${this.renderSortableHeader('platform', 'Platform & Handle')}
+                ${this.renderSortableHeader('consumer_name', 'Consumer')}
+                ${this.renderSortableHeader('category_name', 'Grievance Summary')}
+                ${this.renderSortableHeader('discom_name', 'DISCOM & District')}
+                ${this.renderSortableHeader('priority', 'Priority')}
+                ${this.renderSortableHeader('current_status', 'Status')}
+                ${this.renderSortableHeader('expected_response_date', 'SLA / Overdue')}
+                ${this.renderSortableHeader('assigned_nodal_officer_name', 'Assigned X-Handle')}
+                <th style="user-select: none;">Actions</th>
               </tr>
             </thead>
             <tbody id="reg-table-body">
@@ -1135,6 +1135,106 @@ const App = {
       sort_order: 'DESC'
     };
     this.navigate('register');
+  },
+
+  renderSortableHeader(colName, label) {
+    const isSorted = (this.currentFilters.sort_by || 'received_at') === colName;
+    const order = (this.currentFilters.sort_order || 'DESC').toUpperCase();
+    let iconClass = 'fa-solid fa-sort';
+    if (isSorted) {
+      iconClass = order === 'ASC' ? 'fa-solid fa-arrow-up-short-wide' : 'fa-solid fa-arrow-down-wide-short';
+    }
+    const nextOrder = isSorted && order === 'ASC' ? 'descending' : 'ascending';
+    return `
+      <th class="sortable ${isSorted ? 'active-sort' : ''}" onclick="App.handleSort('${colName}')" title="Sort by ${label} (${nextOrder})">
+        <div class="sort-header-inner">
+          <span>${label}</span>
+          <i class="${iconClass} sort-icon"></i>
+        </div>
+      </th>
+    `;
+  },
+
+  handleSort(colName) {
+    if (this.currentFilters.sort_by === colName) {
+      this.currentFilters.sort_order = (this.currentFilters.sort_order === 'ASC') ? 'DESC' : 'ASC';
+    } else {
+      this.currentFilters.sort_by = colName;
+      if (['complaint_no', 'consumer_name', 'category_name', 'discom_name'].includes(colName)) {
+        this.currentFilters.sort_order = 'ASC';
+      } else {
+        this.currentFilters.sort_order = 'DESC';
+      }
+    }
+    this.currentFilters.page = 1;
+    this.updateRegisterTableHeader();
+    this.loadRegisterData();
+  },
+
+  updateRegisterTableHeader() {
+    const thead = document.querySelector('#reg-table thead');
+    if (thead) {
+      thead.innerHTML = `
+        <tr>
+          ${this.renderSortableHeader('complaint_no', 'Complaint ID')}
+          ${this.renderSortableHeader('received_at', 'Received (IST)')}
+          ${this.renderSortableHeader('platform', 'Platform & Handle')}
+          ${this.renderSortableHeader('consumer_name', 'Consumer')}
+          ${this.renderSortableHeader('category_name', 'Grievance Summary')}
+          ${this.renderSortableHeader('discom_name', 'DISCOM & District')}
+          ${this.renderSortableHeader('priority', 'Priority')}
+          ${this.renderSortableHeader('current_status', 'Status')}
+          ${this.renderSortableHeader('expected_response_date', 'SLA / Overdue')}
+          ${this.renderSortableHeader('assigned_nodal_officer_name', 'Assigned X-Handle')}
+          <th style="user-select: none;">Actions</th>
+        </tr>
+      `;
+    }
+  },
+
+  sortStaticTable(tableId, colIndex) {
+    const table = document.getElementById(tableId);
+    if (!table) return;
+    const tbody = table.querySelector('tbody');
+    if (!tbody) return;
+    const rows = Array.from(tbody.querySelectorAll('tr'));
+    if (rows.length <= 1) return;
+
+    const ths = table.querySelectorAll('thead th');
+    const targetTh = ths[colIndex];
+    if (!targetTh) return;
+
+    const currentOrder = targetTh.getAttribute('data-sort-order') || 'none';
+    const newOrder = currentOrder === 'asc' ? 'desc' : 'asc';
+
+    // Reset sort states on siblings
+    ths.forEach(th => {
+      th.removeAttribute('data-sort-order');
+      th.classList.remove('active-sort');
+      const icon = th.querySelector('.sort-icon');
+      if (icon) icon.className = 'fa-solid fa-sort sort-icon';
+    });
+
+    targetTh.setAttribute('data-sort-order', newOrder);
+    targetTh.classList.add('active-sort');
+    const icon = targetTh.querySelector('.sort-icon');
+    if (icon) {
+      icon.className = newOrder === 'asc' ? 'fa-solid fa-arrow-up-short-wide sort-icon' : 'fa-solid fa-arrow-down-wide-short sort-icon';
+    }
+
+    rows.sort((a, b) => {
+      const cellA = (a.children[colIndex] ? a.children[colIndex].innerText.trim() : '');
+      const cellB = (b.children[colIndex] ? b.children[colIndex].innerText.trim() : '');
+      const numA = parseFloat(cellA.replace(/[^0-9.-]+/g, ''));
+      const numB = parseFloat(cellB.replace(/[^0-9.-]+/g, ''));
+
+      if (!isNaN(numA) && !isNaN(numB) && !cellA.includes('@') && !cellA.startsWith('+') && !cellA.includes(':')) {
+        return newOrder === 'asc' ? numA - numB : numB - numA;
+      }
+      return newOrder === 'asc' ? cellA.localeCompare(cellB) : cellB.localeCompare(cellA);
+    });
+
+    rows.forEach(r => tbody.appendChild(r));
   },
 
   async loadRegisterData() {
@@ -2884,17 +2984,33 @@ const App = {
         </div>
 
         <div class="table-responsive">
-          <table class="data-table">
+          <table class="data-table" id="xh-table">
             <thead>
               <tr>
-                <th>Sr No</th>
-                <th>Hierarchy Level</th>
-                <th>DISCOM</th>
-                <th>District / Entity</th>
-                <th>Handle Name</th>
-                <th>Official Account URL</th>
-                <th>Monitored</th>
-                <th>Status</th>
+                <th class="sortable" onclick="App.sortStaticTable('xh-table', 0)" title="Click to sort by Serial Number">
+                  <div class="sort-header-inner"><span>Sr No</span><i class="fa-solid fa-sort sort-icon"></i></div>
+                </th>
+                <th class="sortable" onclick="App.sortStaticTable('xh-table', 1)" title="Click to sort by Hierarchy Level">
+                  <div class="sort-header-inner"><span>Hierarchy Level</span><i class="fa-solid fa-sort sort-icon"></i></div>
+                </th>
+                <th class="sortable" onclick="App.sortStaticTable('xh-table', 2)" title="Click to sort by DISCOM">
+                  <div class="sort-header-inner"><span>DISCOM</span><i class="fa-solid fa-sort sort-icon"></i></div>
+                </th>
+                <th class="sortable" onclick="App.sortStaticTable('xh-table', 3)" title="Click to sort by District / Entity">
+                  <div class="sort-header-inner"><span>District / Entity</span><i class="fa-solid fa-sort sort-icon"></i></div>
+                </th>
+                <th class="sortable" onclick="App.sortStaticTable('xh-table', 4)" title="Click to sort by Handle Name">
+                  <div class="sort-header-inner"><span>Handle Name</span><i class="fa-solid fa-sort sort-icon"></i></div>
+                </th>
+                <th class="sortable" onclick="App.sortStaticTable('xh-table', 5)" title="Click to sort by Official Account URL">
+                  <div class="sort-header-inner"><span>Official Account URL</span><i class="fa-solid fa-sort sort-icon"></i></div>
+                </th>
+                <th class="sortable" onclick="App.sortStaticTable('xh-table', 6)" title="Click to sort by Monitoring Status">
+                  <div class="sort-header-inner"><span>Monitored</span><i class="fa-solid fa-sort sort-icon"></i></div>
+                </th>
+                <th class="sortable" onclick="App.sortStaticTable('xh-table', 7)" title="Click to sort by Status">
+                  <div class="sort-header-inner"><span>Status</span><i class="fa-solid fa-sort sort-icon"></i></div>
+                </th>
               </tr>
             </thead>
             <tbody id="xh-table-body">
@@ -2974,17 +3090,33 @@ const App = {
         </div>
 
         <div class="table-responsive">
-          <table class="data-table">
+          <table class="data-table" id="no-table">
             <thead>
               <tr>
-                <th>DISCOM</th>
-                <th>District</th>
-                <th>Nodal Officer Name</th>
-                <th>Designation</th>
-                <th>Official Contact Number</th>
-                <th>Twitter Handle</th>
-                <th>Facebook Page</th>
-                <th>Status</th>
+                <th class="sortable" onclick="App.sortStaticTable('no-table', 0)" title="Click to sort by DISCOM">
+                  <div class="sort-header-inner"><span>DISCOM</span><i class="fa-solid fa-sort sort-icon"></i></div>
+                </th>
+                <th class="sortable" onclick="App.sortStaticTable('no-table', 1)" title="Click to sort by District">
+                  <div class="sort-header-inner"><span>District</span><i class="fa-solid fa-sort sort-icon"></i></div>
+                </th>
+                <th class="sortable" onclick="App.sortStaticTable('no-table', 2)" title="Click to sort by Nodal Officer Name">
+                  <div class="sort-header-inner"><span>Nodal Officer Name</span><i class="fa-solid fa-sort sort-icon"></i></div>
+                </th>
+                <th class="sortable" onclick="App.sortStaticTable('no-table', 3)" title="Click to sort by Designation">
+                  <div class="sort-header-inner"><span>Designation</span><i class="fa-solid fa-sort sort-icon"></i></div>
+                </th>
+                <th class="sortable" onclick="App.sortStaticTable('no-table', 4)" title="Click to sort by Official Contact Number">
+                  <div class="sort-header-inner"><span>Official Contact Number</span><i class="fa-solid fa-sort sort-icon"></i></div>
+                </th>
+                <th class="sortable" onclick="App.sortStaticTable('no-table', 5)" title="Click to sort by Twitter Handle">
+                  <div class="sort-header-inner"><span>Twitter Handle</span><i class="fa-solid fa-sort sort-icon"></i></div>
+                </th>
+                <th class="sortable" onclick="App.sortStaticTable('no-table', 6)" title="Click to sort by Facebook Page">
+                  <div class="sort-header-inner"><span>Facebook Page</span><i class="fa-solid fa-sort sort-icon"></i></div>
+                </th>
+                <th class="sortable" onclick="App.sortStaticTable('no-table', 7)" title="Click to sort by Status">
+                  <div class="sort-header-inner"><span>Status</span><i class="fa-solid fa-sort sort-icon"></i></div>
+                </th>
               </tr>
             </thead>
             <tbody id="no-table-body">

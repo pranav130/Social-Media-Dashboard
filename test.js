@@ -437,6 +437,70 @@ async function runTests() {
     assert.ok(csv.includes('Complaint ID'));
   });
 
+  console.log('\n[16. Interactive Table Column Sorting & Query Clauses]');
+  const { buildComplaintOrderClause } = require('./server');
+
+  it('buildComplaintOrderClause returns safe SQL ordering for all register columns', () => {
+    const cols = [
+      'complaint_no', 'received_at', 'platform', 'consumer_name',
+      'category_name', 'discom_name', 'district_name', 'priority',
+      'current_status', 'expected_response_date', 'assigned_nodal_officer_name', 'forwarding_ref_no'
+    ];
+
+    cols.forEach(col => {
+      const ascSql = buildComplaintOrderClause(col, 'ASC');
+      const descSql = buildComplaintOrderClause(col, 'DESC');
+      assert.ok(ascSql, `Empty ASC clause for ${col}`);
+      assert.ok(descSql, `Empty DESC clause for ${col}`);
+      assert.ok(!ascSql.includes(';'), `SQL injection risk in ${col}`);
+    });
+  });
+
+  it('Priority sorting respects electrical utility operational severity (Critical > High > Normal > Low)', () => {
+    const descClause = buildComplaintOrderClause('priority', 'DESC');
+    assert.ok(descClause.includes("WHEN 'Critical' THEN 1"));
+    assert.ok(descClause.includes("WHEN 'High' THEN 2"));
+    assert.ok(descClause.includes("WHEN 'Normal' THEN 3"));
+    assert.ok(descClause.includes("WHEN 'Low' THEN 4"));
+
+    const ascClause = buildComplaintOrderClause('priority', 'ASC');
+    assert.ok(ascClause.includes("WHEN 'Low' THEN 1"));
+    assert.ok(ascClause.includes("WHEN 'Normal' THEN 2"));
+    assert.ok(ascClause.includes("WHEN 'High' THEN 3"));
+    assert.ok(ascClause.includes("WHEN 'Critical' THEN 4"));
+
+    const rows = db.query(`SELECT priority FROM complaints ORDER BY ${descClause};`);
+    const prios = rows.map(r => r.priority);
+    // Any Critical should precede Low
+    const firstCrit = prios.indexOf('Critical');
+    const firstLow = prios.indexOf('Low');
+    if (firstCrit !== -1 && firstLow !== -1) {
+      assert.ok(firstCrit < firstLow, 'Critical priority should appear before Low in DESC order');
+    }
+  });
+
+  it('Complaint ID and timestamp sorting orders execute successfully on database', () => {
+    const ascRows = db.query(`SELECT complaint_no FROM complaints ORDER BY ${buildComplaintOrderClause('complaint_no', 'ASC')} LIMIT 5;`);
+    assert.ok(ascRows.length > 0);
+    const nos = ascRows.map(r => r.complaint_no);
+    const sortedNos = [...nos].sort();
+    assert.deepStrictEqual(nos, sortedNos, 'Complaint numbers should be sorted alphabetically in ASC order');
+
+    const descTimeRows = db.query(`SELECT received_at FROM complaints ORDER BY ${buildComplaintOrderClause('received_at', 'DESC')} LIMIT 5;`);
+    assert.ok(descTimeRows.length > 0);
+    for (let i = 0; i < descTimeRows.length - 1; i++) {
+      assert.ok(descTimeRows[i].received_at >= descTimeRows[i + 1].received_at, 'Received timestamps should descend');
+    }
+  });
+
+  it('Nullable columns (forwarding_ref_no, assigned_nodal_officer_name) handle NULLS-last ordering', () => {
+    const ascFwd = buildComplaintOrderClause('forwarding_ref_no', 'ASC');
+    assert.ok(ascFwd.includes('CASE WHEN forwarding_ref_no IS NULL'));
+
+    const rows = db.query(`SELECT forwarding_ref_no FROM complaints ORDER BY ${ascFwd};`);
+    assert.ok(rows.length > 0);
+  });
+
   console.log('\n====================================================');
   console.log(` Tests Finished: ${passCount} Passed, ${failCount} Failed`);
   console.log('====================================================\n');

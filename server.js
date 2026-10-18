@@ -226,6 +226,43 @@ function updateOverdueStatus(complaint) {
   return now > exp ? 1 : 0;
 }
 
+// Helper to safely construct SQL ORDER BY clause for complaint queries
+function buildComplaintOrderClause(sort_by, sort_order) {
+  const safeOrder = (sort_order && String(sort_order).toUpperCase() === 'ASC') ? 'ASC' : 'DESC';
+  switch (sort_by) {
+    case 'complaint_no':
+      return `complaint_no ${safeOrder}, id ${safeOrder}`;
+    case 'received_at':
+      return `received_at ${safeOrder}, id ${safeOrder}`;
+    case 'platform':
+      return `platform ${safeOrder}, monitored_account ${safeOrder}, received_at DESC`;
+    case 'consumer_name':
+      return `COALESCE(NULLIF(consumer_name, ''), consumer_handle, 'ZZZZ') ${safeOrder}, received_at DESC`;
+    case 'category_name':
+      return `category_name ${safeOrder}, received_at DESC`;
+    case 'discom_name':
+      return `discom_name ${safeOrder}, COALESCE(district_name, '') ${safeOrder}, received_at DESC`;
+    case 'district_name':
+      return `COALESCE(district_name, 'ZZZZ') ${safeOrder}, discom_name ${safeOrder}, received_at DESC`;
+    case 'priority':
+      if (safeOrder === 'ASC') {
+        return `CASE priority WHEN 'Low' THEN 1 WHEN 'Normal' THEN 2 WHEN 'High' THEN 3 WHEN 'Critical' THEN 4 ELSE 5 END ASC, received_at DESC`;
+      } else {
+        return `CASE priority WHEN 'Critical' THEN 1 WHEN 'High' THEN 2 WHEN 'Normal' THEN 3 WHEN 'Low' THEN 4 ELSE 5 END ASC, received_at DESC`;
+      }
+    case 'current_status':
+      return `current_status ${safeOrder}, received_at DESC`;
+    case 'expected_response_date':
+      return `CASE WHEN expected_response_date IS NULL OR expected_response_date = '' THEN 1 ELSE 0 END ASC, expected_response_date ${safeOrder}, received_at DESC`;
+    case 'assigned_nodal_officer_name':
+      return `CASE WHEN assigned_nodal_officer_name IS NULL OR assigned_nodal_officer_name = '' THEN 1 ELSE 0 END ASC, assigned_nodal_officer_name ${safeOrder}, received_at DESC`;
+    case 'forwarding_ref_no':
+      return `CASE WHEN forwarding_ref_no IS NULL OR forwarding_ref_no = '' THEN 1 ELSE 0 END ASC, forwarding_ref_no ${safeOrder}, received_at DESC`;
+    default:
+      return `received_at ${safeOrder}, id ${safeOrder}`;
+  }
+}
+
 // 1. Get Complaints (Search, Filter, Paginate, Role-Scoped)
 app.get('/api/complaints', authMiddleware, (req, res) => {
   const {
@@ -386,14 +423,12 @@ app.get('/api/complaints', authMiddleware, (req, res) => {
   const total = countRow ? countRow.total : 0;
 
   // Sorting validation
-  const allowedSortCols = ['received_at', 'priority', 'current_status', 'discom_name', 'district_name', 'complaint_no'];
-  const safeSortCol = allowedSortCols.includes(sort_by) ? sort_by : 'received_at';
-  const safeOrder = sort_order.toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
+  const orderClause = buildComplaintOrderClause(sort_by, sort_order);
 
   const querySql = `
     SELECT * FROM complaints
     ${whereSql}
-    ORDER BY ${safeSortCol} ${safeOrder}
+    ORDER BY ${orderClause}
     LIMIT ? OFFSET ?;
   `;
   const pageParams = [...params, pageSize, offset];
@@ -1293,7 +1328,9 @@ app.get('/api/reports/export', authMiddleware, (req, res) => {
     priority,
     platform,
     assigned_handle,
-    overdue
+    overdue,
+    sort_by,
+    sort_order
   } = req.query;
 
   let whereClauses = [];
@@ -1489,7 +1526,7 @@ app.get('/api/reports/export', authMiddleware, (req, res) => {
         post_url as 'Original Post URL'
       FROM complaints
       ${whereSql}
-      ORDER BY received_at DESC;
+      ORDER BY ${buildComplaintOrderClause(sort_by, sort_order)};
     `, params);
     exportData = rows;
   }
@@ -2296,40 +2333,44 @@ app.use((req, res) => {
 });
 
 // Start Server
-db.initDb().then(async () => {
-  // Check if database needs seeding (e.g. fresh cloud deployment)
-  try {
-    const userCheck = db.get('SELECT COUNT(*) as count FROM users;');
-    if (!userCheck || userCheck.count === 0) {
-      console.log('No users found in database. Running initial seed...');
-      const { runSeed } = require('./seed');
-      await runSeed();
-    }
-  } catch (seedErr) {
-    console.warn('Auto-seed check error:', seedErr.message);
-  }
-
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`===========================================================`);
-    console.log(` UPPCL Social Media Cell Complaint Management System`);
-    console.log(` Server running on port: ${PORT} (0.0.0.0)`);
-    console.log(` Environment: ${process.env.NODE_ENV || 'production'}`);
-    console.log(` System Time (IST): ${getIstTimestamp()}`);
-    console.log(`===========================================================`);
-
-    // Start background worker daemon if enabled (default enabled for single-service deployments)
-    if (process.env.ENABLE_INTERNAL_WORKER !== 'false') {
-      try {
-        const worker = require('./worker');
-        worker.startWorker().catch(wErr => {
-          console.warn('[Server] Internal worker start warning:', wErr.message);
-        });
-      } catch (wErr) {
-        console.warn('[Server] Worker import error:', wErr.message);
+if (require.main === module) {
+  db.initDb().then(async () => {
+    // Check if database needs seeding (e.g. fresh cloud deployment)
+    try {
+      const userCheck = db.get('SELECT COUNT(*) as count FROM users;');
+      if (!userCheck || userCheck.count === 0) {
+        console.log('No users found in database. Running initial seed...');
+        const { runSeed } = require('./seed');
+        await runSeed();
       }
+    } catch (seedErr) {
+      console.warn('Auto-seed check error:', seedErr.message);
     }
+
+    app.listen(PORT, '0.0.0.0', () => {
+      console.log(`===========================================================`);
+      console.log(` UPPCL Social Media Cell Complaint Management System`);
+      console.log(` Server running on port: ${PORT} (0.0.0.0)`);
+      console.log(` Environment: ${process.env.NODE_ENV || 'production'}`);
+      console.log(` System Time (IST): ${getIstTimestamp()}`);
+      console.log(`===========================================================`);
+
+      // Start background worker daemon if enabled (default enabled for single-service deployments)
+      if (process.env.ENABLE_INTERNAL_WORKER !== 'false') {
+        try {
+          const worker = require('./worker');
+          worker.startWorker().catch(wErr => {
+            console.warn('[Server] Internal worker start warning:', wErr.message);
+          });
+        } catch (wErr) {
+          console.warn('[Server] Worker import error:', wErr.message);
+        }
+      }
+    });
+  }).catch(err => {
+    console.error('Failed to start server:', err);
+    process.exit(1);
   });
-}).catch(err => {
-  console.error('Failed to start server:', err);
-  process.exit(1);
-});
+}
+
+module.exports = { app, buildComplaintOrderClause };
