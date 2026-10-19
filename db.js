@@ -460,6 +460,24 @@ function createSchema() {
   tryAddColumn('forwarding_templates', "language TEXT DEFAULT 'Hindi'");
 
   try {
+    dbInstance.run(`
+      CREATE TABLE IF NOT EXISTS frivolous_complaints (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        post_url TEXT UNIQUE,
+        tweet_id TEXT,
+        complaint_no TEXT,
+        deleted_at TEXT NOT NULL,
+        deleted_by_name TEXT,
+        reason TEXT DEFAULT 'Marked as Frivolous'
+      );
+      CREATE INDEX IF NOT EXISTS idx_frivolous_tid ON frivolous_complaints(tweet_id);
+      CREATE INDEX IF NOT EXISTS idx_frivolous_url ON frivolous_complaints(post_url);
+    `);
+  } catch (e) {
+    console.warn('Migration frivolous_complaints error:', e.message);
+  }
+
+  try {
     const totalCount = dbInstance.exec("SELECT COUNT(*) FROM forwarding_templates;")[0]?.values[0][0] || 0;
     const englishCount = dbInstance.exec("SELECT COUNT(*) FROM forwarding_templates WHERE language = 'English';")[0]?.values[0][0] || 0;
     const hindiSample = dbInstance.exec("SELECT COUNT(*) FROM forwarding_templates WHERE title LIKE '%विद्युत%';")[0]?.values[0][0] || 0;

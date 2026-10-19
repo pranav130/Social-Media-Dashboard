@@ -1073,79 +1073,133 @@ app.post('/api/complaints/:id/invalidate', authMiddleware, requireRoles('Super A
 
 // 11b. Delete Frivolous Complaint (Dashboard + Google Sheet)
 const handleDeleteFrivolous = async (req, res) => {
-  const id = parseInt(req.params.id, 10);
-  const complaint = db.get('SELECT * FROM complaints WHERE id = ?;', [id]);
-  if (!complaint) return res.status(404).json({ error: 'Complaint not found or already deleted' });
-
-  const postUrl = complaint.post_url || '';
-  const m = postUrl.match(/status\/(\d+)/i);
-  const tweetId = m ? m[1] : '';
-  const istTime = getIstTimestamp();
-  const reason = (req.body && req.body.reason) ? req.body.reason.trim() : 'Marked as Frivolous';
-  const sheetRowIndex = complaint.sheet_row_index;
-
-  // 1. Record into frivolous_complaints table so Google Sheets background sync never resurrects it
   try {
-    db.run(`
-      INSERT OR REPLACE INTO frivolous_complaints (post_url, tweet_id, complaint_no, deleted_at, deleted_by_name, reason)
-      VALUES (?, ?, ?, ?, ?, ?);
-    `, [
-      postUrl,
-      tweetId,
-      complaint.complaint_no || '',
-      istTime,
-      req.user ? req.user.full_name : 'Staff',
-      reason
-    ]);
-  } catch (err) {
-    console.warn('[Frivolous] Warning saving frivolous record:', err.message);
-  }
+    const id = parseInt(req.params.id, 10);
+    if (!id || isNaN(id)) {
+      return res.status(400).json({ error: 'Invalid complaint ID provided' });
+    }
 
-  // 2. Cascade delete complaint and all related records from dashboard
-  db.run('DELETE FROM complaint_timeline WHERE complaint_id = ?;', [id]);
-  db.run('DELETE FROM complaint_forwarding_logs WHERE complaint_id = ?;', [id]);
-  db.run('DELETE FROM complaint_followup_logs WHERE complaint_id = ?;', [id]);
-  db.run('DELETE FROM complaint_escalation_logs WHERE complaint_id = ?;', [id]);
-  db.run('DELETE FROM complaint_evidence WHERE complaint_id = ?;', [id]);
-  db.run('DELETE FROM internal_tickets WHERE complaint_id = ?;', [id]);
-  db.run('DELETE FROM x_outgoing_replies WHERE complaint_id = ?;', [id]);
-  db.run('DELETE FROM complaints WHERE id = ?;', [id]);
+    const complaint = db.get('SELECT * FROM complaints WHERE id = ?;', [id]);
+    if (!complaint) {
+      return res.status(404).json({ error: 'Complaint not found or already deleted' });
+    }
 
-  logAudit(req, req.user, 'COMPLAINT_DELETED_FRIVOLOUS', 'COMPLAINT', id, `Deleted frivolous complaint ${complaint.complaint_no} (${complaint.consumer_handle || ''})`);
+    const postUrl = complaint.post_url || '';
+    const m = postUrl.match(/status\/(\d+)/i);
+    const tweetId = m ? m[1] : '';
+    const istTime = getIstTimestamp();
+    const reason = (req.body && req.body.reason) ? req.body.reason.trim() : 'Marked as Frivolous';
+    const sheetRowIndex = complaint.sheet_row_index;
+    const complaintNo = complaint.complaint_no || `ID-${id}`;
 
-  // 3. Dispatch delete request to Google Sheet webhook
-  let sheetDeleteStatus = null;
-  const webhookUrl = process.env.GOOGLE_WEBHOOK_URL || 'https://script.google.com/macros/s/AKfycbx3uJpVaB33ss8jGnmfArBpDXBc4o-pQ6fsD0x-FggDWRT1_pWEHNPDUWKpf5uG0B6HCQ/exec';
-  if (webhookUrl) {
+    // 1. Record into frivolous_complaints ledger so Google Sheets background sync never resurrects it
     try {
-      const resp = await fetch(webhookUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'delete_frivolous',
-          sheetRowIndex: sheetRowIndex,
-          postUrl: postUrl,
-          tweetId: tweetId,
-          complaintNo: complaint.complaint_no
-        })
-      });
-      if (resp.ok) {
-        sheetDeleteStatus = await resp.json().catch(() => ({}));
+      db.run(`
+        CREATE TABLE IF NOT EXISTS frivolous_complaints (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          post_url TEXT UNIQUE,
+          tweet_id TEXT,
+          complaint_no TEXT,
+          deleted_at TEXT NOT NULL,
+          deleted_by_name TEXT,
+          reason TEXT DEFAULT 'Marked as Frivolous'
+        );
+      `);
+      db.run(`
+        INSERT OR REPLACE INTO frivolous_complaints (post_url, tweet_id, complaint_no, deleted_at, deleted_by_name, reason)
+        VALUES (?, ?, ?, ?, ?, ?);
+      `, [
+        postUrl,
+        tweetId,
+        complaintNo,
+        istTime,
+        req.user ? (req.user.full_name || req.user.username) : 'Staff',
+        reason
+      ]);
+    } catch (err) {
+      console.warn('[Frivolous] Warning saving frivolous record:', err.message);
+    }
+
+    // 2. Cascade delete complaint and all related records from dashboard
+    // Use individual safe deletes so missing optional columns or tables do not fail the request
+    const safeDeleteFrom = (table, col = 'complaint_id') => {
+      try {
+        db.run(`DELETE FROM ${table} WHERE ${col} = ?;`, [id]);
+      } catch (err) {
+        console.warn(`[Frivolous] Clean-up warning for ${table}:`, err.message);
+      }
+    };
+
+    safeDeleteFrom('complaint_timeline');
+    safeDeleteFrom('complaint_forwarding_logs');
+    safeDeleteFrom('complaint_followup_logs');
+    safeDeleteFrom('complaint_escalation_logs');
+    safeDeleteFrom('complaint_evidence');
+    safeDeleteFrom('x_outgoing_replies');
+    safeDeleteFrom('notifications');
+    // Main complaint delete
+    safeDeleteFrom('complaints', 'id');
+
+    // Immediately flush SQLite changes to disk
+    try {
+      if (typeof db.flush === 'function') {
+        db.flush();
+      } else if (typeof db.saveToDiskSync === 'function') {
+        db.saveToDiskSync();
       }
     } catch (e) {
-      console.warn('[Frivolous] Google Sheet webhook delete error:', e.message);
+      console.warn('[Frivolous] Disk flush warning:', e.message);
     }
+
+    try {
+      logAudit(req, req.user, 'COMPLAINT_DELETED_FRIVOLOUS', 'COMPLAINT', id, `Deleted frivolous complaint ${complaintNo} (${complaint.consumer_handle || ''})`);
+    } catch (e) {
+      console.warn('[Frivolous] Audit log error:', e.message);
+    }
+
+    // 3. Dispatch delete request to Google Sheet webhook
+    let sheetDeleteStatus = null;
+    const webhookUrl = process.env.GOOGLE_WEBHOOK_URL || 'https://script.google.com/macros/s/AKfycbx3uJpVaB33ss8jGnmfArBpDXBc4o-pQ6fsD0x-FggDWRT1_pWEHNPDUWKpf5uG0B6HCQ/exec';
+    if (webhookUrl) {
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 6000);
+        const resp = await fetch(webhookUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'delete_frivolous',
+            sheetRowIndex: sheetRowIndex,
+            postUrl: postUrl,
+            tweetId: tweetId,
+            complaintNo: complaintNo
+          }),
+          signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+        if (resp.ok) {
+          sheetDeleteStatus = await resp.json().catch(() => ({}));
+        }
+      } catch (e) {
+        console.warn('[Frivolous] Google Sheet webhook delete error:', e.message);
+      }
+    }
+
+    const sheetMsg = (sheetDeleteStatus && sheetDeleteStatus.deleted)
+      ? ` and Row ${sheetDeleteStatus.deletedRow} deleted from Google Sheet.`
+      : ` and permanently removed from Google Sheet sync.`;
+
+    return res.json({
+      success: true,
+      message: `Complaint ${complaintNo} deleted successfully from dashboard${sheetMsg}`,
+      sheetDeleteStatus
+    });
+  } catch (err) {
+    console.error('[Frivolous] Fatal error deleting complaint:', err);
+    return res.status(500).json({
+      error: `Failed to delete complaint: ${err.message}`
+    });
   }
-
-  const sheetMsg = (sheetDeleteStatus && sheetDeleteStatus.deleted)
-    ? ` and Row ${sheetDeleteStatus.deletedRow} deleted from Google Sheet.`
-    : ` and permanently removed from Google Sheet sync.`;
-
-  res.json({
-    success: true,
-    message: `Complaint ${complaint.complaint_no} deleted successfully from dashboard${sheetMsg}`,
-    sheetDeleteStatus
-  });
 };
 
 app.delete('/api/complaints/:id', authMiddleware, handleDeleteFrivolous);

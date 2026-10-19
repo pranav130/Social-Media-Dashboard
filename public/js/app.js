@@ -2665,7 +2665,7 @@ const App = {
   },
 
   async deleteFrivolousComplaint(id, complaintNo) {
-    if (!confirm(`Are you sure you want to delete complaint ${complaintNo} as FRIVOLOUS?\n\nThis will permanently delete the complaint from the dashboard.`)) {
+    if (!confirm(`Are you sure you want to delete complaint ${complaintNo} as FRIVOLOUS?\n\nThis will permanently delete the complaint from both the dashboard and Google Sheet.`)) {
       return;
     }
 
