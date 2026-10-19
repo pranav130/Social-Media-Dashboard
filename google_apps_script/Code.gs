@@ -18,6 +18,7 @@ function onOpen() {
     .addSeparator()
     .addItem('📥 Sync All Complaints from Working Sheet (19-10-26)', 'syncFromWorkingSheet')
     .addItem('Apply Original Formatting (Blue Links & 45px Rows)', 'applyOriginalFormatting')
+    .addItem('🧹 Remove Duplicate Rows from Sheet', 'removeDuplicateRowsFromSheet')
     .addItem('🧹 Remove Official Initiated Posts', 'removeOfficialPostsFromSheet')
     .addItem('Fix Misclassified Appreciation Rows', 'fixMisclassifiedComplaints')
     .addItem('Make Rows Compact (22px)', 'makeRowsCompact')
@@ -406,6 +407,84 @@ function removeOfficialPostsFromSheet() {
   }
 
   return removedCount;
+}
+
+/**
+ * Scans 'Twitter Complaint List' and removes duplicate rows based on Column E (Tweet ID / URL).
+ * Keeps the first instance and removes subsequent duplicate copies.
+ * Re-indexes serial numbers (S.No. Column A) sequentially.
+ */
+function removeDuplicateRowsFromSheet() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sheet = ss.getSheetByName('Twitter Complaint List');
+  if (!sheet) sheet = ss.getActiveSheet();
+
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 3) {
+    try {
+      SpreadsheetApp.getUi().alert('No complaint data rows found to check.');
+    } catch (e) {}
+    return 0;
+  }
+
+  const numRows = lastRow - 2;
+  const urlValues = sheet.getRange(3, 5, numRows, 1).getValues();
+
+  const seenIds = new Set();
+  const rowsToDelete = [];
+
+  for (let i = 0; i < urlValues.length; i++) {
+    const actualSheetRow = i + 3;
+    const url = String(urlValues[i][0] || '').trim().toLowerCase();
+    if (!url) continue;
+
+    const m = url.match(/status\/(\d+)/i);
+    const id = m ? m[1] : url;
+
+    if (seenIds.has(id)) {
+      rowsToDelete.push(actualSheetRow);
+    } else {
+      seenIds.add(id);
+    }
+  }
+
+  if (rowsToDelete.length === 0) {
+    const msg = 'No duplicate rows found! All ' + numRows + ' complaints in this sheet are unique.';
+    try {
+      SpreadsheetApp.getUi().alert(msg);
+    } catch (e) {
+      Logger.log(msg);
+    }
+    return 0;
+  }
+
+  // Delete from bottom to top to preserve row indices
+  rowsToDelete.sort((a, b) => b - a);
+  for (let i = 0; i < rowsToDelete.length; i++) {
+    sheet.deleteRow(rowsToDelete[i]);
+  }
+
+  // Renumber S.No. (Column A) sequentially
+  const newLastRow = sheet.getLastRow();
+  if (newLastRow >= 3) {
+    const newCount = newLastRow - 2;
+    const sNoValues = [];
+    for (let r = 1; r <= newCount; r++) {
+      sNoValues.push([r]);
+    }
+    sheet.getRange(3, 1, newCount, 1).setValues(sNoValues);
+  }
+
+  SpreadsheetApp.flush();
+
+  const message = 'Deduplication Complete!\n\nRemoved ' + rowsToDelete.length + ' duplicate row(s).\nRemaining unique complaints: ' + (newLastRow >= 3 ? (newLastRow - 2) : 0);
+  try {
+    SpreadsheetApp.getUi().alert(message);
+  } catch (e) {
+    Logger.log(message);
+  }
+
+  return rowsToDelete.length;
 }
 
 /**

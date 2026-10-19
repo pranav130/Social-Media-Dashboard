@@ -824,12 +824,12 @@ const App = {
 
     container.innerHTML = `
       <div class="kpi-card kpi-total" onclick="App.navigate('register', { status: 'All' })" title="Click to view all complaints">
-        <div class="kpi-label">Total Ingested</div>
+        <div class="kpi-label">Total Received</div>
         <div class="kpi-value">${k.total}</div>
         <div class="kpi-sub">Authoritative Google Sheet</div>
       </div>
 
-      <div class="kpi-card kpi-today" onclick="App.navigate('register', { from_date: new Date().toISOString().substring(0, 10) })">
+      <div class="kpi-card kpi-today" onclick="App.navigate('register', { from_date: new Date().toISOString().substring(0, 10) })" title="Click to view today's incoming complaints">
         <div class="kpi-label">Received Today</div>
         <div class="kpi-value">${k.receivedToday}</div>
         <div class="kpi-sub">Today's social media inflow</div>
@@ -859,58 +859,10 @@ const App = {
         <div class="kpi-sub">${k.replyWithin30MinCount || 0} replied within 30 min</div>
       </div>
 
-      <div class="kpi-card" style="border-top: 3px solid ${k.dataQualityIssues > 0 ? '#ef4444' : '#10b981'};" onclick="App.navigate('reports', { tab: 'data_quality' })" title="Click to view Data Quality Audit Center">
-        <div class="kpi-label" style="color: ${k.dataQualityIssues > 0 ? '#ef4444' : '#10b981'};">Data Quality Audit</div>
-        <div class="kpi-value" style="color: ${k.dataQualityIssues > 0 ? '#ef4444' : '#10b981'};">${k.dataQualityIssues || 0}</div>
-        <div class="kpi-sub">${k.dataQualityIssues > 0 ? 'Sheet rows need review' : '100% Validated Clean'}</div>
-      </div>
-
-      <div class="kpi-card kpi-new" onclick="App.navigate('register', { status: 'New' })">
-        <div class="kpi-label">New / Unprocessed</div>
-        <div class="kpi-value">${k.new}</div>
-        <div class="kpi-sub">Awaiting operator action</div>
-      </div>
-
-      <div class="kpi-card kpi-forwarded" onclick="App.navigate('register', { status: 'Forwarded' })">
-        <div class="kpi-label">Forwarded</div>
-        <div class="kpi-value">${k.forwarded}</div>
-        <div class="kpi-sub">Forwarded to DISCOM</div>
-      </div>
-
-      <div class="kpi-card kpi-followup" onclick="App.navigate('register', { status: 'DISCOM Follow Up' })">
+      <div class="kpi-card kpi-followup" onclick="App.navigate('register', { status: 'DISCOM Follow Up' })" title="Click to view DISCOM follow-ups">
         <div class="kpi-label">DISCOM Follow Up</div>
         <div class="kpi-value">${k.followup}</div>
-        <div class="kpi-sub">Follow-up in progress</div>
-      </div>
-
-      <div class="kpi-card kpi-pending" onclick="App.navigate('register', { status: 'awaiting_discom' })">
-        <div class="kpi-label">Total Pending</div>
-        <div class="kpi-value">${k.pending}</div>
-        <div class="kpi-sub">Action awaited at field</div>
-      </div>
-
-      <div class="kpi-card kpi-overdue" onclick="App.navigate('register', { overdue: '1' })">
-        <div class="kpi-label" style="color: #ef4444;">Overdue (Breached)</div>
-        <div class="kpi-value" style="color: #ef4444;">${k.overdue}</div>
-        <div class="kpi-sub">Exceeded SLA response time</div>
-      </div>
-
-      <div class="kpi-card kpi-escalated" onclick="App.navigate('register', { status: 'Escalated' })">
-        <div class="kpi-label">Escalated</div>
-        <div class="kpi-value" style="color: #dc2626;">${k.escalated}</div>
-        <div class="kpi-sub">Escalated to SE / CE / MD</div>
-      </div>
-
-      <div class="kpi-card kpi-verification" onclick="App.navigate('register', { status: 'Resolved — Verification Pending' })">
-        <div class="kpi-label">Verification Due</div>
-        <div class="kpi-value">${k.resolvedPendingVerification}</div>
-        <div class="kpi-sub">Reported resolved by DISCOM</div>
-      </div>
-
-      <div class="kpi-card kpi-closed" onclick="App.navigate('register', { status: 'Closed' })">
-        <div class="kpi-label">Verified Closed</div>
-        <div class="kpi-value">${k.closed}</div>
-        <div class="kpi-sub">Satisfied & closed by SMC</div>
+        <div class="kpi-sub">If Discom/division replies after getting Tagged on reply from UPPCLLKO</div>
       </div>
     `;
   },
