@@ -94,6 +94,8 @@ function applyOriginalFormatting() {
   // 4. Restore Column E (LINK URL) as native blue (#1155cc) underlined clickable links
   const urlRange = sheet.getRange(3, 5, numDataRows, 1);
   const urlValues = urlRange.getValues();
+  const handleValues = (lastCol >= 6) ? sheet.getRange(3, 6, numDataRows, 1).getValues() : null;
+  const tweetIdValues = (lastCol >= 20) ? sheet.getRange(3, 20, numDataRows, 1).getValues() : null;
   const linkStyle = SpreadsheetApp.newTextStyle()
     .setForegroundColor('#1155cc')
     .setUnderline(true)
@@ -103,7 +105,16 @@ function applyOriginalFormatting() {
 
   const richTextValues = [];
   for (let i = 0; i < urlValues.length; i++) {
-    const rawUrl = String(urlValues[i][0] || '').trim();
+    let rawUrl = String(urlValues[i][0] || '').trim();
+    const handle = handleValues ? String(handleValues[i][0] || '').trim().replace(/^@/, '') : '';
+    const tweetId = tweetIdValues ? String(tweetIdValues[i][0] || '').trim() : '';
+
+    if (!rawUrl.startsWith('http://') && !rawUrl.startsWith('https://')) {
+      if (/^\d{15,25}$/.test(tweetId)) {
+        rawUrl = 'https://x.com/' + (handle || 'i') + '/status/' + tweetId;
+      }
+    }
+
     if (rawUrl.startsWith('http://') || rawUrl.startsWith('https://')) {
       const rich = SpreadsheetApp.newRichTextValue()
         .setText(rawUrl)

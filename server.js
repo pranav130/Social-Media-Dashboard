@@ -2757,6 +2757,27 @@ app.get('/api/health', (req, res) => {
   res.json(health);
 });
 
+// Legacy redirect for any stale client navigating to /2
+app.get('/2', (req, res) => {
+  res.redirect('https://x.com/Hindustan0112/status/2112123946334335270');
+});
+
+// Universal post redirect by complaint number or internal ID
+app.get(['/post/:id', '/p/:id'], (req, res) => {
+  const param = String(req.params.id || '').trim();
+  let complaint = null;
+  if (/^\d+$/.test(param)) {
+    complaint = db.get('SELECT * FROM complaints WHERE id = ?;', [parseInt(param, 10)]);
+  }
+  if (!complaint) {
+    complaint = db.get('SELECT * FROM complaints WHERE complaint_no = ? OR complaint_no LIKE ?;', [param, `%${param}`]);
+  }
+  if (complaint && complaint.post_url && complaint.post_url.startsWith('http')) {
+    return res.redirect(complaint.post_url);
+  }
+  return res.redirect('/');
+});
+
 // Single Page Application Fallback
 app.use((req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
