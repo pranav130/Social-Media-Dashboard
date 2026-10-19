@@ -1237,3 +1237,227 @@ body {
   box-shadow: 0 4px 12px rgba(220, 38, 38, 0.3);
 }
 
+/* ==========================================================================
+   GOOGLE SHEETS LIVE INTEGRATION & ANALYTICS STYLES
+   ========================================================================== */
+
+/* Sync Status Pill */
+.sync-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 12px;
+  border-radius: 20px;
+  background-color: var(--pill-bg);
+  border: 1px solid var(--border-color);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-main);
+  transition: all 0.2s ease;
+}
+
+.sync-status-pill a {
+  color: inherit;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.sync-status-pill a:hover {
+  text-decoration: underline;
+  color: var(--primary);
+}
+
+.sync-pulse-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.sync-pulse-dot.live {
+  background-color: #10b981;
+  box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);
+  animation: syncPulse 2s infinite;
+}
+
+.sync-pulse-dot.updating {
+  background-color: #f59e0b;
+  box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.7);
+  animation: syncPulse 1s infinite;
+}
+
+.sync-pulse-dot.error {
+  background-color: #ef4444;
+  box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7);
+}
+
+@keyframes syncPulse {
+  0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }
+  70% { transform: scale(1); box-shadow: 0 0 0 6px rgba(16, 185, 129, 0); }
+  100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+}
+
+/* Blue Clickable Links (Spreadsheet Standard) */
+.blue-post-link {
+  color: #1155cc !important;
+  text-decoration: underline !important;
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  word-break: break-all;
+}
+
+.blue-post-link:hover {
+  color: #0b3b82 !important;
+  text-decoration: underline !important;
+}
+
+/* Sheet Row Index Badge */
+.badge-sheet-row {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background-color: #e0f2fe;
+  color: #0369a1;
+  border: 1px solid #bae6fd;
+}
+
+/* Picked Status Badges */
+.badge-picked {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.badge-picked.yes {
+  background-color: #d1fae5;
+  color: #065f46;
+  border: 1px solid #a7f3d0;
+}
+
+.badge-picked.no {
+  background-color: #f1f5f9;
+  color: #475569;
+  border: 1px solid #cbd5e1;
+}
+
+.badge-picked.appreciation {
+  background-color: #fef3c7;
+  color: #92400e;
+  border: 1px solid #fde68a;
+}
+
+/* Shift Badges */
+.badge-shift {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 4px;
+  background-color: #f3e8ff;
+  color: #6b21a8;
+  border: 1px solid #e9d5ff;
+}
+
+/* 30-Minute SLA Badges */
+.badge-30m-yes {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background-color: #dcfce7;
+  color: #15803d;
+}
+
+.badge-30m-no {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background-color: #fee2e2;
+  color: #b91c1c;
+}
+
+/* Data Quality Badges */
+.badge-quality-issue {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background-color: #fef2f2;
+  color: #dc2626;
+  border: 1px solid #fecaca;
+  margin: 1px;
+}
+
+/* Analytics Tab Navigation */
+.analytics-tab-bar {
+  display: flex;
+  gap: 4px;
+  background-color: var(--tabs-bg);
+  padding: 6px;
+  border-radius: 8px;
+  margin-bottom: 20px;
+  overflow-x: auto;
+  border: 1px solid var(--border-color);
+}
+
+.analytics-tab {
+  padding: 8px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+  border-radius: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: all 0.15s ease;
+}
+
+.analytics-tab:hover {
+  color: var(--text-main);
+  background-color: var(--tab-hover);
+}
+
+.analytics-tab.active {
+  color: #ffffff;
+  background-color: var(--accent);
+}
+
+/* Analytics Progress Bars */
+.rate-progress-track {
+  width: 100%;
+  height: 8px;
+  background-color: var(--border-light);
+  border-radius: 4px;
+  overflow: hidden;
+  margin-top: 6px;
+}
+
+.rate-progress-fill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.4s ease;
+}
+
+

@@ -721,5 +721,6 @@ module.exports = {
   run,
   exec,
   flush,
+  saveToDiskSync,
   getDbInstance
 };

@@ -493,11 +493,9 @@ async function runSeed() {
 
   // 9. Realistic Sample Complaints across all operational statuses
   console.log('Checking and seeding sample complaints...');
-  const compCount = db.get('SELECT COUNT(*) AS cnt FROM complaints;');
-  if (!compCount || compCount.cnt === 0) {
-    const sampleComplaints = [
-      {
-        complaint_no: 'UPPCL-SMC-202610-0001',
+  const sampleComplaints = [
+    {
+      complaint_no: 'UPPCL-SMC-202610-0001',
         received_at: '2026-10-17 08:30:00',
         platform: 'Twitter/X',
         monitored_account: '@UPPCLLKO',
@@ -804,6 +802,8 @@ async function runSeed() {
     ];
 
     for (const c of sampleComplaints) {
+      const existing = db.get('SELECT id FROM complaints WHERE complaint_no = ?;', [c.complaint_no]);
+      if (existing) continue;
       const res = db.run(`
         INSERT INTO complaints (
           complaint_no, received_at, platform, monitored_account, hierarchy_handle_name,
@@ -921,7 +921,6 @@ async function runSeed() {
         `, [compId, c.invalid_reason, c.last_action_date]);
       }
     }
-  }
 
   // 10. Reply Templates (Bilingual Approved Templates)
   console.log('Seeding Approved Reply Templates...');

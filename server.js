@@ -9,6 +9,7 @@ const XLSX = require('xlsx');
 const db = require('./db');
 const classifier = require('./classifier');
 const XService = require('./x_service');
+const googleSheetsService = require('./google_sheets_service');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -397,6 +398,24 @@ app.get('/api/complaints', authMiddleware, (req, res) => {
 
   if (overdue === '1') {
     whereClauses.push('is_overdue = 1');
+  }
+
+  // Google Sheets Specific Filters
+  const picked_status = req.query.picked_status;
+  if (picked_status && picked_status !== 'All') {
+    whereClauses.push('picked_status = ?');
+    params.push(picked_status.toUpperCase());
+  }
+
+  const shift = req.query.shift;
+  if (shift && shift !== 'All') {
+    whereClauses.push('(link_shift = ? OR reply_shift = ?)');
+    params.push(shift, shift);
+  }
+
+  const data_quality = req.query.data_quality;
+  if (data_quality === 'issues_only') {
+    whereClauses.push("data_quality_flags IS NOT NULL AND data_quality_flags != '[]'");
   }
 
   // Search across multiple fields
@@ -1154,6 +1173,24 @@ app.get('/api/dashboard/kpis', authMiddleware, (req, res) => {
 
   const resolvedRate = total > 0 ? (((closedCount + resolvedPendingVerification) / total) * 100).toFixed(1) : 0;
 
+  // Google Sheets Specific KPI aggregations
+  const pickedRows = db.query(`SELECT picked_status, COUNT(*) as c FROM complaints ${whereSql} GROUP BY picked_status;`, params);
+  let pickedYes = 0, pickedNo = 0, pickedAppreciation = 0;
+  for (const r of pickedRows) {
+    if (r.picked_status === 'YES') pickedYes = r.c;
+    else if (r.picked_status === 'NO') pickedNo = r.c;
+    else if (r.picked_status === 'APPRECIATION') pickedAppreciation = r.c;
+  }
+
+  const reply30Row = db.get(`SELECT COUNT(*) as c FROM complaints ${whereSql ? (whereSql + " AND reply_within_30_min = 'YES'") : "WHERE reply_within_30_min = 'YES'"}`, params);
+  const replyWithin30MinCount = reply30Row ? reply30Row.c : 0;
+  const replyWithin30MinRate = total > 0 ? Number(((replyWithin30MinCount / total) * 100).toFixed(1)) : 0;
+
+  const qualityRow = db.get(`SELECT COUNT(*) as c FROM complaints ${whereSql ? (whereSql + " AND data_quality_flags IS NOT NULL AND data_quality_flags != '[]'") : "WHERE data_quality_flags IS NOT NULL AND data_quality_flags != '[]'"}`, params);
+  const dataQualityIssues = qualityRow ? qualityRow.c : 0;
+
+  const syncStatus = googleSheetsService.getSyncStatus();
+
   res.json({
     total,
     receivedToday,
@@ -1167,7 +1204,14 @@ app.get('/api/dashboard/kpis', authMiddleware, (req, res) => {
     closed: closedCount,
     reopened: reopenedCount,
     duplicate: duplicateCount,
-    resolvedRate: Number(resolvedRate)
+    resolvedRate: Number(resolvedRate),
+    pickedYes,
+    pickedNo,
+    pickedAppreciation,
+    replyWithin30MinCount,
+    replyWithin30MinRate,
+    dataQualityIssues,
+    syncStatus
   });
 });
 
@@ -1274,12 +1318,21 @@ app.get('/api/dashboard/charts', authMiddleware, (req, res) => {
     LIMIT 10;
   `, params);
 
-  // 7. Status Distribution
-  const statusRows = db.query(`
-    SELECT current_status, COUNT(*) as count
+  // 8. Shift Distribution (Link Shift & Reply Shift)
+  const linkShiftRows = db.query(`
+    SELECT COALESCE(NULLIF(link_shift, ''), 'Unassigned') as shift, COUNT(*) as count
     FROM complaints
     ${whereSql}
-    GROUP BY current_status
+    GROUP BY shift
+    ORDER BY count DESC;
+  `, params);
+
+  // 9. Picked Status Distribution (YES, NO, APPRECIATION)
+  const pickedRows = db.query(`
+    SELECT COALESCE(NULLIF(picked_status, ''), 'YES') as status, COUNT(*) as count
+    FROM complaints
+    ${whereSql}
+    GROUP BY status
     ORDER BY count DESC;
   `, params);
 
@@ -1290,7 +1343,9 @@ app.get('/api/dashboard/charts', authMiddleware, (req, res) => {
     discoms: discomRows,
     categories: categoryRows,
     districts: districtRows,
-    statuses: statusRows
+    statuses: statusRows,
+    shifts: linkShiftRows,
+    pickedStatuses: pickedRows
   });
 });
 
@@ -1558,6 +1613,185 @@ app.get('/api/reports/export', authMiddleware, (req, res) => {
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="${fileName}.csv"`);
     return res.send(csv);
+  }
+});
+
+// -------------------------------------------------------------
+// GOOGLE SHEETS LIVE SYNCHRONIZATION & DEEP ANALYTICS
+// -------------------------------------------------------------
+
+app.get('/api/sync/status', authMiddleware, (req, res) => {
+  try {
+    const status = googleSheetsService.getSyncStatus();
+    res.json(status);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/sync/refresh', authMiddleware, async (req, res) => {
+  try {
+    const result = await googleSheetsService.syncGoogleSheets(true);
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/reports/analytics', authMiddleware, (req, res) => {
+  try {
+    const { from_date, to_date, discom } = req.query;
+    let whereClauses = [];
+    let params = [];
+
+    // Strictly exclude posts authored by official hierarchy handles
+    whereClauses.push(`(
+      consumer_handle IS NULL OR 
+      REPLACE(LOWER(consumer_handle), '@', '') NOT IN (
+        SELECT REPLACE(LOWER(handle_name), '@', '') FROM x_hierarchy WHERE handle_name IS NOT NULL AND handle_name != ''
+      )
+    )`);
+
+    if (req.user.role === 'DISCOM Nodal Officer') {
+      whereClauses.push('(discom_name = ? OR discom_name = ?)');
+      params.push(req.user.discom_name, req.user.discom_name.toUpperCase());
+    } else if (discom && discom !== 'All') {
+      whereClauses.push('discom_name = ?');
+      params.push(discom);
+    }
+
+    if (from_date) {
+      whereClauses.push('received_at >= ?');
+      params.push(from_date + ' 00:00:00');
+    }
+    if (to_date) {
+      whereClauses.push('received_at <= ?');
+      params.push(to_date + ' 23:59:59');
+    }
+
+    const whereSql = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
+
+    // A. Time-based Analysis (Daily Trend, Weekday, Peak Hours)
+    const dailyRows = db.query(`
+      SELECT substr(received_at, 1, 10) as day, COUNT(*) as count
+      FROM complaints ${whereSql}
+      GROUP BY day ORDER BY day ASC;
+    `, params);
+
+    const weekdayMap = { '0': 'Sunday', '1': 'Monday', '2': 'Tuesday', '3': 'Wednesday', '4': 'Thursday', '5': 'Friday', '6': 'Saturday' };
+    const weekdayRows = db.query(`
+      SELECT strftime('%w', received_at) as wd, COUNT(*) as count
+      FROM complaints ${whereSql}
+      GROUP BY wd ORDER BY count DESC;
+    `, params).map(r => ({ day: weekdayMap[r.wd] || r.wd, count: r.count }));
+
+    const hourRows = db.query(`
+      SELECT substr(received_at, 12, 2) as hr, COUNT(*) as count
+      FROM complaints ${whereSql}
+      WHERE substr(received_at, 12, 2) != ''
+      GROUP BY hr ORDER BY hr ASC;
+    `, params);
+
+    // B. Source-Handle Analysis
+    const totalComplaints = db.get(`SELECT COUNT(*) as cnt FROM complaints ${whereSql};`, params)?.cnt || 1;
+    const handleRows = db.query(`
+      SELECT COALESCE(monitored_account, '@UPPCLLKO') as handle, COUNT(*) as count,
+        ROUND((COUNT(*) * 100.0 / ${totalComplaints}), 1) as share_pct
+      FROM complaints ${whereSql}
+      GROUP BY handle ORDER BY count DESC;
+    `, params);
+
+    // C. DISCOM Redressal Performance Analysis
+    const discomPerformance = db.query(`
+      SELECT discom_name,
+        COUNT(*) as total,
+        SUM(CASE WHEN current_status = 'Closed' THEN 1 ELSE 0 END) as closed,
+        SUM(CASE WHEN current_status IN ('Forwarded', 'Assigned to DISCOM', 'DISCOM Follow Up', 'Escalated') THEN 1 ELSE 0 END) as pending,
+        SUM(CASE WHEN current_status = 'Resolved — Verification Pending' THEN 1 ELSE 0 END) as verification_pending,
+        SUM(CASE WHEN picked_status = 'YES' THEN 1 ELSE 0 END) as picked_yes,
+        SUM(CASE WHEN picked_status = 'APPRECIATION' THEN 1 ELSE 0 END) as appreciation,
+        ROUND((SUM(CASE WHEN current_status = 'Closed' THEN 1 ELSE 0 END) * 100.0 / MAX(COUNT(*), 1)), 1) as resolution_pct
+      FROM complaints ${whereSql}
+      GROUP BY discom_name ORDER BY total DESC;
+    `, params);
+
+    // D. Shift & Workload Analysis
+    const linkShiftRows = db.query(`
+      SELECT COALESCE(NULLIF(link_shift, ''), 'Unassigned') as shift, COUNT(*) as count
+      FROM complaints ${whereSql}
+      GROUP BY shift ORDER BY count DESC;
+    `, params);
+
+    const replyShiftRows = db.query(`
+      SELECT COALESCE(NULLIF(reply_shift, ''), 'Unassigned') as shift, COUNT(*) as count
+      FROM complaints ${whereSql}
+      GROUP BY shift ORDER BY count DESC;
+    `, params);
+
+    // E. Response & SLA Compliance
+    const complianceRow = db.get(`
+      SELECT
+        COUNT(*) as total,
+        SUM(CASE WHEN reply_within_30_min = 'YES' THEN 1 ELSE 0 END) as reply_30_yes,
+        SUM(CASE WHEN reply_within_30_min = 'NO' THEN 1 ELSE 0 END) as reply_30_no,
+        SUM(CASE WHEN reply_within_60_min = 'YES' THEN 1 ELSE 0 END) as reply_60_yes,
+        SUM(CASE WHEN reply_within_60_min = 'NO' THEN 1 ELSE 0 END) as reply_60_no
+      FROM complaints ${whereSql};
+    `, params);
+
+    const reply30Pct = complianceRow && complianceRow.total > 0
+      ? Number(((complianceRow.reply_30_yes / complianceRow.total) * 100).toFixed(1))
+      : 0;
+
+    // F. Data Quality Issues Audit
+    const qualityRows = db.query(`
+      SELECT id, complaint_no, received_at, consumer_handle, post_url, discom_name, district_name, sheet_row_index, data_quality_flags
+      FROM complaints
+      ${whereSql ? (whereSql + " AND data_quality_flags IS NOT NULL AND data_quality_flags != '[]'") : "WHERE data_quality_flags IS NOT NULL AND data_quality_flags != '[]'"}
+      ORDER BY sheet_row_index DESC
+      LIMIT 100;
+    `, params);
+
+    const totalQualityIssues = db.get(`
+      SELECT COUNT(*) as cnt
+      FROM complaints
+      ${whereSql ? (whereSql + " AND data_quality_flags IS NOT NULL AND data_quality_flags != '[]'") : "WHERE data_quality_flags IS NOT NULL AND data_quality_flags != '[]'"}
+    `, params)?.cnt || 0;
+
+    const syncStatus = googleSheetsService.getSyncStatus();
+
+    res.json({
+      timeAnalysis: {
+        daily: dailyRows,
+        weekdays: weekdayRows,
+        hours: hourRows
+      },
+      sourceHandles: handleRows,
+      discomPerformance: discomPerformance,
+      shiftAnalysis: {
+        linkShift: linkShiftRows,
+        replyShift: replyShiftRows
+      },
+      responseCompliance: {
+        total: complianceRow ? complianceRow.total : 0,
+        reply30Yes: complianceRow ? complianceRow.reply_30_yes : 0,
+        reply30No: complianceRow ? complianceRow.reply_30_no : 0,
+        reply30Pct: reply30Pct,
+        reply60Yes: complianceRow ? complianceRow.reply_60_yes : 0,
+        reply60No: complianceRow ? complianceRow.reply_60_no : 0
+      },
+      dataQuality: {
+        totalIssues: totalQualityIssues,
+        records: qualityRows.map(r => {
+          let flags = [];
+          try { flags = JSON.parse(r.data_quality_flags || '[]'); } catch (e) {}
+          return { ...r, flags };
+        })
+      },
+      syncStatus: syncStatus
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to generate analytics: ' + err.message });
   }
 });
 
@@ -2354,6 +2588,14 @@ if (process.env.NO_SERVER_AUTOSTART !== 'true') {
       console.log(` Environment: ${process.env.NODE_ENV || 'production'}`);
       console.log(` System Time (IST): ${getIstTimestamp()}`);
       console.log(`===========================================================`);
+
+      // Start Google Sheets 24/7 background synchronization
+      try {
+        googleSheetsService.startBackgroundSync(5);
+        console.log('[Server] Google Sheets synchronization service started (5-min interval).');
+      } catch (sErr) {
+        console.warn('[Server] Google Sheets sync init warning:', sErr.message);
+      }
 
       // Start background worker daemon if enabled (default enabled for single-service deployments)
       if (process.env.ENABLE_INTERNAL_WORKER !== 'false') {

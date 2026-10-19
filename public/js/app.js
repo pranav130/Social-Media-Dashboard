@@ -15,12 +15,16 @@ const App = {
     category: 'All',
     priority: 'All',
     assigned_handle: 'All',
+    picked_status: 'All',
+    shift: 'All',
+    data_quality: 'All',
     overdue: '0',
     from_date: '',
     to_date: '',
     sort_by: 'received_at',
     sort_order: 'DESC'
   },
+  currentReportTab: 'time_trends',
   charts: {},
   notifications: [],
   unreadNotifs: 0,
@@ -175,6 +179,7 @@ const App = {
 
     this.startClock();
     this.startNotificationPoller();
+    this.startSyncPoller();
 
     if (this.token && this.user) {
       this.loadMasterData().then(() => {
@@ -223,6 +228,64 @@ const App = {
         }
       }
     } catch (e) {}
+  },
+
+  startSyncPoller() {
+    this.pollSyncStatus();
+    setInterval(() => {
+      this.pollSyncStatus();
+    }, 20000);
+  },
+
+  async pollSyncStatus() {
+    try {
+      const res = await this.api('/api/sync/status');
+      this.updateSyncUI(res);
+    } catch (e) {}
+  },
+
+  updateSyncUI(status) {
+    const dot = document.getElementById('sync-pulse-dot');
+    const text = document.getElementById('sync-status-text');
+    if (!dot || !text || !status) return;
+
+    if (status.status === 'LIVE') {
+      dot.className = 'sync-pulse-dot live';
+      text.textContent = `Sheet: LIVE (${status.totalRows || 0} rows)`;
+    } else if (status.status === 'UPDATING') {
+      dot.className = 'sync-pulse-dot updating';
+      text.textContent = 'Sheet: Syncing...';
+    } else {
+      dot.className = 'sync-pulse-dot error';
+      text.textContent = `Sheet: ${status.status || 'Offline'}`;
+    }
+  },
+
+  async triggerSheetSync() {
+    const btn = document.getElementById('btn-sync-sheet');
+    const icon = document.getElementById('sync-btn-icon');
+    if (icon) icon.classList.add('fa-spin');
+    if (btn) btn.disabled = true;
+
+    try {
+      const res = await this.api('/api/sync/refresh', 'POST', {});
+      this.pollSyncStatus();
+      if (this.currentPage === 'dashboard') {
+        this.reloadDashboard();
+      } else if (this.currentPage === 'register') {
+        this.loadRegisterData();
+      } else if (this.currentPage === 'reports') {
+        this.loadReportsData();
+      }
+      alert(`Google Sheets Sync Succeeded!\n\nStatus: ${res.status || 'LIVE'}\nTotal Synced: ${res.syncedCount || 'Updated'}\nAuthoritative Database: Twitter Complaint List`);
+    } catch (err) {
+      alert(`Sync failed: ${err.message}`);
+    } finally {
+      setTimeout(() => {
+        if (icon) icon.classList.remove('fa-spin');
+        if (btn) btn.disabled = false;
+      }, 1000);
+    }
   },
 
   initTheme() {
@@ -357,8 +420,19 @@ const App = {
     if (page === 'dashboard') {
       this.renderDashboard(container);
     } else if (page === 'register') {
-      if (params.status) this.currentFilters.status = params.status;
-      if (params.overdue) this.currentFilters.overdue = params.overdue;
+      if (params.status !== undefined) this.currentFilters.status = params.status;
+      if (params.overdue !== undefined) this.currentFilters.overdue = params.overdue;
+      if (params.discom !== undefined) this.currentFilters.discom = params.discom;
+      if (params.district !== undefined) this.currentFilters.district = params.district;
+      if (params.category !== undefined) this.currentFilters.category = params.category;
+      if (params.assigned_handle !== undefined) this.currentFilters.assigned_handle = params.assigned_handle;
+      if (params.picked_status !== undefined) this.currentFilters.picked_status = params.picked_status;
+      if (params.shift !== undefined) this.currentFilters.shift = params.shift;
+      if (params.data_quality !== undefined) this.currentFilters.data_quality = params.data_quality;
+      if (params.from_date !== undefined) this.currentFilters.from_date = params.from_date;
+      if (params.to_date !== undefined) this.currentFilters.to_date = params.to_date;
+      if (params.search !== undefined) this.currentFilters.search = params.search;
+      this.currentFilters.page = 1;
       this.renderComplaintRegister(container);
     } else if (page === 'add-complaint') {
       this.renderAddComplaint(container);
@@ -387,6 +461,7 @@ const App = {
     } else if (page === 'internal-tickets') {
       this.renderInternalTickets(container);
     } else if (page === 'reports') {
+      if (params.tab) this.currentReportTab = params.tab;
       this.renderReports(container);
     } else if (page === 'x-hierarchy') {
       this.renderXHierarchy(container);
@@ -502,12 +577,22 @@ const App = {
                 <span class="gov-badge"><i class="fa-solid fa-landmark"></i> Gov. of Uttar Pradesh</span>
                 <span style="font-weight: 700; font-size: 13px; color: var(--primary);">UPPCL Social Media Cell</span>
               </div>
+              <div id="sync-status-indicator" class="sync-status-pill" title="Authoritative Source: Google Sheet 'Twitter Complaint List'">
+                <span class="sync-pulse-dot live" id="sync-pulse-dot"></span>
+                <span id="sync-status-text">Sheet: LIVE</span>
+                <a href="https://docs.google.com/spreadsheets/d/10_210Ynr_F0Pj1Yov_pqjVZ1kaYIEWrbGF1jn16sgNY/edit?gid=598922870#gid=598922870" target="_blank" rel="noopener noreferrer" title="Open Google Sheet in new tab">
+                  <i class="fa-solid fa-arrow-up-right-from-square" style="font-size: 10px; margin-left: 2px;"></i>
+                </a>
+              </div>
               <div id="ist-clock" class="clock-display">
                 <i class="fa-regular fa-clock"></i> IST: Loading...
               </div>
             </div>
 
             <div class="header-right">
+              <button class="btn btn-secondary btn-sm" id="btn-sync-sheet" onclick="App.triggerSheetSync()" title="Synchronize with Google Sheet">
+                <i class="fa-solid fa-arrows-rotate" id="sync-btn-icon"></i> Sync Sheet
+              </button>
               ${isOperator || isSupervisor ? `
               <button class="btn btn-accent btn-sm" onclick="App.navigate('add-complaint')">
                 <i class="fa-solid fa-plus"></i> New Complaint
@@ -623,7 +708,7 @@ const App = {
       </div>
 
       <!-- Bottom District & Platform Distribution -->
-      <div class="charts-grid" style="margin-bottom: 0;">
+      <div class="charts-grid">
         <div class="chart-card">
           <div class="chart-header">
             <div class="chart-title"><i class="fa-solid fa-map-location-dot"></i> Top 10 High Grievance Districts</div>
@@ -636,6 +721,23 @@ const App = {
             <div class="chart-title"><i class="fa-solid fa-pie-chart"></i> Operational Status Distribution</div>
           </div>
           <div class="chart-body"><canvas id="chart-status"></canvas></div>
+        </div>
+      </div>
+
+      <!-- Shifts & Ingestion Picked Status Distribution -->
+      <div class="charts-grid" style="margin-bottom: 0;">
+        <div class="chart-card">
+          <div class="chart-header">
+            <div class="chart-title"><i class="fa-solid fa-business-time"></i> Grievance Volume by Shift</div>
+          </div>
+          <div class="chart-body"><canvas id="chart-shifts"></canvas></div>
+        </div>
+
+        <div class="chart-card">
+          <div class="chart-header">
+            <div class="chart-title"><i class="fa-solid fa-filter"></i> Ingestion Picked Status (Actionable vs Filtered)</div>
+          </div>
+          <div class="chart-body"><canvas id="chart-picked"></canvas></div>
         </div>
       </div>
     `;
@@ -681,16 +783,46 @@ const App = {
     if (!container) return;
 
     container.innerHTML = `
-      <div class="kpi-card kpi-total" onclick="App.navigate('register', { status: 'All' })">
-        <div class="kpi-label">Total Received</div>
+      <div class="kpi-card kpi-total" onclick="App.navigate('register', { status: 'All' })" title="Click to view all complaints">
+        <div class="kpi-label">Total Ingested</div>
         <div class="kpi-value">${k.total}</div>
-        <div class="kpi-sub">Overall consumer grievances</div>
+        <div class="kpi-sub">Authoritative Google Sheet</div>
       </div>
 
       <div class="kpi-card kpi-today" onclick="App.navigate('register', { from_date: new Date().toISOString().substring(0, 10) })">
         <div class="kpi-label">Received Today</div>
         <div class="kpi-value">${k.receivedToday}</div>
         <div class="kpi-sub">Today's social media inflow</div>
+      </div>
+
+      <div class="kpi-card" style="border-top: 3px solid #059669;" onclick="App.navigate('register', { picked_status: 'YES' })" title="Click to view Actionable Complaints">
+        <div class="kpi-label" style="color: #059669;">Picked: YES</div>
+        <div class="kpi-value" style="color: #059669;">${k.pickedYes || 0}</div>
+        <div class="kpi-sub">Actionable grievances</div>
+      </div>
+
+      <div class="kpi-card" style="border-top: 3px solid #64748b;" onclick="App.navigate('register', { picked_status: 'NO' })" title="Click to view Filtered Non-Complaints">
+        <div class="kpi-label" style="color: #64748b;">Picked: NO</div>
+        <div class="kpi-value" style="color: #64748b;">${k.pickedNo || 0}</div>
+        <div class="kpi-sub">Filtered non-complaints</div>
+      </div>
+
+      <div class="kpi-card" style="border-top: 3px solid #d97706;" onclick="App.navigate('register', { picked_status: 'APPRECIATION' })" title="Click to view Consumer Appreciation">
+        <div class="kpi-label" style="color: #d97706;">Appreciation</div>
+        <div class="kpi-value" style="color: #d97706;">${k.pickedAppreciation || 0}</div>
+        <div class="kpi-sub">Consumer gratitude posts</div>
+      </div>
+
+      <div class="kpi-card" style="border-top: 3px solid #0284c7;" onclick="App.navigate('reports', { tab: 'sla_compliance' })" title="Click to view 30-min compliance analytics">
+        <div class="kpi-label" style="color: #0284c7;">30-Min First Reply</div>
+        <div class="kpi-value" style="color: #0284c7;">${k.replyWithin30MinRate || 0}%</div>
+        <div class="kpi-sub">${k.replyWithin30MinCount || 0} replied within 30 min</div>
+      </div>
+
+      <div class="kpi-card" style="border-top: 3px solid ${k.dataQualityIssues > 0 ? '#ef4444' : '#10b981'};" onclick="App.navigate('reports', { tab: 'data_quality' })" title="Click to view Data Quality Audit Center">
+        <div class="kpi-label" style="color: ${k.dataQualityIssues > 0 ? '#ef4444' : '#10b981'};">Data Quality Audit</div>
+        <div class="kpi-value" style="color: ${k.dataQualityIssues > 0 ? '#ef4444' : '#10b981'};">${k.dataQualityIssues || 0}</div>
+        <div class="kpi-sub">${k.dataQualityIssues > 0 ? 'Sheet rows need review' : '100% Validated Clean'}</div>
       </div>
 
       <div class="kpi-card kpi-new" onclick="App.navigate('register', { status: 'New' })">
@@ -702,7 +834,7 @@ const App = {
       <div class="kpi-card kpi-forwarded" onclick="App.navigate('register', { status: 'Forwarded' })">
         <div class="kpi-label">Forwarded</div>
         <div class="kpi-value">${k.forwarded}</div>
-        <div class="kpi-sub">Forwarded to DISCOM / Field X-Handle</div>
+        <div class="kpi-sub">Forwarded to DISCOM</div>
       </div>
 
       <div class="kpi-card kpi-followup" onclick="App.navigate('register', { status: 'DISCOM Follow Up' })">
@@ -739,12 +871,6 @@ const App = {
         <div class="kpi-label">Verified Closed</div>
         <div class="kpi-value">${k.closed}</div>
         <div class="kpi-sub">Satisfied & closed by SMC</div>
-      </div>
-
-      <div class="kpi-card kpi-reopened" onclick="App.navigate('register', { status: 'Reopened' })">
-        <div class="kpi-label">Reopened</div>
-        <div class="kpi-value">${k.reopened}</div>
-        <div class="kpi-sub">Customer not satisfied</div>
       </div>
     `;
   },
@@ -783,6 +909,12 @@ const App = {
           scales: {
             y: { beginAtZero: true, ticks: { precision: 0 } },
             x: { grid: { display: false } }
+          },
+          onClick: (e, els, chart) => {
+            if (els && els.length > 0) {
+              const day = chart.data.labels[els[0].index];
+              if (day && day !== 'No Data') App.navigate('register', { from_date: day, to_date: day });
+            }
           }
         }
       });
@@ -813,6 +945,12 @@ const App = {
           scales: {
             x: { stacked: true },
             y: { stacked: true, beginAtZero: true, ticks: { precision: 0 } }
+          },
+          onClick: (e, els, chart) => {
+            if (els && els.length > 0) {
+              const discom = chart.data.labels[els[0].index];
+              if (discom && discom !== 'No DISCOM') App.navigate('register', { discom });
+            }
           }
         }
       });
@@ -840,7 +978,13 @@ const App = {
           responsive: true,
           maintainAspectRatio: false,
           plugins: { legend: { display: false } },
-          scales: { x: { beginAtZero: true, ticks: { precision: 0 } } }
+          scales: { x: { beginAtZero: true, ticks: { precision: 0 } } },
+          onClick: (e, els, chart) => {
+            if (els && els.length > 0) {
+              const handle = chart.data.labels[els[0].index];
+              if (handle && handle !== 'None') App.navigate('register', { assigned_handle: handle });
+            }
+          }
         }
       });
     }
@@ -865,7 +1009,13 @@ const App = {
         options: {
           responsive: true,
           maintainAspectRatio: false,
-          plugins: { legend: { position: 'right', labels: { boxWidth: 12, font: { size: 10 } } } }
+          plugins: { legend: { position: 'right', labels: { boxWidth: 12, font: { size: 10 } } } },
+          onClick: (e, els, chart) => {
+            if (els && els.length > 0) {
+              const cat = chart.data.labels[els[0].index];
+              if (cat && cat !== 'None') App.navigate('register', { category: cat });
+            }
+          }
         }
       });
     }
@@ -891,7 +1041,14 @@ const App = {
           responsive: true,
           maintainAspectRatio: false,
           plugins: { legend: { display: false } },
-          scales: { y: { beginAtZero: true, ticks: { precision: 0 } } }
+          scales: { y: { beginAtZero: true, ticks: { precision: 0 } } },
+          onClick: (e, els, chart) => {
+            if (els && els.length > 0) {
+              const raw = chart.data.labels[els[0].index];
+              const dist = raw.split(' (')[0].trim();
+              if (dist && dist !== 'None') App.navigate('register', { district: dist });
+            }
+          }
         }
       });
     }
@@ -926,7 +1083,75 @@ const App = {
         options: {
           responsive: true,
           maintainAspectRatio: false,
-          plugins: { legend: { position: 'right', labels: { boxWidth: 12, font: { size: 10 } } } }
+          plugins: { legend: { position: 'right', labels: { boxWidth: 12, font: { size: 10 } } } },
+          onClick: (e, els, chart) => {
+            if (els && els.length > 0) {
+              const st = chart.data.labels[els[0].index];
+              if (st && st !== 'None') App.navigate('register', { status: st });
+            }
+          }
+        }
+      });
+    }
+
+    // Chart 7: Shifts Distribution
+    const ctxShifts = document.getElementById('chart-shifts');
+    if (ctxShifts) {
+      if (this.charts.shifts) this.charts.shifts.destroy();
+      const shiftData = c.shifts || [];
+      const labels = shiftData.map(s => s.shift);
+      const counts = shiftData.map(s => s.count);
+      this.charts.shifts = new Chart(ctxShifts, {
+        type: 'doughnut',
+        data: {
+          labels: labels.length ? labels : ['No Shifts Recorded'],
+          datasets: [{
+            data: counts.length ? counts : [1],
+            backgroundColor: ['#6366f1', '#06b6d4', '#f59e0b', '#64748b']
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { position: 'right', labels: { boxWidth: 12, font: { size: 10 } } } },
+          onClick: (e, els, chart) => {
+            if (els && els.length > 0) {
+              const shift = chart.data.labels[els[0].index];
+              if (shift && shift !== 'No Shifts Recorded') App.navigate('register', { shift });
+            }
+          }
+        }
+      });
+    }
+
+    // Chart 8: Picked Status Distribution
+    const ctxPicked = document.getElementById('chart-picked');
+    if (ctxPicked) {
+      if (this.charts.picked) this.charts.picked.destroy();
+      const pickedData = c.pickedStatuses || [];
+      const labels = pickedData.map(p => p.status);
+      const counts = pickedData.map(p => p.count);
+      const colorMap = { 'YES': '#10b981', 'NO': '#94a3b8', 'APPRECIATION': '#f59e0b' };
+
+      this.charts.picked = new Chart(ctxPicked, {
+        type: 'pie',
+        data: {
+          labels: labels.length ? labels : ['None'],
+          datasets: [{
+            data: counts.length ? counts : [1],
+            backgroundColor: labels.map(l => colorMap[l] || '#3b82f6')
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { position: 'right', labels: { boxWidth: 12, font: { size: 10 } } } },
+          onClick: (e, els, chart) => {
+            if (els && els.length > 0) {
+              const ps = chart.data.labels[els[0].index];
+              if (ps && ps !== 'None') App.navigate('register', { picked_status: ps });
+            }
+          }
         }
       });
     }
@@ -1017,6 +1242,34 @@ const App = {
             </select>
           </div>
 
+          <div class="filter-group" style="min-width: 140px;">
+            <label>Picked Status</label>
+            <select id="reg-picked-status" class="form-control">
+              <option value="All" ${this.currentFilters.picked_status === 'All' ? 'selected' : ''}>All Posts</option>
+              <option value="YES" ${this.currentFilters.picked_status === 'YES' ? 'selected' : ''}>YES (Actionable)</option>
+              <option value="NO" ${this.currentFilters.picked_status === 'NO' ? 'selected' : ''}>NO (Non-Complaint)</option>
+              <option value="APPRECIATION" ${this.currentFilters.picked_status === 'APPRECIATION' ? 'selected' : ''}>APPRECIATION</option>
+            </select>
+          </div>
+
+          <div class="filter-group" style="min-width: 130px;">
+            <label>Shift</label>
+            <select id="reg-shift" class="form-control">
+              <option value="All" ${this.currentFilters.shift === 'All' ? 'selected' : ''}>All Shifts</option>
+              <option value="Shift 1" ${this.currentFilters.shift === 'Shift 1' ? 'selected' : ''}>Shift 1 (06-14)</option>
+              <option value="Shift 2" ${this.currentFilters.shift === 'Shift 2' ? 'selected' : ''}>Shift 2 (14-22)</option>
+              <option value="Shift 3" ${this.currentFilters.shift === 'Shift 3' ? 'selected' : ''}>Shift 3 (22-06)</option>
+            </select>
+          </div>
+
+          <div class="filter-group" style="min-width: 130px;">
+            <label>Data Quality</label>
+            <select id="reg-data-quality" class="form-control">
+              <option value="All" ${this.currentFilters.data_quality === 'All' ? 'selected' : ''}>All Records</option>
+              <option value="flagged" ${this.currentFilters.data_quality === 'flagged' ? 'selected' : ''}>Flagged Issues Only</option>
+            </select>
+          </div>
+
           <div class="filter-group" style="min-width: 160px;">
             <label>Assigned X-Handle</label>
             <select id="reg-assigned-handle" class="form-control">
@@ -1103,14 +1356,26 @@ const App = {
   },
 
   applyFilters() {
-    this.currentFilters.search = document.getElementById('reg-search').value.trim();
-    this.currentFilters.discom = document.getElementById('reg-discom').value;
-    this.currentFilters.category = document.getElementById('reg-cat').value;
-    this.currentFilters.priority = document.getElementById('reg-priority').value;
-    this.currentFilters.platform = document.getElementById('reg-platform').value;
+    this.currentFilters.search = document.getElementById('reg-search') ? document.getElementById('reg-search').value.trim() : '';
+    this.currentFilters.discom = document.getElementById('reg-discom') ? document.getElementById('reg-discom').value : 'All';
+    this.currentFilters.category = document.getElementById('reg-cat') ? document.getElementById('reg-cat').value : 'All';
+    this.currentFilters.priority = document.getElementById('reg-priority') ? document.getElementById('reg-priority').value : 'All';
+    this.currentFilters.platform = document.getElementById('reg-platform') ? document.getElementById('reg-platform').value : 'All';
     const assignedSelect = document.getElementById('reg-assigned-handle');
     if (assignedSelect) {
       this.currentFilters.assigned_handle = assignedSelect.value;
+    }
+    const pickedSelect = document.getElementById('reg-picked-status');
+    if (pickedSelect) {
+      this.currentFilters.picked_status = pickedSelect.value;
+    }
+    const shiftSelect = document.getElementById('reg-shift');
+    if (shiftSelect) {
+      this.currentFilters.shift = shiftSelect.value;
+    }
+    const qualitySelect = document.getElementById('reg-data-quality');
+    if (qualitySelect) {
+      this.currentFilters.data_quality = qualitySelect.value;
     }
     this.currentFilters.page = 1;
     this.loadRegisterData();
@@ -1128,6 +1393,9 @@ const App = {
       category: 'All',
       priority: 'All',
       assigned_handle: 'All',
+      picked_status: 'All',
+      shift: 'All',
+      data_quality: 'All',
       overdue: '0',
       from_date: '',
       to_date: '',
@@ -1272,6 +1540,11 @@ const App = {
               <a href="javascript:void(0)" onclick="App.viewComplaint(${c.id})" style="font-weight: 700; color: var(--primary); text-decoration: none;">
                 ${c.complaint_no}
               </a>
+              ${c.sheet_row_index ? `
+                <div style="margin-top: 3px;">
+                  <span class="badge-sheet-row" title="Authoritative Google Sheet Row index">Row #${c.sheet_row_index}</span>
+                </div>
+              ` : ''}
             </td>
             <td>
               <div style="font-weight: 600;">${c.received_at.substring(0, 10)}</div>
@@ -1284,7 +1557,13 @@ const App = {
             <td>
               <div style="font-weight: 600;">${c.consumer_name || 'Consumer'}</div>
               ${c.consumer_handle ? `<div style="font-size: 11px; color: var(--text-muted);">${c.consumer_handle}</div>` : ''}
-              ${c.post_url ? `<a href="${c.post_url}" target="_blank" rel="noopener noreferrer" style="font-size: 11px; color: var(--status-new);"><i class="fa-solid fa-arrow-up-right-from-square"></i> Post</a>` : ''}
+              ${c.post_url ? `
+                <div style="margin-top: 3px;">
+                  <a href="${c.post_url}" target="_blank" rel="noopener noreferrer" class="blue-post-link" title="Open source post on X/web">
+                    <i class="fa-solid fa-arrow-up-right-from-square" style="font-size: 10px;"></i> View Post
+                  </a>
+                </div>
+              ` : ''}
             </td>
             <td style="max-width: 240px;">
               <div style="font-weight: 600; color: var(--primary);">${c.category_name}</div>
@@ -1300,9 +1579,33 @@ const App = {
               <span class="badge-prio ${prioBadgeClass}">${c.priority}</span>
             </td>
             <td>
-              <span class="badge-status ${statusBadgeClass}">${c.current_status}</span>
+              <div style="margin-bottom: 3px;">
+                <span class="badge-status ${statusBadgeClass}">${c.current_status}</span>
+              </div>
+              ${c.picked_status ? `
+                <div style="margin-bottom: 2px;">
+                  <span class="badge-picked ${c.picked_status.toLowerCase()}">${c.picked_status}</span>
+                </div>
+              ` : ''}
+              ${c.reply_within_30_min ? `
+                <div style="margin-top: 2px;">
+                  <span class="${c.reply_within_30_min === 'YES' ? 'badge-30m-yes' : 'badge-30m-no'}" title="Response SLA within 30 min">
+                    30m: ${c.reply_within_30_min}
+                  </span>
+                </div>
+              ` : ''}
+              ${c.data_quality_flags ? `
+                <div style="margin-top: 2px;">
+                  <span class="badge-quality-issue" title="Data quality issue: ${c.data_quality_flags}"><i class="fa-solid fa-triangle-exclamation"></i> Flagged</span>
+                </div>
+              ` : ''}
             </td>
             <td>
+              ${c.link_shift ? `
+                <div style="margin-bottom: 3px;">
+                  <span class="badge-shift" title="Shift assigned during ingestion">${c.link_shift}</span>
+                </div>
+              ` : ''}
               ${isOverdue ? `
                 <span class="badge-overdue"><i class="fa-solid fa-clock-rotate-left"></i> OVERDUE</span>
               ` : (c.expected_response_date ? `
@@ -2819,77 +3122,488 @@ const App = {
   },
 
   // -----------------------------------------------------------
-  // REPORTS VIEW
+  // REPORTS VIEW & OPERATIONAL INTELLIGENCE SUITE
   // -----------------------------------------------------------
-  renderReports(container) {
+  async renderReports(container) {
+    if (!container) container = document.getElementById('page-content');
+    if (!container) return;
+
     container.innerHTML = `
       <div class="page-header">
         <div class="page-title">
-          <h2>Management Reports & Official Exports</h2>
-          <p>Generate, Preview, and Download Comprehensive Operational Redressal Reports</p>
+          <h2>Operational Intelligence & Redressal Reports</h2>
+          <p>Authoritative Google Sheet Analytics, DISCOM Performance, Shift Audits, and Compliance Center</p>
+        </div>
+        <div class="page-actions">
+          <button class="btn btn-secondary btn-sm" onclick="App.triggerSheetSync()">
+            <i class="fa-solid fa-arrows-rotate"></i> Sync Sheet
+          </button>
+          <button class="btn btn-secondary btn-sm" onclick="window.print()">
+            <i class="fa-solid fa-print"></i> Print
+          </button>
         </div>
       </div>
 
-      <div class="details-card">
-        <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 16px;">
-          <div class="filter-group">
-            <label>Report Type *</label>
-            <select id="rep-type" class="form-control" onchange="App.handleReportTypeChange()">
-              <option value="daily_ops">1. Daily Operational Report</option>
-              <option value="x_hierarchy">2. X Hierarchy-wise Report</option>
-              <option value="discom_district">3. DISCOM & District Performance</option>
-              <option value="category_wise">4. Category-wise Grievance Breakdown</option>
-              <option value="pending_overdue">5. Pending & Overdue Analysis</option>
-              <option value="discom_followup">6. DISCOM Follow-Up & Reminder Report</option>
-              <option value="escalation_report">7. Escalation Hierarchy Trail</option>
-              <option value="resolved_vs_closed">8. Resolved vs Verified-Closed Audit</option>
-              <option value="aging_report">9. Complaint Aging Analysis</option>
-              <option value="audit_trail">10. Security & User Audit Trail</option>
-            </select>
-          </div>
-
-          <div class="filter-group">
-            <label>From Date</label>
-            <input type="date" id="rep-from" class="form-control">
-          </div>
-
-          <div class="filter-group">
-            <label>To Date</label>
-            <input type="date" id="rep-to" class="form-control">
-          </div>
-
-          <div class="filter-group">
-            <label>DISCOM Filter</label>
-            <select id="rep-discom" class="form-control">
-              <option value="All">All DISCOMs</option>
-              <option value="PUVVNL">PuVVNL</option>
-              <option value="MVVNL">MVVNL</option>
-              <option value="DVVNL">DVVNL</option>
-              <option value="PVVNL">PVVNL</option>
-              <option value="KESCo">KESCo</option>
-            </select>
-          </div>
+      <!-- 7-Tab Navigation -->
+      <div class="analytics-tab-bar">
+        <div class="analytics-tab ${this.currentReportTab === 'time_trends' ? 'active' : ''}" onclick="App.switchReportTab('time_trends')">
+          <i class="fa-solid fa-chart-line"></i> 1. Time Analysis
         </div>
-
-        <div style="display: flex; gap: 10px; margin-bottom: 20px;">
-          <button class="btn btn-primary" onclick="App.downloadReport('excel')">
-            <i class="fa-solid fa-file-excel"></i> Download Excel (.xlsx)
-          </button>
-          <button class="btn btn-secondary" onclick="App.downloadReport('csv')">
-            <i class="fa-solid fa-file-csv"></i> Download CSV
-          </button>
-          <button class="btn btn-secondary" onclick="window.print()">
-            <i class="fa-solid fa-print"></i> Print Formatted View
-          </button>
+        <div class="analytics-tab ${this.currentReportTab === 'handles' ? 'active' : ''}" onclick="App.switchReportTab('handles')">
+          <i class="fa-brands fa-x-twitter"></i> 2. Monitored Handles
         </div>
-
-        <div id="report-preview-container">
-          <div style="text-align: center; padding: 30px; color: var(--text-muted); background: var(--bg-subtle); border-radius: 6px; border: 1px dashed var(--border-color);">
-            Select parameters and click Download or Print. Exported datasets match real-time system records.
-          </div>
+        <div class="analytics-tab ${this.currentReportTab === 'discoms' ? 'active' : ''}" onclick="App.switchReportTab('discoms')">
+          <i class="fa-solid fa-building-columns"></i> 3. DISCOM Performance
         </div>
+        <div class="analytics-tab ${this.currentReportTab === 'shifts' ? 'active' : ''}" onclick="App.switchReportTab('shifts')">
+          <i class="fa-solid fa-business-time"></i> 4. Shift Workloads
+        </div>
+        <div class="analytics-tab ${this.currentReportTab === 'sla_compliance' ? 'active' : ''}" onclick="App.switchReportTab('sla_compliance')">
+          <i class="fa-solid fa-stopwatch"></i> 5. 30-Min SLA Compliance
+        </div>
+        <div class="analytics-tab ${this.currentReportTab === 'data_quality' ? 'active' : ''}" onclick="App.switchReportTab('data_quality')">
+          <i class="fa-solid fa-triangle-exclamation"></i> 6. Data Quality Audit
+        </div>
+        <div class="analytics-tab ${this.currentReportTab === 'export_center' ? 'active' : ''}" onclick="App.switchReportTab('export_center')">
+          <i class="fa-solid fa-file-export"></i> 7. Export Center
+        </div>
+      </div>
+
+      <div id="report-tab-body">
+        <div style="text-align: center; padding: 40px;"><i class="fa-solid fa-spinner fa-spin"></i> Loading analytics data...</div>
       </div>
     `;
+
+    this.loadReportsData();
+  },
+
+  switchReportTab(tabId) {
+    this.currentReportTab = tabId;
+    this.renderReports();
+  },
+
+  async loadReportsData() {
+    const body = document.getElementById('report-tab-body');
+    if (!body) return;
+
+    try {
+      const data = await this.api('/api/reports/analytics');
+      const tab = this.currentReportTab || 'time_trends';
+
+      if (tab === 'time_trends') {
+        const daily = data.timeTrends?.daily || [];
+        const hourly = data.timeTrends?.hourly || [];
+        const weekdays = data.timeTrends?.weekdays || [];
+        const peakHour = hourly.slice().sort((a, b) => b.count - a.count)[0] || { hr: '12', count: 0 };
+        const peakDay = weekdays[0] || { day: 'Monday', count: 0 };
+
+        body.innerHTML = `
+          <div class="kpi-grid" style="margin-bottom: 20px;">
+            <div class="kpi-card">
+              <div class="kpi-label">Peak Inflow Hour</div>
+              <div class="kpi-value">${peakHour.hr}:00 - ${peakHour.hr}:59</div>
+              <div class="kpi-sub">${peakHour.count} complaints received</div>
+            </div>
+            <div class="kpi-card">
+              <div class="kpi-label">Busiest Day of Week</div>
+              <div class="kpi-value">${peakDay.day}</div>
+              <div class="kpi-sub">${peakDay.count} total grievances</div>
+            </div>
+            <div class="kpi-card">
+              <div class="kpi-label">Daily Average Inflow</div>
+              <div class="kpi-value">${daily.length ? Math.round(daily.reduce((s, r) => s + r.count, 0) / daily.length) : 0}</div>
+              <div class="kpi-sub">Across ${daily.length} active recording days</div>
+            </div>
+          </div>
+
+          <div class="charts-grid" style="margin-bottom: 20px;">
+            <div class="chart-card">
+              <div class="chart-header">
+                <div class="chart-title"><i class="fa-solid fa-clock"></i> Inflow Distribution by Hour of Day (00:00 - 23:00 IST)</div>
+              </div>
+              <div class="chart-body"><canvas id="chart-rep-hourly"></canvas></div>
+            </div>
+            <div class="chart-card">
+              <div class="chart-header">
+                <div class="chart-title"><i class="fa-solid fa-calendar-week"></i> Inflow by Day of Week</div>
+              </div>
+              <div class="chart-body"><canvas id="chart-rep-weekdays"></canvas></div>
+            </div>
+          </div>
+
+          <div class="card-table">
+            <h3 style="padding: 16px 20px; font-size: 14px; border-bottom: 1px solid var(--border-color);">Daily Inflow Summary</h3>
+            <div class="table-responsive">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Date (IST)</th>
+                    <th>Complaints Count</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${daily.map(d => `
+                    <tr>
+                      <td style="font-weight: 600;">${d.day}</td>
+                      <td><b>${d.count}</b> complaints</td>
+                      <td>
+                        <button class="btn btn-secondary btn-sm" onclick="App.navigate('register', { from_date: '${d.day}', to_date: '${d.day}' })">
+                          <i class="fa-solid fa-filter"></i> View Records
+                        </button>
+                      </td>
+                    </tr>
+                  `).join('')}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        `;
+
+        if (typeof Chart !== 'undefined') {
+          const ctxHr = document.getElementById('chart-rep-hourly');
+          if (ctxHr) {
+            new Chart(ctxHr, {
+              type: 'bar',
+              data: {
+                labels: hourly.map(h => `${h.hr}:00`),
+                datasets: [{ label: 'Inflow', data: hourly.map(h => h.count), backgroundColor: '#008080' }]
+              },
+              options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }
+            });
+          }
+          const ctxWd = document.getElementById('chart-rep-weekdays');
+          if (ctxWd) {
+            new Chart(ctxWd, {
+              type: 'bar',
+              data: {
+                labels: weekdays.map(w => w.day),
+                datasets: [{ label: 'Complaints', data: weekdays.map(w => w.count), backgroundColor: '#123456' }]
+              },
+              options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }
+            });
+          }
+        }
+      } else if (tab === 'handles') {
+        const handles = data.sourceHandles || [];
+        body.innerHTML = `
+          <div class="card-table">
+            <div style="padding: 16px 20px; border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center;">
+              <div>
+                <h3 style="font-size: 15px; margin-bottom: 4px;">Authoritative Monitored Handles & Jurisdiction Breakdown</h3>
+                <p style="font-size: 12px; color: var(--text-muted); margin: 0;">Inflow distribution across official Apex and DISCOM X handles</p>
+              </div>
+            </div>
+            <div class="table-responsive">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Official X Handle</th>
+                    <th>Organization / Office</th>
+                    <th>Complaints Count</th>
+                    <th>Share of Inflow</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${handles.map(h => `
+                    <tr>
+                      <td>
+                        <b style="color: var(--primary);"><i class="fa-brands fa-x-twitter"></i> ${h.handle}</b>
+                      </td>
+                      <td style="font-size: 12px; color: var(--text-muted);">
+                        ${h.handle === '@UPPCLLKO' ? 'UPPCL Corporate Headquarters (Apex)' : (h.handle.includes('CMOffice') ? 'Chief Minister Office UP' : (h.handle.includes('Sharma') ? 'Hon. Energy Minister Office' : 'DISCOM / Field Office'))}
+                      </td>
+                      <td><b>${h.count}</b></td>
+                      <td>
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                          <span>${h.share_pct}%</span>
+                          <div class="rate-progress-track" style="width: 100px; margin: 0;">
+                            <div class="rate-progress-fill" style="width: ${Math.min(h.share_pct, 100)}%; background-color: var(--accent);"></div>
+                          </div>
+                        </div>
+                      </td>
+                      <td>
+                        <button class="btn btn-secondary btn-sm" onclick="App.navigate('register', { assigned_handle: '${h.handle}' })">
+                          <i class="fa-solid fa-filter"></i> Filter Register
+                        </button>
+                      </td>
+                    </tr>
+                  `).join('')}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        `;
+      } else if (tab === 'discoms') {
+        const discoms = data.discomPerformance || [];
+        body.innerHTML = `
+          <div class="card-table">
+            <div style="padding: 16px 20px; border-bottom: 1px solid var(--border-color);">
+              <h3 style="font-size: 15px; margin-bottom: 4px;">5 DISCOM Operational Redressal Comparison</h3>
+              <p style="font-size: 12px; color: var(--text-muted); margin: 0;">Authoritative breakdown across PuVVNL, MVVNL, DVVNL, PVVNL, and KESCo</p>
+            </div>
+            <div class="table-responsive">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>DISCOM</th>
+                    <th>Total Inflow</th>
+                    <th>Picked (YES)</th>
+                    <th>Appreciation</th>
+                    <th>Verified Closed</th>
+                    <th>Resolution Rate</th>
+                    <th>Pending Action</th>
+                    <th>Verification Due</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${discoms.map(d => `
+                    <tr>
+                      <td><b style="font-size: 14px; color: var(--primary);">${d.discom_name}</b></td>
+                      <td><b>${d.total}</b></td>
+                      <td><span class="badge-picked yes">${d.picked_yes}</span></td>
+                      <td><span class="badge-picked appreciation">${d.appreciation}</span></td>
+                      <td><b style="color: #059669;">${d.closed}</b></td>
+                      <td>
+                        <div>
+                          <b>${d.resolution_pct}%</b>
+                          <div class="rate-progress-track" style="width: 90px; margin-top: 4px;">
+                            <div class="rate-progress-fill" style="width: ${Math.min(d.resolution_pct, 100)}%; background-color: ${d.resolution_pct > 70 ? '#10b981' : (d.resolution_pct > 40 ? '#f59e0b' : '#ef4444')};"></div>
+                          </div>
+                        </div>
+                      </td>
+                      <td><span style="color: #f59e0b; font-weight: 700;">${d.pending}</span></td>
+                      <td><span style="color: #0284c7; font-weight: 700;">${d.verification_pending}</span></td>
+                      <td>
+                        <button class="btn btn-secondary btn-sm" onclick="App.navigate('register', { discom: '${d.discom_name}' })">
+                          <i class="fa-solid fa-table-list"></i> View
+                        </button>
+                      </td>
+                    </tr>
+                  `).join('')}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        `;
+      } else if (tab === 'shifts') {
+        const linkShifts = data.shifts?.linkShifts || [];
+
+        body.innerHTML = `
+          <div class="kpi-grid" style="margin-bottom: 20px;">
+            <div class="kpi-card" style="border-top: 3px solid #6366f1;">
+              <div class="kpi-label">Shift 1 (06:00 - 14:00)</div>
+              <div class="kpi-value">${linkShifts.find(s => s.shift && s.shift.includes('1'))?.count || 0}</div>
+              <div class="kpi-sub">Morning operational window</div>
+            </div>
+            <div class="kpi-card" style="border-top: 3px solid #06b6d4;">
+              <div class="kpi-label">Shift 2 (14:00 - 22:00)</div>
+              <div class="kpi-value">${linkShifts.find(s => s.shift && s.shift.includes('2'))?.count || 0}</div>
+              <div class="kpi-sub">Evening peak window</div>
+            </div>
+            <div class="kpi-card" style="border-top: 3px solid #f59e0b;">
+              <div class="kpi-label">Shift 3 (22:00 - 06:00)</div>
+              <div class="kpi-value">${linkShifts.find(s => s.shift && s.shift.includes('3'))?.count || 0}</div>
+              <div class="kpi-sub">Night emergency window</div>
+            </div>
+          </div>
+
+          <div class="card-table">
+            <div style="padding: 16px 20px; border-bottom: 1px solid var(--border-color);">
+              <h3 style="font-size: 15px; margin-bottom: 4px;">Shift Workload & Action Audit</h3>
+              <p style="font-size: 12px; color: var(--text-muted); margin: 0;">Captured Link Shift distribution across 24x7 monitoring cycles</p>
+            </div>
+            <div class="table-responsive">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Shift Designation</th>
+                    <th>Captured Inflow (Link Shift)</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${linkShifts.map(s => `
+                    <tr>
+                      <td><b><span class="badge-shift">${s.shift}</span></b></td>
+                      <td><b>${s.count}</b> complaints</td>
+                      <td>
+                        <button class="btn btn-secondary btn-sm" onclick="App.navigate('register', { shift: '${s.shift}' })">
+                          <i class="fa-solid fa-filter"></i> View Shift Register
+                        </button>
+                      </td>
+                    </tr>
+                  `).join('')}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        `;
+      } else if (tab === 'sla_compliance') {
+        const comp = data.compliance || {};
+        const reply30Pct = comp.reply30Pct || 0;
+        const total = comp.total || 0;
+        const reply30Yes = comp.reply_30_yes || 0;
+        const reply30No = comp.reply_30_no || 0;
+        const reply60Yes = comp.reply_60_yes || 0;
+
+        body.innerHTML = `
+          <div class="kpi-grid" style="margin-bottom: 20px;">
+            <div class="kpi-card" style="border-top: 3px solid ${reply30Pct >= 80 ? '#10b981' : (reply30Pct >= 50 ? '#f59e0b' : '#ef4444')};">
+              <div class="kpi-label">30-Min First Reply Compliance</div>
+              <div class="kpi-value">${reply30Pct}%</div>
+              <div class="kpi-sub">${reply30Yes} / ${total} grievances compliant</div>
+            </div>
+            <div class="kpi-card" style="border-top: 3px solid #059669;">
+              <div class="kpi-label">Complied Within 30 Min</div>
+              <div class="kpi-value">${reply30Yes}</div>
+              <div class="kpi-sub">SLA strictly met</div>
+            </div>
+            <div class="kpi-card" style="border-top: 3px solid #ef4444;">
+              <div class="kpi-label">Breached 30-Min SLA</div>
+              <div class="kpi-value">${reply30No}</div>
+              <div class="kpi-sub">Exceeded 30-min window</div>
+            </div>
+            <div class="kpi-card" style="border-top: 3px solid #0284c7;">
+              <div class="kpi-label">Replied Within 60 Min</div>
+              <div class="kpi-value">${reply60Yes}</div>
+              <div class="kpi-sub">Second-tier resolution</div>
+            </div>
+          </div>
+
+          <div class="details-card">
+            <div class="alert-banner alert-info" style="margin-bottom: 20px;">
+              <i class="fa-solid fa-shield-halved" style="font-size: 20px;"></i>
+              <div>
+                <b style="display: block; font-size: 14px; margin-bottom: 4px;">SLA Benchmark Standard (Laqshya Media / UPPCL Social Media Cell)</b>
+                <span>Per corporation directive, all valid grievances received across official monitored channels must receive an initial acknowledgement and DISCOM docket forwarding within <b>30 minutes</b>. Response tracking metrics are audited continuously from the authoritative Google Sheet.</span>
+              </div>
+            </div>
+          </div>
+        `;
+      } else if (tab === 'data_quality') {
+        const qualityRows = data.dataQuality || [];
+        body.innerHTML = `
+          <div class="card-table">
+            <div style="padding: 16px 20px; border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center;">
+              <div>
+                <h3 style="font-size: 15px; margin-bottom: 4px;">Authoritative Data Quality Audit Center</h3>
+                <p style="font-size: 12px; color: var(--text-muted); margin: 0;">Automated validation scans of Google Sheet 'Twitter Complaint List' rows</p>
+              </div>
+              <span class="badge" style="background: ${qualityRows.length > 0 ? '#fee2e2' : '#dcfce7'}; color: ${qualityRows.length > 0 ? '#b91c1c' : '#15803d'}; font-weight: 700; padding: 6px 12px; border-radius: 6px;">
+                ${qualityRows.length} Records Requiring Attention
+              </span>
+            </div>
+            <div class="table-responsive">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Sheet Row #</th>
+                    <th>Complaint ID</th>
+                    <th>Received (IST)</th>
+                    <th>Consumer Handle</th>
+                    <th>DISCOM</th>
+                    <th>Audit Flags</th>
+                    <th>Direct Resolution Link</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${qualityRows.length === 0 ? `
+                    <tr><td colspan="7" style="text-align: center; padding: 35px; color: #059669; font-weight: 600;"><i class="fa-solid fa-check-double"></i> 100% Data Quality Clean: All Google Sheet records have valid URLs, Handles, Dates, and DISCOM assignments.</td></tr>
+                  ` : qualityRows.map(q => {
+                    const flags = JSON.parse(q.data_quality_flags || '[]');
+                    return `
+                      <tr>
+                        <td><span class="badge-sheet-row">Row #${q.sheet_row_index || '-'}</span></td>
+                        <td><a href="javascript:void(0)" onclick="App.viewComplaint(${q.id})" style="font-weight: 700; color: var(--primary);">${q.complaint_no}</a></td>
+                        <td>${(q.received_at || '').substring(0, 16)}</td>
+                        <td>${q.consumer_handle || '<span style="color:#ef4444;">Missing</span>'}</td>
+                        <td>${q.discom_name || '<span style="color:#ef4444;">Unassigned</span>'}</td>
+                        <td>
+                          ${flags.map(f => `<span class="badge-quality-issue">${f}</span>`).join(' ')}
+                        </td>
+                        <td>
+                          ${q.sheet_row_index ? `
+                            <a href="https://docs.google.com/spreadsheets/d/10_210Ynr_F0Pj1Yov_pqjVZ1kaYIEWrbGF1jn16sgNY/edit?gid=598922870#gid=598922870&range=A${q.sheet_row_index}" target="_blank" rel="noopener noreferrer" class="blue-post-link">
+                              <i class="fa-solid fa-up-right-from-square"></i> Open Row ${q.sheet_row_index} in Sheet
+                            </a>
+                          ` : '-'}
+                        </td>
+                      </tr>
+                    `;
+                  }).join('')}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        `;
+      } else if (tab === 'export_center') {
+        body.innerHTML = `
+          <div class="details-card">
+            <h3 style="margin-bottom: 16px; font-size: 15px;">Custom Report Builder & Official Data Export</h3>
+            <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 20px;">
+              <div class="filter-group">
+                <label>Report Dataset *</label>
+                <select id="rep-type" class="form-control">
+                  <option value="daily_ops">1. Daily Operational Report</option>
+                  <option value="x_hierarchy">2. X Hierarchy-wise Report</option>
+                  <option value="discom_district">3. DISCOM & District Performance</option>
+                  <option value="category_wise">4. Category-wise Grievance Breakdown</option>
+                  <option value="pending_overdue">5. Pending & Overdue Analysis</option>
+                  <option value="discom_followup">6. DISCOM Follow-Up & Reminder Report</option>
+                  <option value="escalation_report">7. Escalation Hierarchy Trail</option>
+                  <option value="resolved_vs_closed">8. Resolved vs Verified-Closed Audit</option>
+                  <option value="audit_trail">9. Security & User Audit Trail</option>
+                </select>
+              </div>
+
+              <div class="filter-group">
+                <label>From Date</label>
+                <input type="date" id="rep-from" class="form-control">
+              </div>
+
+              <div class="filter-group">
+                <label>To Date</label>
+                <input type="date" id="rep-to" class="form-control">
+              </div>
+
+              <div class="filter-group">
+                <label>DISCOM Filter</label>
+                <select id="rep-discom" class="form-control">
+                  <option value="All">All DISCOMs</option>
+                  <option value="PUVVNL">PuVVNL</option>
+                  <option value="MVVNL">MVVNL</option>
+                  <option value="DVVNL">DVVNL</option>
+                  <option value="PVVNL">PVVNL</option>
+                  <option value="KESCo">KESCo</option>
+                </select>
+              </div>
+            </div>
+
+            <div style="display: flex; gap: 10px; margin-bottom: 20px;">
+              <button class="btn btn-primary" onclick="App.downloadReport('excel')">
+                <i class="fa-solid fa-file-excel"></i> Download Excel (.xlsx)
+              </button>
+              <button class="btn btn-secondary" onclick="App.downloadReport('csv')">
+                <i class="fa-solid fa-file-csv"></i> Download CSV
+              </button>
+              <button class="btn btn-secondary" onclick="window.print()">
+                <i class="fa-solid fa-print"></i> Print Formatted View
+              </button>
+            </div>
+
+            <div class="alert-banner alert-info">
+              <i class="fa-solid fa-circle-info"></i>
+              <span>All exports strictly pull live data from the authoritative Google Sheet. Hindi Unicode text is preserved with UTF-8 encoding.</span>
+            </div>
+          </div>
+        `;
+      }
+    } catch (err) {
+      body.innerHTML = `<div style="text-align: center; padding: 40px; color: #ef4444;">Error loading reports: ${err.message}</div>`;
+    }
   },
 
   handleReportTypeChange() {
