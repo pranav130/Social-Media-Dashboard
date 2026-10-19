@@ -20,6 +20,65 @@ app.use(cors());
 app.use(express.json({ limit: '20mb' }));
 app.use(express.urlencoded({ extended: true, limit: '20mb' }));
 
+// Dedicated raw Code.gs route (plain text so browsers view directly)
+app.get(['/Code.gs', '/code.gs', '/code.txt'], (req, res) => {
+  res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+  res.sendFile(path.join(__dirname, 'google_apps_script', 'Code.gs'));
+});
+
+// Interactive Code.gs web viewer with 1-click copy button
+app.get(['/code', '/view-code'], (req, res) => {
+  const codePath = path.join(__dirname, 'google_apps_script', 'Code.gs');
+  const code = fs.readFileSync(codePath, 'utf8');
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.send(`<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>UPPCL Apps Script &mdash; Code.gs Viewer</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <style>
+    * { box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0b1f36; color: #f8fafc; margin: 0; padding: 20px; }
+    .header { display: flex; justify-content: space-between; align-items: center; background: #132d4b; padding: 16px 24px; border-radius: 8px; margin-bottom: 16px; border: 1px solid #1e4570; flex-wrap: wrap; gap: 12px; }
+    h1 { margin: 0; font-size: 18px; color: #00e5e5; display: flex; align-items: center; gap: 10px; }
+    .btn { background: #008080; color: white; border: none; padding: 10px 22px; font-size: 14px; font-weight: 700; border-radius: 6px; cursor: pointer; display: inline-flex; align-items: center; gap: 8px; transition: 0.2s; box-shadow: 0 2px 6px rgba(0,0,0,0.3); }
+    .btn:hover { background: #00a8a8; }
+    .btn:active { transform: scale(0.98); }
+    .raw-link { color: #38bdf8; text-decoration: none; font-size: 13px; display: inline-flex; align-items: center; gap: 6px; padding: 8px 14px; border: 1px solid #1e4570; border-radius: 6px; background: rgba(56, 189, 248, 0.08); font-weight: 600; }
+    .raw-link:hover { background: rgba(56, 189, 248, 0.16); }
+    pre { background: #06111f; padding: 20px; border-radius: 8px; border: 1px solid #1e4570; overflow-x: auto; font-size: 12px; font-family: Consolas, Monaco, monospace; line-height: 1.5; color: #e2e8f0; max-height: calc(100vh - 160px); }
+    .toast { position: fixed; top: 24px; left: 50%; transform: translateX(-50%); background: #10b981; color: white; padding: 14px 28px; border-radius: 8px; font-weight: 700; font-size: 15px; display: none; box-shadow: 0 6px 20px rgba(0,0,0,0.4); z-index: 9999; }
+  </style>
+</head>
+<body>
+  <div id="toast" class="toast"><i class="fa-solid fa-circle-check"></i> Entire Code.gs Copied to Clipboard!</div>
+  <div class="header">
+    <div>
+      <h1><i class="fa-brands fa-google"></i> UPPCL Automation &mdash; Code.gs</h1>
+      <div style="font-size: 12px; color: #94a3b8; margin-top: 4px;">Authoritative Google Apps Script for Google Sheet Automation (1,413 lines)</div>
+    </div>
+    <div style="display: flex; gap: 12px; align-items: center;">
+      <a href="/Code.gs" class="raw-link" target="_blank"><i class="fa-solid fa-file-code"></i> Raw Text</a>
+      <button class="btn" onclick="copyCode()"><i class="fa-solid fa-copy"></i> Copy Entire Code.gs</button>
+    </div>
+  </div>
+  <pre id="codeBlock"><code>${code.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</code></pre>
+  <script>
+    function copyCode() {
+      const code = document.getElementById('codeBlock').innerText;
+      navigator.clipboard.writeText(code).then(() => {
+        const t = document.getElementById('toast');
+        t.style.display = 'block';
+        setTimeout(() => { t.style.display = 'none'; }, 2800);
+      });
+    }
+  </script>
+</body>
+</html>`);
+});
+
 // Static frontend with cache revalidation
 app.use(express.static(path.join(__dirname, 'public'), {
   setHeaders: (res, filePath) => {
