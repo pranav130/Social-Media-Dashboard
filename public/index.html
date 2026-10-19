@@ -6,9 +6,15 @@
   <script>
     (function() {
       try {
-        var savedTheme = localStorage.getItem('uppcl_smc_theme');
+        var savedTheme = localStorage.getItem('uppcl_smc_theme_v2');
+        if (!savedTheme) {
+          // If first time under v2, default to midnight theme
+          savedTheme = 'midnight';
+          localStorage.setItem('uppcl_smc_theme_v2', 'midnight');
+          localStorage.setItem('uppcl_smc_theme', 'midnight');
+        }
         if (!['light', 'dark', 'midnight'].includes(savedTheme)) {
-          savedTheme = (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light';
+          savedTheme = 'midnight';
         }
         document.documentElement.setAttribute('data-theme', savedTheme);
       } catch (e) {}
@@ -24,20 +30,20 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 
   <!-- Application Stylesheet -->
-  <link rel="stylesheet" href="/css/style.css?v=3.9">
+  <link rel="stylesheet" href="/css/style.css?v=4.0">
 </head>
 <body>
   <div id="app">
     <!-- App rendered by app.js -->
-    <div style="display: flex; height: 100vh; align-items: center; justify-content: center; background: #0b1f36; color: #fff; font-family: sans-serif;">
+    <div style="display: flex; height: 100vh; align-items: center; justify-content: center; background: #020617; color: #fff; font-family: sans-serif;">
       <div style="text-align: center;">
-        <i class="fa-solid fa-bolt fa-bounce" style="font-size: 40px; color: #00a8a8; margin-bottom: 16px;"></i>
+        <i class="fa-solid fa-bolt fa-bounce" style="font-size: 40px; color: #38bdf8; margin-bottom: 16px;"></i>
         <h2>Loading UPPCL Social Media Cell Grievance System...</h2>
       </div>
     </div>
   </div>
 
   <!-- Application Logic -->
-  <script src="/js/app.js?v=3.9"></script>
+  <script src="/js/app.js?v=4.0"></script>
 </body>
 </html>
