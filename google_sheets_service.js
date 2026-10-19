@@ -1021,8 +1021,35 @@ function processSheetMatrix(headers, data, method, startTime = Date.now()) {
       JSON.stringify(qualityFlags)
     ]);
 
-    validCount++;
   }
+
+  // Comprehensive purge: remove any complaint from DB where:
+  // 1) Remark or status indicates deleted
+  // 2) DISCOM replied before UPPCLLKO (reply_within_60_min is set and reply_within_30_min is not)
+  // 3) Marked in frivolous_complaints
+  db.run(`
+    DELETE FROM complaints 
+    WHERE (forwarding_remarks IS NOT NULL AND LOWER(forwarding_remarks) LIKE '%delete%')
+       OR (current_status IS NOT NULL AND LOWER(current_status) LIKE '%delete%')
+       OR (reply_within_60_min IS NOT NULL AND reply_within_60_min != '' AND reply_within_60_min != 'NO' AND reply_within_60_min != '-'
+           AND (reply_within_30_min IS NULL OR reply_within_30_min = '' OR reply_within_30_min = 'NO' OR reply_within_30_min = '-'))
+       OR (post_url IN (SELECT post_url FROM frivolous_complaints WHERE post_url IS NOT NULL));
+  `);
+  db.run("DELETE FROM complaint_timeline WHERE complaint_id NOT IN (SELECT id FROM complaints);");
+  db.run("DELETE FROM complaint_forwarding_logs WHERE complaint_id NOT IN (SELECT id FROM complaints);");
+  db.run("DELETE FROM complaint_escalation_logs WHERE complaint_id NOT IN (SELECT id FROM complaints);");
+  db.run("DELETE FROM x_outgoing_replies WHERE complaint_id NOT IN (SELECT id FROM complaints);");
+
+  // Re-number remaining complaints strictly sequentially starting from UPPCL-SMC-YYYYMM-0001
+  const remainingRows = db.query("SELECT id, received_at FROM complaints ORDER BY id ASC;");
+  for (let i = 0; i < remainingRows.length; i++) {
+    const ym = (remainingRows[i].received_at ? remainingRows[i].received_at.substring(0, 7).replace(/-/g, '') : '202610');
+    const seqNo = `UPPCL-SMC-${ym}-${String(i + 1).padStart(4, '0')}`;
+    db.run("UPDATE complaints SET complaint_no = ? WHERE id = ?;", [seqNo, remainingRows[i].id]);
+  }
+
+  const countRow = db.get("SELECT COUNT(*) as cnt FROM complaints;");
+  validCount = countRow ? countRow.cnt : remainingRows.length;
 
   // Persist SQLite DB changes
   db.saveToDiskSync();
@@ -1148,5 +1175,9 @@ module.exports = {
   getIstTimestamp,
   parseDateIST,
   normalizeDiscom,
-  extractExactTimestampIST
+  extractExactTimestampIST,
+  NON_UPPCL_OFFICIAL_HANDLES,
+  isNonUppclOfficialHandle,
+  shouldDeleteOrOmitPost,
+  checkOfficialRepliedBeforeUppcl
 };
