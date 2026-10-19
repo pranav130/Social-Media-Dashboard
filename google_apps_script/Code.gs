@@ -960,14 +960,6 @@ function runCloudSyncCycle() {
       }
     }
   }
-      const u = String(urlValues[i][0] || '').trim();
-      if (u) {
-        existingUrls.add(u.toLowerCase());
-        const m = u.match(/status\/(\d+)/i);
-        if (m) existingTids.add(m[1]);
-      }
-    }
-  }
 
   // 2. Focused query covering strictly the 6 Apex & Ministerial Admin Handles
   const query = '(@UPPCLLKO OR @EMofficeUP OR @AKSharmaOffice OR @aksharmaBharat OR @ChairmanUppcl OR @mduppcl) -is:retweet';
