@@ -64,6 +64,30 @@
   --text-light: #64748b;
 }
 
+[data-theme="midnight"] {
+  --primary-dark: #38bdf8;
+  --primary: #38bdf8;
+  --primary-light: #7dd3fc;
+  --accent: #00e5e5;
+  --accent-light: #22d3ee;
+  --accent-gold: #facc15;
+  --bg-main: #020617;
+  --bg-card: #090e1a;
+  --bg-subtle: #040914;
+  --tabs-bg: #030712;
+  --tab-hover: #0f172a;
+  --th-bg: #060b16;
+  --border-color: #1e293b;
+  --border-light: #0f172a;
+  --row-hover: #0c1524;
+  --input-bg: #050a14;
+  --pill-bg: #0d1524;
+  --sidebar-bg: #010409;
+  --text-main: #f8fafc;
+  --text-muted: #94a3b8;
+  --text-light: #64748b;
+}
+
 * {
   box-sizing: border-box;
   margin: 0;
@@ -505,6 +529,16 @@ body {
 [data-theme="dark"] .kpi-active-pill {
   color: #2dd4bf;
   background: rgba(45, 212, 191, 0.15);
+}
+
+[data-theme="midnight"] .kpi-card.active-card {
+  outline: 2px solid #00e5e5;
+  box-shadow: 0 0 0 4px rgba(0, 229, 229, 0.25), 0 8px 20px rgba(0, 0, 0, 0.6);
+}
+
+[data-theme="midnight"] .kpi-active-pill {
+  color: #00e5e5;
+  background: rgba(0, 229, 229, 0.18);
 }
 
 .kpi-card::before {
@@ -1128,6 +1162,53 @@ body {
 }
 [data-theme="dark"] ::-webkit-scrollbar-thumb:hover {
   background: #334b6e;
+}
+
+/* Midnight Mode Component Overrides */
+[data-theme="midnight"] .login-wrapper {
+  background: radial-gradient(circle at 50% 20%, #0c1a30 0%, #020617 100%);
+}
+
+[data-theme="midnight"] .page-title h2,
+[data-theme="midnight"] .chart-title,
+[data-theme="midnight"] .kpi-value,
+[data-theme="midnight"] .details-card-header {
+  color: #f8fafc;
+}
+
+[data-theme="midnight"] select.form-control option {
+  background-color: var(--bg-card);
+  color: var(--text-main);
+}
+
+[data-theme="midnight"] .badge-New { background-color: rgba(56, 189, 248, 0.2); color: #7dd3fc; border: 1px solid rgba(56, 189, 248, 0.35); }
+[data-theme="midnight"] .badge-Forwarded { background-color: rgba(129, 140, 248, 0.2); color: #c7d2fe; border: 1px solid rgba(129, 140, 248, 0.35); }
+[data-theme="midnight"] .badge-DISCOM-Follow-Up { background-color: rgba(251, 191, 36, 0.2); color: #fde68a; border: 1px solid rgba(251, 191, 36, 0.35); }
+[data-theme="midnight"] .badge-Pending { background-color: rgba(251, 146, 60, 0.2); color: #fed7aa; border: 1px solid rgba(251, 146, 60, 0.35); }
+[data-theme="midnight"] .badge-Escalated { background-color: rgba(248, 113, 113, 0.2); color: #fecaca; border: 1px solid rgba(248, 113, 113, 0.35); }
+[data-theme="midnight"] .badge-Resolved--Verification-Pending { background-color: rgba(52, 211, 153, 0.2); color: #a7f3d0; border: 1px solid rgba(52, 211, 153, 0.35); }
+[data-theme="midnight"] .badge-Closed { background-color: rgba(16, 185, 129, 0.2); color: #6ee7b7; border: 1px solid rgba(16, 185, 129, 0.35); }
+[data-theme="midnight"] .badge-Reopened { background-color: rgba(167, 139, 250, 0.2); color: #ddd6fe; border: 1px solid rgba(167, 139, 250, 0.35); }
+[data-theme="midnight"] .badge-Duplicate--Invalid { background-color: rgba(148, 163, 184, 0.2); color: #e2e8f0; border: 1px solid rgba(148, 163, 184, 0.35); }
+
+[data-theme="midnight"] .badge-prio-Critical { background-color: rgba(248, 113, 113, 0.22); color: #fca5a5; }
+[data-theme="midnight"] .badge-prio-High { background-color: rgba(251, 146, 60, 0.22); color: #fdba74; }
+[data-theme="midnight"] .badge-prio-Normal { background-color: rgba(56, 189, 248, 0.22); color: #93c5fd; }
+[data-theme="midnight"] .badge-prio-Low { background-color: rgba(148, 163, 184, 0.22); color: #cbd5e1; }
+
+[data-theme="midnight"] .alert-warning { background-color: rgba(251, 191, 36, 0.15); color: #fde047; border-color: rgba(251, 191, 36, 0.3); }
+[data-theme="midnight"] .alert-info { background-color: rgba(56, 189, 248, 0.15); color: #38bdf8; border-color: rgba(56, 189, 248, 0.3); }
+[data-theme="midnight"] .alert-success { background-color: rgba(52, 211, 153, 0.15); color: #4ade80; border-color: rgba(52, 211, 153, 0.3); }
+
+[data-theme="midnight"] ::-webkit-scrollbar-track {
+  background: #020617;
+}
+[data-theme="midnight"] ::-webkit-scrollbar-thumb {
+  background: #1e293b;
+  border-radius: 4px;
+}
+[data-theme="midnight"] ::-webkit-scrollbar-thumb:hover {
+  background: #334155;
 }
 
 /* Print Styles */
