@@ -269,6 +269,11 @@ const App = {
       dot.className = 'sync-pulse-dot live';
       text.textContent = `Sheet: ACTIVE (${rowCount} rows)`;
     }
+
+    const sheetLink = document.getElementById('sync-sheet-link');
+    if (sheetLink && status.spreadsheetId && status.worksheetGid) {
+      sheetLink.href = `https://docs.google.com/spreadsheets/d/${status.spreadsheetId}/edit?gid=${status.worksheetGid}#gid=${status.worksheetGid}`;
+    }
   },
 
   async triggerSheetSync() {
@@ -591,10 +596,10 @@ const App = {
                 <span class="gov-badge"><i class="fa-solid fa-landmark"></i> Gov. of Uttar Pradesh</span>
                 <span style="font-weight: 700; font-size: 13px; color: var(--primary);">UPPCL Social Media Cell</span>
               </div>
-              <div id="sync-status-indicator" class="sync-status-pill" title="Authoritative Source: Google Sheets (Active Working Sheet & Monitoring Sheet)">
+              <div id="sync-status-indicator" class="sync-status-pill" title="Authoritative Source: Google Sheets (Twitter Complaint List)">
                 <span class="sync-pulse-dot live" id="sync-pulse-dot"></span>
                 <span id="sync-status-text">Sheet: LIVE</span>
-                <a href="https://docs.google.com/spreadsheets/d/1shjWcK69y0S7pIHI-2V5Wh6c2SSSQBKcpgprmPbeNe8/edit?gid=283417465#gid=283417465" target="_blank" rel="noopener noreferrer" title="Open Active Working Sheet (19-10-26) in new tab">
+                <a id="sync-sheet-link" href="https://docs.google.com/spreadsheets/d/10_210Ynr_F0Pj1Yov_pqjVZ1kaYIEWrbGF1jn16sgNY/edit?gid=598922870#gid=598922870" target="_blank" rel="noopener noreferrer" title="Open Google Sheet (Twitter Complaint List) in new tab">
                   <i class="fa-solid fa-arrow-up-right-from-square" style="font-size: 10px; margin-left: 2px;"></i>
                 </a>
               </div>
@@ -3462,7 +3467,7 @@ const App = {
                         </td>
                         <td>
                           ${q.sheet_row_index ? `
-                            <a href="https://docs.google.com/spreadsheets/d/1shjWcK69y0S7pIHI-2V5Wh6c2SSSQBKcpgprmPbeNe8/edit?gid=283417465#gid=283417465&range=A${q.sheet_row_index}" target="_blank" rel="noopener noreferrer" class="blue-post-link">
+                            <a href="https://docs.google.com/spreadsheets/d/10_210Ynr_F0Pj1Yov_pqjVZ1kaYIEWrbGF1jn16sgNY/edit?gid=598922870#gid=598922870&range=A${q.sheet_row_index}" target="_blank" rel="noopener noreferrer" class="blue-post-link">
                               <i class="fa-solid fa-up-right-from-square"></i> Open Row ${q.sheet_row_index} in Sheet
                             </a>
                           ` : '-'}

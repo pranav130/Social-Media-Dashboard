@@ -19,10 +19,10 @@ const fs = require('fs');
 const path = require('path');
 const db = require('./db');
 
-// Primary: Operational Manual Working Sheet (Active Daily Sheet)
-const MANUAL_SPREADSHEET_ID = process.env.GOOGLE_MANUAL_SPREADSHEET_ID || '1shjWcK69y0S7pIHI-2V5Wh6c2SSSQBKcpgprmPbeNe8';
-const MANUAL_WORKSHEET_GID = process.env.GOOGLE_MANUAL_SHEET_GID || '283417465';
-const MANUAL_WORKSHEET_NAME = process.env.GOOGLE_MANUAL_SHEET_TAB_NAME || '19-10-26';
+// Primary: Operational Working Sheet (Authoritative Google Sheet)
+const MANUAL_SPREADSHEET_ID = process.env.GOOGLE_MANUAL_SPREADSHEET_ID || '10_210Ynr_F0Pj1Yov_pqjVZ1kaYIEWrbGF1jn16sgNY';
+const MANUAL_WORKSHEET_GID = process.env.GOOGLE_MANUAL_SHEET_GID || '598922870';
+const MANUAL_WORKSHEET_NAME = process.env.GOOGLE_MANUAL_SHEET_TAB_NAME || 'Twitter Complaint List';
 
 // Secondary: Automated Trial Monitoring Sheet
 const AUTO_SPREADSHEET_ID = process.env.GOOGLE_SPREADSHEET_ID || '10_210Ynr_F0Pj1Yov_pqjVZ1kaYIEWrbGF1jn16sgNY';
@@ -274,27 +274,45 @@ async function fetchSheetMatrix() {
     const manualCsvUrl = `https://docs.google.com/spreadsheets/d/${MANUAL_SPREADSHEET_ID}/export?format=csv&gid=${MANUAL_WORKSHEET_GID}`;
     const autoCsvUrl = `https://docs.google.com/spreadsheets/d/${AUTO_SPREADSHEET_ID}/export?format=csv&gid=${AUTO_WORKSHEET_GID}`;
 
-    const [manualRes, autoRes] = await Promise.allSettled([
-      fetch(manualCsvUrl),
-      fetch(autoCsvUrl)
-    ]);
-
     let manualRows = null;
     let autoRows = null;
 
-    if (manualRes.status === 'fulfilled' && manualRes.value.ok) {
-      const csvText = await manualRes.value.text();
-      if (!csvText.includes('<!DOCTYPE html>') && !csvText.includes('<html')) {
-        const parsed = parseCSV(csvText);
-        if (parsed.length >= 2) manualRows = parsed;
+    if (manualCsvUrl === autoCsvUrl) {
+      try {
+        const res = await fetch(manualCsvUrl);
+        if (res.ok) {
+          const csvText = await res.text();
+          if (!csvText.includes('<!DOCTYPE html>') && !csvText.includes('<html')) {
+            const parsed = parseCSV(csvText);
+            if (parsed.length >= 2) {
+              manualRows = parsed;
+              autoRows = parsed;
+            }
+          }
+        }
+      } catch (e) {
+        errors.push(`CSV fetch failed: ${e.message}`);
       }
-    }
+    } else {
+      const [manualRes, autoRes] = await Promise.allSettled([
+        fetch(manualCsvUrl),
+        fetch(autoCsvUrl)
+      ]);
 
-    if (autoRes.status === 'fulfilled' && autoRes.value.ok) {
-      const csvText = await autoRes.value.text();
-      if (!csvText.includes('<!DOCTYPE html>') && !csvText.includes('<html')) {
-        const parsed = parseCSV(csvText);
-        if (parsed.length >= 2) autoRows = parsed;
+      if (manualRes.status === 'fulfilled' && manualRes.value.ok) {
+        const csvText = await manualRes.value.text();
+        if (!csvText.includes('<!DOCTYPE html>') && !csvText.includes('<html')) {
+          const parsed = parseCSV(csvText);
+          if (parsed.length >= 2) manualRows = parsed;
+        }
+      }
+
+      if (autoRes.status === 'fulfilled' && autoRes.value.ok) {
+        const csvText = await autoRes.value.text();
+        if (!csvText.includes('<!DOCTYPE html>') && !csvText.includes('<html')) {
+          const parsed = parseCSV(csvText);
+          if (parsed.length >= 2) autoRows = parsed;
+        }
       }
     }
 
