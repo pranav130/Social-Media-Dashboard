@@ -1318,6 +1318,15 @@ app.get('/api/dashboard/charts', authMiddleware, (req, res) => {
     LIMIT 10;
   `, params);
 
+  // 7. Operational Status Distribution
+  const statusRows = db.query(`
+    SELECT current_status as status, COUNT(*) as count
+    FROM complaints
+    ${whereSql}
+    GROUP BY current_status
+    ORDER BY count DESC;
+  `, params);
+
   // 8. Shift Distribution (Link Shift & Reply Shift)
   const linkShiftRows = db.query(`
     SELECT COALESCE(NULLIF(link_shift, ''), 'Unassigned') as shift, COUNT(*) as count
