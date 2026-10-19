@@ -604,10 +604,6 @@ const App = {
           <!-- Top Bar -->
           <header class="top-header">
             <div class="header-left">
-              <div class="header-title-badge">
-                <span class="gov-badge"><i class="fa-solid fa-landmark"></i> Gov. of Uttar Pradesh</span>
-                <span style="font-weight: 700; font-size: 13px; color: var(--primary);">UPPCL Social Media Cell</span>
-              </div>
               <div id="sync-status-indicator" class="sync-status-pill" title="Authoritative Source: Google Sheets (Twitter Complaint List)">
                 <span class="sync-pulse-dot live" id="sync-pulse-dot"></span>
                 <span id="sync-status-text">Sheet: LIVE</span>
