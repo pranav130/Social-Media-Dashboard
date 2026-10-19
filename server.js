@@ -1687,8 +1687,8 @@ app.get('/api/reports/analytics', authMiddleware, (req, res) => {
 
     const hourRows = db.query(`
       SELECT substr(received_at, 12, 2) as hr, COUNT(*) as count
-      FROM complaints ${whereSql}
-      WHERE substr(received_at, 12, 2) != ''
+      FROM complaints
+      ${whereSql ? (whereSql + " AND substr(received_at, 12, 2) != ''") : "WHERE substr(received_at, 12, 2) != ''"}
       GROUP BY hr ORDER BY hr ASC;
     `, params);
 
