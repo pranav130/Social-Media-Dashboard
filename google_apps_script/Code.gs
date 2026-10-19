@@ -21,6 +21,7 @@ function onOpen() {
     .addItem('🧹 Remove Duplicate Rows from Sheet', 'removeDuplicateRowsFromSheet')
     .addItem('🧹 Remove Official Initiated Posts', 'removeOfficialPostsFromSheet')
     .addItem('📥 Sync All Complaints from Working Sheet (19-10-26)', 'syncFromWorkingSheet')
+    .addItem('🔗 Auto-Fix Malformed/Missing Post Links (Col E)', 'fixMalformedUrlsInSheet')
     .addItem('Apply Original Formatting (Blue Links & 45px Rows)', 'applyOriginalFormatting')
     .addItem('Fix Misclassified Appreciation Rows', 'fixMisclassifiedComplaints')
     .addItem('Make Rows Compact (22px)', 'makeRowsCompact')
@@ -1356,5 +1357,54 @@ function deleteSelectedRowAsFrivolous() {
     SpreadsheetApp.flush();
     SpreadsheetApp.getUi().alert('Row ' + row + ' deleted and permanently archived as Frivolous.');
   }
+}
+
+/**
+ * Scans Column E for any missing, malformed, or non-URL entries (such as "2")
+ * and reconstructs the valid, canonical https://x.com link using the Tweet ID in Column T.
+ */
+function fixMalformedUrlsInSheet() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sheet = ss.getSheetByName('Twitter Complaint List');
+  if (!sheet) sheet = ss.getActiveSheet();
+
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 3) return 0;
+
+  const data = sheet.getRange(3, 1, lastRow - 2, Math.max(sheet.getLastColumn(), 20)).getValues();
+  let fixCount = 0;
+
+  const linkStyle = SpreadsheetApp.newTextStyle()
+    .setForegroundColor('#1155cc')
+    .setUnderline(true)
+    .setFontFamily('Verdana')
+    .setFontSize(10)
+    .build();
+
+  for (let i = 0; i < data.length; i++) {
+    const rowIdx = i + 3;
+    const url = String(data[i][4] || '').trim();
+    const handle = String(data[i][5] || '').trim().replace(/^@/, '');
+    const tweetId = String(data[i][19] || '').trim();
+
+    if (!url.startsWith('http') && /^\d{15,25}$/.test(tweetId)) {
+      const canonicalUrl = 'https://x.com/' + (handle || 'i') + '/status/' + tweetId;
+      const richText = SpreadsheetApp.newRichTextValue()
+        .setText(canonicalUrl)
+        .setLinkUrl(canonicalUrl)
+        .setTextStyle(linkStyle)
+        .build();
+      sheet.getRange(rowIdx, 5).setRichTextValue(richText);
+      fixCount++;
+    }
+  }
+
+  if (fixCount > 0) {
+    SpreadsheetApp.flush();
+    SpreadsheetApp.getUi().alert('Fixed ' + fixCount + ' malformed/missing post link(s) in Column E.');
+  } else {
+    SpreadsheetApp.getUi().alert('All post links in Column E are already valid URLs.');
+  }
+  return fixCount;
 }
 
