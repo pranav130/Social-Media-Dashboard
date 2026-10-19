@@ -743,6 +743,12 @@ function disable247CloudSync() {
  * Core 24/7 cloud sync function executed by the Google Cloud time-based trigger.
  * Fetches recent tweets from X API v2, classifies them, and appends them to the sheet.
  */
+/**
+ * Core 24/7 cloud sync function executed by the Google Cloud time-based trigger.
+ * Fetches recent tweets from X API v2 across ALL 92+ UPPCL Administrative Handles,
+ * handles pagination, classifies grievances, and appends them to the sheet in exact
+ * canonical column order.
+ */
 function runCloudSyncCycle() {
   const props = PropertiesService.getScriptProperties();
   const bearerToken = props.getProperty('X_BEARER_TOKEN') ||
@@ -752,154 +758,205 @@ function runCloudSyncCycle() {
   let sheet = ss.getSheetByName('Twitter Complaint List');
   if (!sheet) sheet = ss.getActiveSheet();
 
+  // 1. Collect all existing Tweet IDs and URLs from Column E (LINK URL)
   const lastRow = sheet.getLastRow();
-  const existingIds = new Set();
+  const existingTids = new Set();
+  const existingUrls = new Set();
   if (lastRow >= 3) {
-    const checkStart = Math.max(3, lastRow - 500);
-    const idRange = sheet.getRange(checkStart, 3, lastRow - checkStart + 1, 1).getValues();
-    for (let i = 0; i < idRange.length; i++) {
-      const val = String(idRange[i][0]).trim();
-      if (val) existingIds.add(val);
+    const checkStart = Math.max(3, lastRow - 1000);
+    const numRows = lastRow - checkStart + 1;
+    const urlValues = sheet.getRange(checkStart, 5, numRows, 1).getValues();
+    for (let i = 0; i < urlValues.length; i++) {
+      const u = String(urlValues[i][0] || '').trim();
+      if (u) {
+        existingUrls.add(u.toLowerCase());
+        const m = u.match(/status\/(\d+)/i);
+        if (m) existingTids.add(m[1]);
+      }
     }
   }
 
-  let sinceId = props.getProperty('LAST_SEEN_POST_ID');
-
-  const query = '(@UPPCLLKO OR @EMofficeUP OR @AKSharmaOffice OR @aksharmaBharat OR @ChairmanUppcl OR @mduppcl OR to:UPPCLLKO OR to:EMofficeUP OR to:AKSharmaOffice OR to:aksharmaBharat OR to:ChairmanUppcl OR to:mduppcl) -is:retweet';
-  let url = 'https://api.twitter.com/2/tweets/search/recent?query=' + encodeURIComponent(query) +
-    '&max_results=50' +
-    '&tweet.fields=id,text,author_id,created_at,conversation_id,in_reply_to_user_id' +
-    '&expansions=author_id' +
-    '&user.fields=id,name,username';
-
-  if (sinceId) {
-    url += '&since_id=' + sinceId;
-  }
-
-  let response;
-  try {
-    response = UrlFetchApp.fetch(url, {
-      method: 'get',
-      headers: {
-        'Authorization': 'Bearer ' + bearerToken,
-        'User-Agent': 'UPPCLComplaintMonitor-AppsScript/1.0'
-      },
-      muteHttpExceptions: true
-    });
-  } catch (err) {
-    Logger.log('HTTP fetch error: ' + err);
-    return;
-  }
-
-  const statusCode = response.getResponseCode();
-  if (statusCode !== 200) {
-    Logger.log('X API returned status ' + statusCode + ': ' + response.getContentText());
-    return;
-  }
-
-  const data = JSON.parse(response.getContentText());
-  const tweets = data.data || [];
-  if (tweets.length === 0) {
-    Logger.log('No new tweets found in this cycle.');
-    return;
-  }
-
-  const usersMap = {};
-  if (data.includes && data.includes.users) {
-    for (let i = 0; i < data.includes.users.length; i++) {
-      const u = data.includes.users[i];
-      usersMap[u.id] = u;
+  // 2. Comprehensive 92+ Administrative Handle Search Clusters
+  // Each cluster stays strictly within Twitter's 512-character query limit
+  const CLUSTERS = [
+    {
+      name: 'Apex & Leadership',
+      key: 'C1',
+      head: 'upl',
+      query: '(@UPPCLLKO OR @CMOfficeUP OR @EMofficeUP OR @AKSharmaOffice OR @aksharmaBharat OR @ChairmanUppcl OR @mduppcl) -is:retweet'
+    },
+    {
+      name: 'DISCOM HQs & Care',
+      key: 'C2',
+      head: 'hq',
+      query: '(@PVVNLHQ OR @dvvnlhq OR @PuVVNLHQ OR @MVVNLHQ OR @KESCoHQ OR @1912pvvnl OR @1912dvvnl OR @1912puvvnl OR @1912mvvnl OR @1912kesco) -is:retweet'
+    },
+    {
+      name: 'PVVNL West UP',
+      key: 'C3',
+      head: 'pvv',
+      query: '(@pvvnlmeerut OR @pvvnlghaziabad OR @pvvnlgbnagar OR @pvvnlnoida OR @pvvnlmoradabad OR @pvvnlbulandshr OR @pvvnlmuzafarngr OR @pvvnlsaharanpur OR @pvvnlbaghpat OR @pvvnlhapur OR @pvvnlrampur OR @pvvnlsambhal OR @pvvnlshamli OR @pvvnlbijnor OR @pvvnlamroha) -is:retweet'
+    },
+    {
+      name: 'MVVNL Central UP',
+      key: 'C4',
+      head: 'mvv',
+      query: '(@mvvnllucknow OR @mvvnlbareilly OR @mvvnlayodhya OR @mvvnlsitapur OR @mvvnlhardoi OR @mvvnlraebareli OR @mvvnlunnao OR @mvvnlbudaun OR @mvvnlpilibhit OR @mvvnlsahjahapur OR @mvvnlamethi OR @mvvnlbarabanki OR @mvvnlsultanpur OR @mvvnlbahraich OR @mvvnlbalrampur OR @mvvnlgonda OR @mvvnlshrawasti OR @mvvnllakhimpur) -is:retweet'
+    },
+    {
+      name: 'DVVNL South UP & KESCo',
+      key: 'C5',
+      head: 'dvv',
+      query: '(@dvvnlagra OR @dvvnlaligarh OR @dvvnljhansi OR @dvvnlmathura1 OR @dvvnlfirozabad OR @dvvnletah OR @dvvnletawah01 OR @dvvnlbanda OR @dvvnlchitrakoot OR @dvvnlauraiya OR @dvvnlfarrukhaba OR @dvvnlhamirpur OR @dvvnlhathras OR @dvvnljalaun2 OR @dvvnlkannauj OR @dvvnlkanpurdeha OR @dvvnlkanpurnagr OR @dvvnlkasganj OR @dvvnllalitpur2 OR @dvvnlmahoba OR @dvvnlmainpuri) -is:retweet'
+    },
+    {
+      name: 'PuVVNL East UP',
+      key: 'C6',
+      head: 'puv',
+      query: '(@puvvnlvaranasi OR @puvvnlprayagraj OR @puvvnlgorakhpur OR @puvvnlazamgarh OR @puvvnljaunpur OR @puvvnlbasti OR @puvvnlmirzapur1 OR @puvvnlfatehpur OR @puvvnlghazipur OR @puvvnlballia OR @puvvnldeoria OR @puvvnlsknagar OR @puvvnlsdnagar OR @puvvnlsonbhadra OR @puvvnlbhadohi OR @puvvnlchandauli OR @puvvnlkaushambi OR @puvvnlkusinagar OR @puvvnlmhrjganj OR @puvvnlmau OR @puvvnlprtapgarh) -is:retweet'
     }
-  }
+  ];
 
-  let highestId = sinceId || '0';
   const rowsToInsert = [];
 
-  // Sort tweets oldest to newest
-  tweets.sort(function(a, b) {
-    if (a.id.length !== b.id.length) return a.id.length - b.id.length;
-    return a.id.localeCompare(b.id);
-  });
+  for (let cIdx = 0; cIdx < CLUSTERS.length; cIdx++) {
+    const cluster = CLUSTERS[cIdx];
+    let sinceId = props.getProperty('LAST_SEEN_POST_ID_' + cluster.key) || props.getProperty('LAST_SEEN_POST_ID');
+    let nextToken = null;
+    let page = 0;
+    let clusterHighestId = sinceId || '0';
 
-  for (let t = 0; t < tweets.length; t++) {
-    const tweet = tweets[t];
-    const tweetId = String(tweet.id);
+    do {
+      page++;
+      let url = 'https://api.twitter.com/2/tweets/search/recent?query=' + encodeURIComponent(cluster.query) +
+        '&max_results=50' +
+        '&tweet.fields=id,text,author_id,created_at,conversation_id,in_reply_to_user_id' +
+        '&expansions=author_id' +
+        '&user.fields=id,name,username';
 
-    if (tweetId.length > highestId.length || (tweetId.length === highestId.length && tweetId > highestId)) {
-      highestId = tweetId;
+      if (sinceId) url += '&since_id=' + sinceId;
+      if (nextToken) url += '&next_token=' + encodeURIComponent(nextToken);
+
+      let response;
+      try {
+        response = UrlFetchApp.fetch(url, {
+          method: 'get',
+          headers: {
+            'Authorization': 'Bearer ' + bearerToken,
+            'User-Agent': 'UPPCLComplaintMonitor-AppsScript/2.0'
+          },
+          muteHttpExceptions: true
+        });
+      } catch (err) {
+        Logger.log('HTTP fetch error for ' + cluster.name + ': ' + err);
+        break;
+      }
+
+      if (response.getResponseCode() !== 200) {
+        Logger.log('X API returned status ' + response.getResponseCode() + ' for ' + cluster.name + ': ' + response.getContentText());
+        break;
+      }
+
+      const data = JSON.parse(response.getContentText());
+      const tweets = data.data || [];
+      if (tweets.length === 0) break;
+
+      const usersMap = {};
+      if (data.includes && data.includes.users) {
+        for (let i = 0; i < data.includes.users.length; i++) {
+          const u = data.includes.users[i];
+          usersMap[u.id] = u;
+        }
+      }
+
+      for (let t = 0; t < tweets.length; t++) {
+        const tweet = tweets[t];
+        const tweetId = String(tweet.id);
+
+        if (tweetId.length > clusterHighestId.length || (tweetId.length === clusterHighestId.length && tweetId > clusterHighestId)) {
+          clusterHighestId = tweetId;
+        }
+
+        if (existingTids.has(tweetId)) continue;
+
+        const user = usersMap[tweet.author_id] || { username: 'citizen', name: 'Citizen' };
+        const username = user.username;
+
+        // Skip posts initiated by official accounts
+        if (isOfficialAccountInScript(username)) continue;
+
+        const tweetUrl = 'https://x.com/' + username + '/status/' + tweetId;
+        if (existingUrls.has(tweetUrl.toLowerCase())) continue;
+
+        // Exact date and time from tweet timestamp
+        let tweetDate = new Date();
+        if (tweet.created_at) {
+          tweetDate = new Date(tweet.created_at);
+        }
+        const dStr = Utilities.formatDate(tweetDate, 'Asia/Kolkata', 'dd-MM-yyyy');
+        const timeStr = Utilities.formatDate(tweetDate, 'Asia/Kolkata', 'HH:mm:ss');
+
+        // Operational shift
+        const hour = tweetDate.getHours();
+        let shift = 'MORNING';
+        if (hour < 8) shift = 'NIGHT';
+        else if (hour >= 16) shift = 'EVENING';
+
+        const text = tweet.text || '';
+        const c = classifyTweetInScript(text, username);
+
+        // Canonical columns matching the authoritative sheet:
+        // A: DATE | B: Link Shift | C: Reply Shift | D: C F | E: LINK URL | F: Twitter Id
+        // G: Head | H: Untagged Complaint | I: Picked Status | J: Complaint Type | K: DISCOM
+        // L: Zone | M: District | N: Remark | O: Status | P: REPLY_30_MIN | Q: REPLY_60_MIN
+        // R: COMPLAINT_NO | S: STS | U (Col 20): Original Tweet Text | AA (Col 26): Draft Reply | AB (Col 27): Approval Status
+        const row = new Array(32).fill('');
+        row[0] = dStr;
+        row[1] = shift;
+        row[2] = shift;
+        row[3] = ''; // C F (filled on append)
+        row[4] = tweetUrl;
+        row[5] = username;
+        row[6] = cluster.head;
+        row[7] = 'NO';
+        row[8] = c.pickedStatus;
+        row[9] = c.complaintType;
+        row[10] = c.discom;
+        row[11] = c.zone;
+        row[12] = c.district;
+        row[13] = ''; // Remark
+        row[14] = (c.pickedStatus === 'APPRECIATION') ? 'Appreciation' : 'Forwarded to Discom';
+        row[15] = c.replyWithin30Min;
+        row[16] = '';
+        row[17] = tweetId;
+        row[18] = '';
+        row[20] = text;
+        row[26] = c.draftReply;
+        row[27] = 'DRAFT_READY';
+
+        rowsToInsert.push(row);
+        existingTids.add(tweetId);
+        existingUrls.add(tweetUrl.toLowerCase());
+      }
+
+      nextToken = (data.meta && data.meta.next_token) ? data.meta.next_token : null;
+    } while (nextToken && page < 3);
+
+    if (clusterHighestId && clusterHighestId !== '0') {
+      props.setProperty('LAST_SEEN_POST_ID_' + cluster.key, clusterHighestId);
     }
 
-    if (existingIds.has(tweetId)) {
-      continue;
-    }
-
-    const user = usersMap[tweet.author_id] || { username: 'citizen', name: 'Citizen' };
-    const username = user.username;
-
-    // Filter out posts initiated by official accounts so they never land on the automated Google Sheet
-    if (isOfficialAccountInScript(username)) {
-      Logger.log('Skipping post initiated by official account: @' + username);
-      continue;
-    }
-
-    const authorName = user.name;
-    const text = tweet.text || '';
-    const tweetUrl = 'https://x.com/' + username + '/status/' + tweetId;
-
-    let istDateStr = Utilities.formatDate(new Date(), 'Asia/Kolkata', 'yyyy-MM-dd');
-    let istTimeStr = Utilities.formatDate(new Date(), 'Asia/Kolkata', 'HH:mm:ss');
-    if (tweet.created_at) {
-      const dt = new Date(tweet.created_at);
-      istDateStr = Utilities.formatDate(dt, 'Asia/Kolkata', 'yyyy-MM-dd');
-      istTimeStr = Utilities.formatDate(dt, 'Asia/Kolkata', 'HH:mm:ss');
-    }
-
-    const c = classifyTweetInScript(text, username);
-
-    const row = new Array(32).fill('');
-    row[0] = ''; // S.No.
-    row[1] = istDateStr; // Date
-    row[2] = tweetId; // Complaint No.
-    row[3] = 'Twitter/X'; // Source
-    row[4] = tweetUrl; // Link
-    row[5] = '@' + username; // Twitter ID
-    row[6] = authorName; // Name
-    row[7] = 'Official'; // Executive
-    row[8] = c.pickedStatus; // Picked Status (YES, NO, APPRECIATION)
-    row[9] = c.complaintType; // Complaint Type
-    row[10] = c.discom; // Discom
-    row[11] = c.district; // District
-    row[12] = c.zone; // Zone
-    row[13] = ''; // Region
-    row[14] = 'Pending'; // Status
-    row[15] = c.replyWithin30Min; // Reply within 30 min
-    row[16] = istTimeStr; // Time of Tweet
-    row[17] = c.summary; // Complaint Detail
-    row[18] = c.actionTaken; // Action Taken
-    row[19] = ''; // Remarks
-    row[20] = text; // Original Tweet Text
-    row[21] = ''; // Retweet/Quote count
-    row[22] = ''; // Media Link
-    row[23] = ''; // Verified
-    row[24] = ''; // Follower count
-    row[25] = ''; // Language
-    row[26] = c.draftReply; // Draft Reply
-    row[27] = 'DRAFT_READY'; // Approval Status
-    row[28] = ''; // Escalation Level
-    row[29] = ''; // Assigned Official
-    row[30] = ''; // Resolution TAT
-    row[31] = ''; // Feedback Status
-
-    rowsToInsert.push(row);
-    existingIds.add(tweetId);
+    // Polite pause between cluster requests
+    Utilities.sleep(500);
   }
 
+  // 3. Batch Append and Format All New Rows
   if (rowsToInsert.length > 0) {
     const insertStartRow = Math.max(sheet.getLastRow() + 1, 3);
-    const startSNo = insertStartRow - 2;
+    const startCount = insertStartRow - 2;
 
     for (let r = 0; r < rowsToInsert.length; r++) {
-      rowsToInsert[r][0] = startSNo + r;
+      rowsToInsert[r][3] = startCount + r; // Column D: C F sequential counter
     }
 
     const range = sheet.getRange(insertStartRow, 1, rowsToInsert.length, 32);
@@ -937,11 +994,9 @@ function runCloudSyncCycle() {
     sheet.getRange(insertStartRow, 27, rowsToInsert.length, 1).setHorizontalAlignment('left');
 
     SpreadsheetApp.flush();
-    Logger.log('Appended ' + rowsToInsert.length + ' rows.');
-  }
-
-  if (highestId && highestId !== '0') {
-    props.setProperty('LAST_SEEN_POST_ID', highestId);
+    Logger.log('Successfully appended ' + rowsToInsert.length + ' new complaints across all 92 administrative handles.');
+  } else {
+    Logger.log('Sync cycle complete: No new complaints found across any of the 92 handles.');
   }
 }
 
