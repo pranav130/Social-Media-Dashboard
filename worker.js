@@ -171,30 +171,22 @@ async function executeWorkerCycle() {
   await db.initDb();
   const cycleStart = Date.now();
   const istTime = getIstTimestamp();
-  let pollResult = { new_posts: 0, status: 'idle' };
 
-  try {
-    // 1. Ingestion & Outbound Reply Polling
-    pollResult = await XService.pollRecentPosts();
-  } catch (xErr) {
-    console.error(`[Worker] X polling error:`, xErr.message);
-    pollResult = { error: xErr.message, new_posts: 0 };
-  }
-
-  // 2. SLA & Escalation Scan
+  // Ingestion from X is strictly DISABLED. Google Sheets is the sole authoritative source.
+  // 1. SLA & Escalation Scan
   const slaResult = runSlaScan();
 
   const durationMs = Date.now() - cycleStart;
 
-  // 3. Record Operational Heartbeat
+  // 2. Record Operational Heartbeat
   recordHeartbeat('ACTIVE', {
     last_run_ist: istTime,
     duration_ms: durationMs,
-    poll_result: pollResult,
+    ingestion: 'DISABLED_GOOGLE_SHEETS_AUTHORITATIVE',
     sla_result: slaResult
   });
 
-  console.log(`[Worker] Cycle completed in ${durationMs}ms: Ingested=${pollResult.new_posts || 0}, Breached=${slaResult.breachedCount}, UnackAlerts=${slaResult.unackAlertCount}`);
+  console.log(`[Worker] SLA monitoring cycle completed in ${durationMs}ms: Breached=${slaResult.breachedCount}, UnackAlerts=${slaResult.unackAlertCount}`);
 }
 
 /**

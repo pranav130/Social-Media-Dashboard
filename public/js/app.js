@@ -292,6 +292,34 @@ const App = {
     }
   },
 
+  async handleSheetFileUpload(event) {
+    const file = event.target.files && event.target.files[0];
+    if (!file) return;
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+      const res = await this.api('/api/sync/upload-sheet', {
+        method: 'POST',
+        body: formData
+      });
+      alert(`Google Sheet Import Successful!\n\nSynchronized: ${res.syncedCount || 'Updated'} rows from "${file.name}"\nAuthoritative Source: Google Sheet 'Twitter Complaint List'`);
+      this.pollSyncStatus();
+      if (this.currentPage === 'dashboard') {
+        this.reloadDashboard();
+      } else if (this.currentPage === 'register') {
+        this.loadRegisterData();
+      } else if (this.currentPage === 'reports') {
+        this.loadReportsData();
+      }
+    } catch (err) {
+      alert(`Sheet Import Failed: ${err.message}`);
+    } finally {
+      event.target.value = '';
+    }
+  },
+
   initTheme() {
     try {
       const savedTheme = localStorage.getItem('uppcl_smc_theme') || 
@@ -594,9 +622,13 @@ const App = {
             </div>
 
             <div class="header-right">
-              <button class="btn btn-secondary btn-sm" id="btn-sync-sheet" onclick="App.triggerSheetSync()" title="Synchronize with Google Sheet">
+              <button class="btn btn-secondary btn-sm" id="btn-sync-sheet" onclick="App.triggerSheetSync()" title="Synchronize directly with Google Sheet">
                 <i class="fa-solid fa-arrows-rotate" id="sync-btn-icon"></i> Sync Sheet
               </button>
+              <button class="btn btn-secondary btn-sm" id="btn-import-sheet" onclick="document.getElementById('sheet-file-input').click()" title="Import downloaded Google Sheet CSV or Excel file">
+                <i class="fa-solid fa-file-arrow-up"></i> Import Sheet
+              </button>
+              <input type="file" id="sheet-file-input" accept=".csv,.xlsx" style="display:none;" onchange="App.handleSheetFileUpload(event)">
               ${isOperator || isSupervisor ? `
               <button class="btn btn-accent btn-sm" onclick="App.navigate('add-complaint')">
                 <i class="fa-solid fa-plus"></i> New Complaint

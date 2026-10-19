@@ -1647,6 +1647,22 @@ app.post('/api/sync/refresh', authMiddleware, async (req, res) => {
   }
 });
 
+app.post('/api/sync/upload-sheet', authMiddleware, upload.single('file'), (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'Please select a CSV or Excel file to upload.' });
+    }
+    const result = googleSheetsService.syncFromFile(req.file.path);
+    try { fs.unlinkSync(req.file.path); } catch (e) {}
+    res.json(result);
+  } catch (err) {
+    if (req.file && req.file.path) {
+      try { fs.unlinkSync(req.file.path); } catch (e) {}
+    }
+    res.status(500).json({ error: 'Failed to process sheet file: ' + err.message });
+  }
+});
+
 app.get('/api/reports/analytics', authMiddleware, (req, res) => {
   try {
     const { from_date, to_date, discom } = req.query;
@@ -2588,6 +2604,17 @@ if (process.env.NO_SERVER_AUTOSTART !== 'true') {
       }
     } catch (seedErr) {
       console.warn('Auto-seed check error:', seedErr.message);
+    }
+
+    // Purge any rogue complaints ingested directly from X rather than Google Sheets
+    try {
+      const purged = db.run("DELETE FROM complaints WHERE created_by = 'X_INGESTION_WORKER';");
+      if (purged && purged.changes > 0) {
+        console.log(`[Server] Purged ${purged.changes} rogue complaints ingested directly from X.`);
+        db.saveToDiskSync();
+      }
+    } catch (pErr) {
+      console.warn('[Server] Purge warning:', pErr.message);
     }
 
     app.listen(PORT, '0.0.0.0', () => {

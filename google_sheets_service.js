@@ -427,204 +427,220 @@ async function syncGoogleSheets(isManual = false) {
       };
     }
 
-    const headerMap = buildHeaderIndexMap(headers);
-
-    let validCount = 0;
-    let qualityIssuesCount = 0;
-
-    // Prepare statement for inserting/replacing normalized complaint
-    const insertStmt = `
-      INSERT OR REPLACE INTO complaints (
-        complaint_no, received_at, platform, monitored_account, hierarchy_handle_name,
-        is_tagged, consumer_name, consumer_handle, post_url, complaint_text,
-        category_name, subcategory_name, discom_name, district_name, zone_name,
-        priority, current_status, forwarding_ref_no, forwarding_remarks,
-        is_overdue, escalation_level, closure_date, created_at, updated_at,
-        sheet_row_index, link_shift, reply_shift, c_f, head, untagged_complaint,
-        picked_status, complaint_type, reply_within_30_min, reply_within_60_min,
-        draft_reply, approval_status, data_quality_flags
-      ) VALUES (
-        ?, ?, ?, ?, ?,
-        ?, ?, ?, ?, ?,
-        ?, ?, ?, ?, ?,
-        ?, ?, ?, ?,
-        ?, ?, ?, ?, ?,
-        ?, ?, ?, ?, ?, ?,
-        ?, ?, ?, ?,
-        ?, ?, ?
-      );
-    `;
-
-    // Process every data row
-    for (let r = 0; r < data.length; r++) {
-      const row = data[r];
-      if (!row || !row.length || row.every(c => String(c).trim() === '')) {
-        continue;
-      }
-
-      const rowIndex = r + 3; // Row 1: Header, Row 2: Subheader/Counter, Data starts at Row 3
-
-      // Extract values using headerMap with index fallbacks
-      const getVal = (canonicalKey, fallbackIdx) => {
-        if (headerMap[canonicalKey] !== undefined && row[headerMap[canonicalKey]] !== undefined) {
-          return String(row[headerMap[canonicalKey]] || '').trim();
-        }
-        if (fallbackIdx !== undefined && row[fallbackIdx] !== undefined) {
-          return String(row[fallbackIdx] || '').trim();
-        }
-        return '';
-      };
-
-      const rawDate = getVal('date', 1);
-      const linkShift = getVal('link_shift', 2);
-      const replyShift = getVal('reply_shift', 3);
-      const cf = getVal('c_f', 4);
-      const linkUrl = getVal('link_url', 5);
-      const twitterId = getVal('twitter_id', 6);
-      const head = getVal('head', 7);
-      const untagged = getVal('untagged_complaint', 8);
-      const pickedStatus = getVal('picked_status', 9) || 'YES';
-      const rawCategory = getVal('complaint_type', 10) || 'DISSATISFIED_CONSUMER';
-      const rawDiscom = getVal('discom', 11);
-      const rawZone = getVal('zone', 12);
-      const rawDistrict = getVal('district', 13);
-      const remark = getVal('remark', 14);
-      const rawStatus = getVal('status', 15) || 'Pending';
-      const reply30 = getVal('reply_within_30_min', 16);
-      const reply60 = getVal('reply_within_60_min', 17);
-      const rawComplaintNo = getVal('complaint_no', 18);
-      const rawPostText = getVal('post_text', 21) || getVal('post_text', 17) || remark;
-      const draftReply = getVal('draft_reply', 27);
-      const approvalStatus = getVal('approval_status', 28) || 'DRAFT_READY';
-
-      // Normalization
-      const istDate = parseDateIST(rawDate);
-      const receivedAt = `${istDate} 12:00:00`;
-      const discom = normalizeDiscom(rawDiscom, rawPostText);
-      const consumerHandle = twitterId.startsWith('@') ? twitterId : ('@' + twitterId);
-      const consumerName = consumerHandle.replace('@', '');
-
-      // Determine stable Complaint Number strictly matching UPPCL-SMC-YYYYMM-XXXX
-      let complaintNo = rawComplaintNo;
-      if (!complaintNo || !/^UPPCL-SMC-\d{6}-\d{4}$/.test(complaintNo)) {
-        const ym = (istDate ? istDate.replace(/-/g, '').substring(0, 6) : '202610');
-        complaintNo = `UPPCL-SMC-${ym}-${String(rowIndex + 1000).padStart(4, '0')}`;
-      }
-
-      // Data Quality Audit
-      const qualityFlags = [];
-      if (!linkUrl || !linkUrl.startsWith('http')) qualityFlags.push('MISSING_URL');
-      if (!twitterId || twitterId === '@' || twitterId.toLowerCase() === '@citizen') qualityFlags.push('MISSING_HANDLE');
-      if (!rawDiscom && discom === 'UPPCL') qualityFlags.push('UNASSIGNED_DISCOM');
-      if (!rawDate || rawDate.trim() === '') qualityFlags.push('MISSING_DATE');
-      if (qualityFlags.length > 0) qualityIssuesCount++;
-
-      // Operational Priority
-      let priority = 'Normal';
-      const lowerText = rawPostText.toLowerCase();
-      if (/spark|हादसा|करंट|तार टूट|खंभा|danger|hazard/i.test(lowerText)) {
-        priority = 'Critical';
-      } else if (/transformer|फुंक|ब्लास्ट|धमाका/i.test(lowerText)) {
-        priority = 'High';
-      }
-
-      // Operational Status Mapping
-      let status = 'New';
-      if (/forwarded/i.test(rawStatus)) status = 'Assigned to DISCOM';
-      else if (/resolved|समाधान/i.test(rawStatus)) status = 'Resolved — Verification Pending';
-      else if (/closed|निस्तारित/i.test(rawStatus)) status = 'Closed';
-      else if (/progress|काम चल रहा/i.test(rawStatus)) status = 'Under Investigation';
-      else if (pickedStatus === 'APPRECIATION') status = 'Appreciation';
-
-      db.run(insertStmt, [
-        complaintNo,
-        receivedAt,
-        'Twitter/X',
-        '@UPPCLLKO',
-        discom ? ('@' + discom + 'HQ') : '@UPPCLLKO',
-        untagged.toUpperCase() === 'YES' ? 0 : 1,
-        consumerName,
-        consumerHandle,
-        linkUrl,
-        rawPostText || `Complaint registered on X via ${consumerHandle}`,
-        rawCategory,
-        rawCategory,
-        discom,
-        rawDistrict || '',
-        rawZone || (rawDistrict ? rawDistrict + ' Zone' : ''),
-        priority,
-        status,
-        `Fwd-${discom}-${complaintNo.slice(-6)}`,
-        remark,
-        0, // is_overdue
-        0, // escalation_level
-        status === 'Closed' ? istDate : null,
-        nowIst,
-        nowIst,
-        rowIndex,
-        linkShift,
-        replyShift,
-        cf,
-        head,
-        untagged,
-        pickedStatus.toUpperCase(),
-        rawCategory,
-        reply30,
-        reply60,
-        draftReply,
-        approvalStatus,
-        JSON.stringify(qualityFlags)
-      ]);
-
-      validCount++;
-    }
-
-    // Persist SQLite DB changes
-    db.saveToDiskSync();
-
-    const duration = Date.now() - startTime;
-    lastSyncInfo = {
-      status: 'LIVE',
-      lastSyncTimestamp: nowIst,
-      recordCount: validCount,
-      qualityIssuesCount: qualityIssuesCount,
-      syncDurationMs: duration,
-      lastError: null,
-      syncMethod: method,
-      spreadsheetId: SPREADSHEET_ID,
-      worksheetGid: WORKSHEET_GID,
-      worksheetName: WORKSHEET_NAME
-    };
-
-    // Record in audit logs
-    try {
-      db.run(`
-        INSERT INTO audit_logs (username, user_role, action, entity_type, entity_id, details, ip_address, created_at)
-        VALUES ('system-sync', 'Service Daemon', 'GOOGLE_SHEETS_SYNC', 'SPREADSHEET', ?, ?, '127.0.0.1', ?);
-      `, [SPREADSHEET_ID, `Synced ${validCount} rows from Google Sheets via ${method} (Quality issues: ${qualityIssuesCount}) in ${duration}ms`, nowIst]);
-    } catch (e) {}
-
-    return {
-      status: 'LIVE',
-      message: `Successfully synchronized ${validCount} authoritative complaint records from Google Sheets`,
-      lastSyncInfo
-    };
+    return processSheetMatrix(headers, data, method, startTime);
   } catch (err) {
     const duration = Date.now() - startTime;
-    lastSyncInfo.status = 'STALE';
+    lastSyncInfo.status = 'ERROR';
     lastSyncInfo.lastError = err.message;
     lastSyncInfo.syncDurationMs = duration;
-
-    console.error('[GoogleSheetsSync] Sync failed, retaining last known good data:', err.message);
-
-    return {
-      status: 'STALE',
-      message: `Sync failed: ${err.message}. Retaining last known good data.`,
-      lastSyncInfo
-    };
-  } finally {
     syncInProgress = false;
+    throw err;
   }
+}
+
+/**
+ * Process normalized sheet matrix (headers + data rows) into SQLite database
+ */
+function processSheetMatrix(headers, data, method, startTime = Date.now()) {
+  const headerMap = buildHeaderIndexMap(headers);
+  const nowIst = getIstTimestamp();
+
+  let validCount = 0;
+  let qualityIssuesCount = 0;
+
+  // Prepare statement for inserting/replacing normalized complaint
+  const insertStmt = `
+    INSERT OR REPLACE INTO complaints (
+      complaint_no, received_at, platform, monitored_account, hierarchy_handle_name,
+      is_tagged, consumer_name, consumer_handle, post_url, complaint_text,
+      category_name, subcategory_name, discom_name, district_name, zone_name,
+      priority, current_status, forwarding_ref_no, forwarding_remarks,
+      is_overdue, escalation_level, closure_date, created_at, updated_at,
+      sheet_row_index, link_shift, reply_shift, c_f, head, untagged_complaint,
+      picked_status, complaint_type, reply_within_30_min, reply_within_60_min,
+      draft_reply, approval_status, data_quality_flags
+    ) VALUES (
+      ?, ?, ?, ?, ?,
+      ?, ?, ?, ?, ?,
+      ?, ?, ?, ?, ?,
+      ?, ?, ?, ?,
+      ?, ?, ?, ?, ?,
+      ?, ?, ?, ?, ?, ?,
+      ?, ?, ?, ?,
+      ?, ?, ?
+    );
+  `;
+
+  // Process every data row
+  for (let r = 0; r < data.length; r++) {
+    const row = data[r];
+    if (!row || !row.length || row.every(c => String(c).trim() === '')) {
+      continue;
+    }
+
+    const rowIndex = r + 3; // Row 1: Header, Row 2: Subheader/Counter, Data starts at Row 3
+
+    // Extract values using headerMap with index fallbacks
+    const getVal = (canonicalKey, fallbackIdx) => {
+      if (headerMap[canonicalKey] !== undefined && row[headerMap[canonicalKey]] !== undefined) {
+        return String(row[headerMap[canonicalKey]] || '').trim();
+      }
+      if (fallbackIdx !== undefined && row[fallbackIdx] !== undefined) {
+        return String(row[fallbackIdx] || '').trim();
+      }
+      return '';
+    };
+
+    const rawDate = getVal('date', 1);
+    const linkShift = getVal('link_shift', 2);
+    const replyShift = getVal('reply_shift', 3);
+    const cf = getVal('c_f', 4);
+    const linkUrl = getVal('link_url', 5);
+    const twitterId = getVal('twitter_id', 6);
+    const head = getVal('head', 7);
+    const untagged = getVal('untagged_complaint', 8);
+    const pickedStatus = getVal('picked_status', 9) || 'YES';
+    const rawCategory = getVal('complaint_type', 10) || 'DISSATISFIED_CONSUMER';
+    const rawDiscom = getVal('discom', 11);
+    const rawZone = getVal('zone', 12);
+    const rawDistrict = getVal('district', 13);
+    const remark = getVal('remark', 14);
+    const rawStatus = getVal('status', 15) || 'Pending';
+    const reply30 = getVal('reply_within_30_min', 16);
+    const reply60 = getVal('reply_within_60_min', 17);
+    const rawComplaintNo = getVal('complaint_no', 18);
+    const rawPostText = getVal('post_text', 21) || getVal('post_text', 17) || remark;
+    const draftReply = getVal('draft_reply', 27);
+    const approvalStatus = getVal('approval_status', 28) || 'DRAFT_READY';
+
+    // Normalization
+    const istDate = parseDateIST(rawDate);
+    const receivedAt = `${istDate} 12:00:00`;
+    const discom = normalizeDiscom(rawDiscom, rawPostText);
+    const consumerHandle = twitterId.startsWith('@') ? twitterId : ('@' + twitterId);
+    const consumerName = consumerHandle.replace('@', '');
+
+    // Determine stable Complaint Number strictly matching UPPCL-SMC-YYYYMM-XXXX
+    let complaintNo = rawComplaintNo;
+    if (!complaintNo || !/^UPPCL-SMC-\d{6}-\d{4}$/.test(complaintNo)) {
+      const ym = (istDate ? istDate.replace(/-/g, '').substring(0, 6) : '202610');
+      complaintNo = `UPPCL-SMC-${ym}-${String(rowIndex + 1000).padStart(4, '0')}`;
+    }
+
+    // Data Quality Audit
+    const qualityFlags = [];
+    if (!linkUrl || !linkUrl.startsWith('http')) qualityFlags.push('MISSING_URL');
+    if (!twitterId || twitterId === '@' || twitterId.toLowerCase() === '@citizen') qualityFlags.push('MISSING_HANDLE');
+    if (!rawDiscom && discom === 'UPPCL') qualityFlags.push('UNASSIGNED_DISCOM');
+    if (!rawDate || rawDate.trim() === '') qualityFlags.push('MISSING_DATE');
+    if (qualityFlags.length > 0) qualityIssuesCount++;
+
+    // Operational Priority
+    let priority = 'Normal';
+    const lowerText = rawPostText.toLowerCase();
+    if (/spark|हादसा|करंट|तार टूट|खंभा|danger|hazard/i.test(lowerText)) {
+      priority = 'Critical';
+    } else if (/transformer|फुंक|ब्लास्ट|धमाका/i.test(lowerText)) {
+      priority = 'High';
+    }
+
+    // Operational Status Mapping
+    let status = 'New';
+    if (/forwarded/i.test(rawStatus)) status = 'Assigned to DISCOM';
+    else if (/resolved|समाधान/i.test(rawStatus)) status = 'Resolved — Verification Pending';
+    else if (/closed|निस्तारित/i.test(rawStatus)) status = 'Closed';
+    else if (/progress|काम चल रहा/i.test(rawStatus)) status = 'Under Investigation';
+    else if (pickedStatus === 'APPRECIATION') status = 'Appreciation';
+
+    db.run(insertStmt, [
+      complaintNo,
+      receivedAt,
+      'Twitter/X',
+      '@UPPCLLKO',
+      discom ? ('@' + discom + 'HQ') : '@UPPCLLKO',
+      untagged.toUpperCase() === 'YES' ? 0 : 1,
+      consumerName,
+      consumerHandle,
+      linkUrl,
+      rawPostText || `Complaint registered on X via ${consumerHandle}`,
+      rawCategory,
+      rawCategory,
+      discom,
+      rawDistrict || '',
+      rawZone || (rawDistrict ? rawDistrict + ' Zone' : ''),
+      priority,
+      status,
+      `Fwd-${discom}-${complaintNo.slice(-6)}`,
+      remark,
+      0, // is_overdue
+      0, // escalation_level
+      status === 'Closed' ? istDate : null,
+      nowIst,
+      nowIst,
+      rowIndex,
+      linkShift,
+      replyShift,
+      cf,
+      head,
+      untagged,
+      pickedStatus.toUpperCase(),
+      rawCategory,
+      reply30,
+      reply60,
+      draftReply,
+      approvalStatus,
+      JSON.stringify(qualityFlags)
+    ]);
+
+    validCount++;
+  }
+
+  // Persist SQLite DB changes
+  db.saveToDiskSync();
+
+  const duration = Date.now() - startTime;
+  lastSyncInfo = {
+    status: 'LIVE',
+    lastSyncTimestamp: nowIst,
+    recordCount: validCount,
+    qualityIssuesCount: qualityIssuesCount,
+    syncDurationMs: duration,
+    lastError: null,
+    syncMethod: method,
+    spreadsheetId: SPREADSHEET_ID,
+    worksheetGid: WORKSHEET_GID,
+    worksheetName: WORKSHEET_NAME
+  };
+
+  syncInProgress = false;
+
+  return {
+    status: 'LIVE',
+    message: `Synchronized ${validCount} complaints from authoritative Google Sheet`,
+    syncedCount: validCount,
+    lastSyncInfo
+  };
+}
+
+/**
+ * Sync from an uploaded CSV or XLSX file
+ */
+function syncFromFile(filePath) {
+  ensureSchemaExtensions();
+  const XLSX = require('xlsx');
+  const workbook = XLSX.readFile(filePath);
+  let sheetName = 'Twitter Complaint List';
+  if (!workbook.Sheets[sheetName]) {
+    sheetName = workbook.SheetNames[0];
+  }
+  const worksheet = workbook.Sheets[sheetName];
+  const parsedRows = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+  if (parsedRows.length < 2) {
+    throw new Error('Uploaded file must contain a header row and at least one data row.');
+  }
+  const headers = parsedRows[0];
+  const data = parsedRows.slice(2);
+  return processSheetMatrix(headers, data, 'MANUAL_SHEET_UPLOAD', Date.now());
 }
 
 /**
@@ -697,6 +713,7 @@ function getSyncStatus() {
 
 module.exports = {
   syncGoogleSheets,
+  syncFromFile,
   startBackgroundSync,
   getSyncStatus,
   getIstTimestamp,
