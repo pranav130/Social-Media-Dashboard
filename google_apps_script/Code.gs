@@ -12,15 +12,16 @@
 function onOpen() {
   const ui = SpreadsheetApp.getUi();
   ui.createMenu('UPPCL Automation')
-    .addItem('▶ Enable 24/7 Cloud Sync (Laptop-Free)', 'enable247CloudSync')
+    .addItem('🛑 STOP All X Fetching Permanently', 'permanentlyStopXSync')
+    .addItem('▶ Resume 24/7 Cloud Sync', 'resumeXSync')
     .addItem('⏹ Disable 24/7 Cloud Sync', 'disable247CloudSync')
     .addItem('⚡ Run Cloud Sync Once Now', 'runCloudSyncCycle')
     .addSeparator()
-    .addItem('📥 Sync All Complaints from Working Sheet (19-10-26)', 'syncFromWorkingSheet')
-    .addItem('Apply Original Formatting (Blue Links & 45px Rows)', 'applyOriginalFormatting')
+    .addItem('🗑 Delete Selected Row as Frivolous', 'deleteSelectedRowAsFrivolous')
     .addItem('🧹 Remove Duplicate Rows from Sheet', 'removeDuplicateRowsFromSheet')
     .addItem('🧹 Remove Official Initiated Posts', 'removeOfficialPostsFromSheet')
-    .addItem('🗑 Delete Selected Row as Frivolous', 'deleteSelectedRowAsFrivolous')
+    .addItem('📥 Sync All Complaints from Working Sheet (19-10-26)', 'syncFromWorkingSheet')
+    .addItem('Apply Original Formatting (Blue Links & 45px Rows)', 'applyOriginalFormatting')
     .addItem('Fix Misclassified Appreciation Rows', 'fixMisclassifiedComplaints')
     .addItem('Make Rows Compact (22px)', 'makeRowsCompact')
     .addSeparator()
@@ -856,6 +857,30 @@ function disable247CloudSync() {
 }
 
 /**
+ * Permanently stops all automated X ingestion and deletes triggers.
+ */
+function permanentlyStopXSync() {
+  const props = PropertiesService.getScriptProperties();
+  props.setProperty('STOP_X_SYNC', 'true');
+  disable247CloudSync();
+  try {
+    SpreadsheetApp.getUi().alert('🛑 Automated X API Ingestion has been COMPLETELY STOPPED.\n\nAll background triggers have been removed. No further tweets will be pulled from X into this Google Sheet.');
+  } catch (e) {
+    Logger.log('X API sync stopped.');
+  }
+}
+
+/**
+ * Resumes automated X ingestion and recreates the 5-minute background trigger.
+ */
+function resumeXSync() {
+  const props = PropertiesService.getScriptProperties();
+  props.deleteProperty('STOP_X_SYNC');
+  props.deleteProperty('EMERGENCY_STOP');
+  enable247CloudSync();
+}
+
+/**
  * Core 24/7 cloud sync function executed by the Google Cloud time-based trigger.
  * Fetches recent tweets from X API v2, classifies them, and appends them to the sheet.
  */
@@ -891,12 +916,31 @@ function detectApexHead(tweetText) {
  */
 function runCloudSyncCycle() {
   const props = PropertiesService.getScriptProperties();
+  if (props.getProperty('STOP_X_SYNC') === 'true' || props.getProperty('EMERGENCY_STOP') === 'true') {
+    Logger.log('⏹ runCloudSyncCycle skipped because STOP_X_SYNC or EMERGENCY_STOP is active.');
+    return;
+  }
+
   const bearerToken = props.getProperty('X_BEARER_TOKEN') ||
     'AAAAAAAAAAAAAAAAAAAAACbr%2FwEAAAAAySPqrdOjXkNWagBKKbkzMA97ZnI%3DRBPSknXnu5S8uXS3j7lPbXPHlYCpiLfD2Yt8cRtRvWm1NcSi1E';
 
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   let sheet = ss.getSheetByName('Twitter Complaint List');
   if (!sheet) sheet = ss.getActiveSheet();
+
+  // Load excluded/frivolous complaints so deleted posts are NEVER re-added
+  const frivolousTids = new Set();
+  const frivolousUrls = new Set();
+  const archiveSheet = ss.getSheetByName('Frivolous_Archive');
+  if (archiveSheet && archiveSheet.getLastRow() >= 2) {
+    const archiveData = archiveSheet.getRange(2, 1, archiveSheet.getLastRow() - 1, 2).getValues();
+    for (let a = 0; a < archiveData.length; a++) {
+      const atid = String(archiveData[a][0] || '').trim();
+      const aurl = String(archiveData[a][1] || '').trim().toLowerCase();
+      if (atid) frivolousTids.add(atid);
+      if (aurl) frivolousUrls.add(aurl);
+    }
+  }
 
   // 1. Collect all existing Tweet IDs and URLs from Column E (LINK URL) to prevent duplicates
   const lastRow = sheet.getLastRow();
@@ -907,6 +951,14 @@ function runCloudSyncCycle() {
     const numRows = lastRow - checkStart + 1;
     const urlValues = sheet.getRange(checkStart, 5, numRows, 1).getValues();
     for (let i = 0; i < urlValues.length; i++) {
+      const u = String(urlValues[i][0] || '').trim();
+      if (u) {
+        existingUrls.add(u.toLowerCase());
+        const m = u.match(/status\/(\d+)/i);
+        if (m) existingTids.add(m[1]);
+      }
+    }
+  }
       const u = String(urlValues[i][0] || '').trim();
       if (u) {
         existingUrls.add(u.toLowerCase());
@@ -1236,6 +1288,9 @@ function deleteComplaintFromSheet(contents) {
     }
   }
 
+  // Archive to Frivolous_Archive tab so X sync never re-adds this tweet
+  archiveFrivolousInSheet(targetTweetId, targetUrl, targetComplaintNo);
+
   if (deletedRow !== -1) {
     sheet.deleteRow(deletedRow);
     SpreadsheetApp.flush();
@@ -1243,7 +1298,7 @@ function deleteComplaintFromSheet(contents) {
       status: 'ok',
       deleted: true,
       deletedRow: deletedRow,
-      message: 'Row ' + deletedRow + ' deleted successfully from Google Sheet'
+      message: 'Row ' + deletedRow + ' deleted successfully from Google Sheet and added to Frivolous Archive'
     };
   }
 
@@ -1252,6 +1307,27 @@ function deleteComplaintFromSheet(contents) {
     deleted: false,
     message: 'Complaint was not found in Google Sheet (might have already been removed)'
   };
+}
+
+/**
+ * Permanently stores frivolous/deleted tweet IDs in a dedicated tab
+ * so background cloud sync will NEVER resurrect or re-fetch them.
+ */
+function archiveFrivolousInSheet(tweetId, postUrl, complaintNo) {
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    let archiveSheet = ss.getSheetByName('Frivolous_Archive');
+    if (!archiveSheet) {
+      archiveSheet = ss.insertSheet('Frivolous_Archive');
+      archiveSheet.appendRow(['Tweet ID', 'Post URL', 'Complaint No', 'Deleted At']);
+      archiveSheet.getRange(1, 1, 1, 4).setFontWeight('bold').setBackground('#EF4444').setFontColor('#FFFFFF');
+    }
+    if (tweetId || postUrl) {
+      archiveSheet.appendRow([tweetId || '', postUrl || '', complaintNo || '', Utilities.formatDate(new Date(), 'Asia/Kolkata', 'yyyy-MM-dd HH:mm:ss')]);
+    }
+  } catch (e) {
+    Logger.log('Archive error: ' + e);
+  }
 }
 
 /**
@@ -1265,15 +1341,20 @@ function deleteSelectedRowAsFrivolous() {
     SpreadsheetApp.getUi().alert('Please select a complaint row (Row 3 or below).');
     return;
   }
-  const complaintUrl = sheet.getRange(row, 5).getValue();
+  const complaintUrl = String(sheet.getRange(row, 5).getValue() || '').trim();
   const prompt = SpreadsheetApp.getUi().alert(
     'Delete Frivolous Complaint',
-    'Are you sure you want to delete Row ' + row + ' (' + complaintUrl + ') as Frivolous from this sheet?',
+    'Are you sure you want to delete Row ' + row + ' (' + complaintUrl + ') as Frivolous from this sheet?\n\nIt will be permanently moved to the Frivolous_Archive tab and prevented from being re-fetched.',
     SpreadsheetApp.getUi().ButtonSet.YES_NO
   );
   if (prompt === SpreadsheetApp.getUi().Button.YES) {
+    const m = complaintUrl.match(/status\/(\d+)/i);
+    const tid = m ? m[1] : '';
+    const cno = String(sheet.getRange(row, 18).getValue() || '').trim();
+    archiveFrivolousInSheet(tid, complaintUrl, cno);
     sheet.deleteRow(row);
-    SpreadsheetApp.getUi().alert('Row ' + row + ' deleted successfully.');
+    SpreadsheetApp.flush();
+    SpreadsheetApp.getUi().alert('Row ' + row + ' deleted and permanently archived as Frivolous.');
   }
 }
 

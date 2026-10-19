@@ -1116,6 +1116,30 @@ const handleDeleteFrivolous = async (req, res) => {
         req.user ? (req.user.full_name || req.user.username) : 'Staff',
         reason
       ]);
+
+      // Persist to data/frivolous_ledger.json so it survives container restarts
+      try {
+        const ledgerPath = path.join(__dirname, 'data', 'frivolous_ledger.json');
+        let ledger = [];
+        if (fs.existsSync(ledgerPath)) {
+          try { ledger = JSON.parse(fs.readFileSync(ledgerPath, 'utf8')); } catch (e) {}
+        }
+        if (!Array.isArray(ledger)) ledger = [];
+        const exists = ledger.some(x => (tweetId && x.tweet_id === tweetId) || (postUrl && x.post_url === postUrl) || (complaintNo && x.complaint_no === complaintNo));
+        if (!exists) {
+          ledger.push({
+            tweet_id: tweetId,
+            post_url: postUrl,
+            complaint_no: complaintNo,
+            deleted_at: istTime,
+            deleted_by: req.user ? (req.user.full_name || req.user.username) : 'Staff',
+            reason: reason
+          });
+          fs.writeFileSync(ledgerPath, JSON.stringify(ledger, null, 2), 'utf8');
+        }
+      } catch (fileErr) {
+        console.warn('[Frivolous] File ledger write warning:', fileErr.message);
+      }
     } catch (err) {
       console.warn('[Frivolous] Warning saving frivolous record:', err.message);
     }

@@ -477,6 +477,24 @@ function createSchema() {
     console.warn('Migration frivolous_complaints error:', e.message);
   }
 
+  // Pre-load from persistent frivolous_ledger.json
+  try {
+    const ledgerFile = path.join(__dirname, 'data', 'frivolous_ledger.json');
+    if (fs.existsSync(ledgerFile)) {
+      const items = JSON.parse(fs.readFileSync(ledgerFile, 'utf8'));
+      if (Array.isArray(items)) {
+        for (const item of items) {
+          dbInstance.run(`
+            INSERT OR IGNORE INTO frivolous_complaints (post_url, tweet_id, complaint_no, deleted_at, deleted_by_name, reason)
+            VALUES (?, ?, ?, ?, ?, ?);
+          `, [item.post_url || null, item.tweet_id || null, item.complaint_no || null, item.deleted_at || new Date().toISOString(), item.deleted_by || 'Staff', item.reason || 'Marked as Frivolous']);
+        }
+      }
+    }
+  } catch (e) {
+    console.warn('Frivolous ledger seed error:', e.message);
+  }
+
   try {
     const totalCount = dbInstance.exec("SELECT COUNT(*) FROM forwarding_templates;")[0]?.values[0][0] || 0;
     const englishCount = dbInstance.exec("SELECT COUNT(*) FROM forwarding_templates WHERE language = 'English';")[0]?.values[0][0] || 0;

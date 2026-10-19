@@ -56,16 +56,43 @@ let lastSyncInfo = {
  */
 function getFrivolousIdentifiersSet() {
   const set = new Set();
+
+  const addIdentifier = (rawTid, rawUrl, rawCno) => {
+    if (rawTid) set.add(String(rawTid).trim());
+    if (rawCno) set.add(String(rawCno).trim().toLowerCase());
+    if (rawUrl) {
+      const u = String(rawUrl).trim().toLowerCase();
+      set.add(u);
+      set.add(u.split('?')[0]);
+      set.add(u.replace(/\/$/, ''));
+      const m = u.match(/status\/(\d+)/i);
+      if (m && m[1]) set.add(m[1]);
+    }
+  };
+
+  // 1. Load from SQLite frivolous_complaints table
   try {
     const rows = db.query("SELECT post_url, tweet_id, complaint_no FROM frivolous_complaints;");
     if (rows && rows.length) {
       for (const fr of rows) {
-        if (fr.tweet_id) set.add(String(fr.tweet_id).trim());
-        if (fr.post_url) set.add(String(fr.post_url).trim().toLowerCase());
-        if (fr.complaint_no) set.add(String(fr.complaint_no).trim().toLowerCase());
+        addIdentifier(fr.tweet_id, fr.post_url, fr.complaint_no);
       }
     }
   } catch (e) {}
+
+  // 2. Load from persistent data/frivolous_ledger.json file (persists across server restarts)
+  try {
+    const ledgerFile = path.join(__dirname, 'data', 'frivolous_ledger.json');
+    if (fs.existsSync(ledgerFile)) {
+      const fileData = JSON.parse(fs.readFileSync(ledgerFile, 'utf8'));
+      if (Array.isArray(fileData)) {
+        for (const item of fileData) {
+          addIdentifier(item.tweet_id, item.post_url, item.complaint_no);
+        }
+      }
+    }
+  } catch (e) {}
+
   return set;
 }
 
@@ -307,8 +334,13 @@ function shouldDeleteOrOmitPost({ remark = '', status = '', reply30 = '', reply6
   const cleanR30 = String(reply30 || '').toUpperCase().trim();
   const cleanR60 = String(reply60 || '').toUpperCase().trim();
 
-  // 1. Explicit deletion in Remark or Status (e.g. 'deleted', 'delete')
-  if (cleanRemark.includes('delete') || cleanStatus.includes('delete')) {
+  // 1. Explicit deletion in Remark or Status (e.g. 'deleted', 'delete', 'frivolous', 'duplicate', 'invalid')
+  if (cleanRemark.includes('delete') || cleanStatus.includes('delete') ||
+      cleanRemark.includes('frivolous') || cleanStatus.includes('frivolous') ||
+      cleanRemark.includes('duplicate') || cleanStatus.includes('duplicate') ||
+      cleanRemark.includes('invalid') || cleanStatus.includes('invalid') ||
+      cleanRemark.includes('spam') || cleanStatus.includes('spam') ||
+      cleanRemark.includes('ignore') || cleanStatus.includes('ignore')) {
     return { shouldOmit: true, reason: 'EXPLICIT_DELETED_IN_SHEET' };
   }
 
@@ -855,17 +887,49 @@ function processSheetMatrix(headers, data, method, startTime = Date.now()) {
 
     // Bulletproof URL auto-recovery
     if (!linkUrl || !linkUrl.startsWith('http')) {
+      let foundHttpUrl = '';
       if (row[4] && String(row[4]).trim().startsWith('http')) {
-        linkUrl = String(row[4]).trim();
+        foundHttpUrl = String(row[4]).trim();
       } else {
         for (let colIdx = 0; colIdx < row.length; colIdx++) {
           const cellStr = String(row[colIdx] || '').trim();
           if (/^https?:\/\/(?:x|twitter)\.com\/\S+/i.test(cellStr)) {
-            linkUrl = cellStr;
+            foundHttpUrl = cellStr;
             break;
           }
         }
       }
+
+      if (foundHttpUrl) {
+        linkUrl = foundHttpUrl;
+      } else {
+        // Fallback: Recover from Tweet/Post ID anywhere in the row (15-25 digits)
+        let foundTweetId = '';
+        const col19 = String(row[19] || '').trim();
+        if (/^\d{15,25}$/.test(col19)) {
+          foundTweetId = col19;
+        } else {
+          for (let colIdx = 0; colIdx < row.length; colIdx++) {
+            const cellStr = String(row[colIdx] || '').trim();
+            if (/^\d{15,25}$/.test(cellStr)) {
+              foundTweetId = cellStr;
+              break;
+            }
+          }
+        }
+
+        if (foundTweetId) {
+          const rawHandle = twitterId ? String(twitterId).replace(/^@/, '').trim() : (row[5] ? String(row[5]).replace(/^@/, '').trim() : '');
+          linkUrl = `https://x.com/${rawHandle || 'i'}/status/${foundTweetId}`;
+        } else {
+          linkUrl = '';
+        }
+      }
+    }
+
+    // Clean tracking query params from linkUrl (e.g., ?s=20, ?t=..., etc.)
+    if (linkUrl && linkUrl.startsWith('http')) {
+      linkUrl = linkUrl.replace(/\?s=\d+.*$/i, '').replace(/\?[a-z0-9_=&-]+$/i, '');
     }
 
     // Auto-recover twitterId from linkUrl if missing
@@ -890,7 +954,14 @@ function processSheetMatrix(headers, data, method, startTime = Date.now()) {
 
     // Strictly skip frivolous / deleted complaints or posts replied by official handles before UPPCLLKO
     const rowTid = extractTweetId(linkUrl) || twitterId;
-    if (frivolousSet.has(rowTid) || (linkUrl && frivolousSet.has(linkUrl.toLowerCase())) || (rawComplaintNo && frivolousSet.has(rawComplaintNo.toLowerCase()))) {
+    const cleanUrl = linkUrl ? linkUrl.trim().toLowerCase() : '';
+    const cleanUrlNoQuery = cleanUrl.split('?')[0];
+    if (
+      frivolousSet.has(rowTid) ||
+      (cleanUrl && frivolousSet.has(cleanUrl)) ||
+      (cleanUrlNoQuery && frivolousSet.has(cleanUrlNoQuery)) ||
+      (rawComplaintNo && frivolousSet.has(rawComplaintNo.toLowerCase()))
+    ) {
       continue;
     }
 
@@ -904,6 +975,9 @@ function processSheetMatrix(headers, data, method, startTime = Date.now()) {
         if (linkUrl) {
           db.run("DELETE FROM complaints WHERE post_url = ?;", [linkUrl]);
         }
+        frivolousSet.add(rowTid);
+        if (cleanUrl) frivolousSet.add(cleanUrl);
+        if (cleanUrlNoQuery) frivolousSet.add(cleanUrlNoQuery);
       } catch (e) {}
       continue;
     }
