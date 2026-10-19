@@ -174,7 +174,13 @@ const App = {
     this.token = localStorage.getItem('uppcl_smc_token');
     const savedUser = localStorage.getItem('uppcl_smc_user');
     if (savedUser) {
-      try { this.user = JSON.parse(savedUser); } catch(e) {}
+      try { 
+        this.user = JSON.parse(savedUser);
+        if (this.user) {
+          if (this.user.role === 'Super Administrator') this.user.role = 'Administrator';
+          if (this.user.full_name === 'Super Administrator') this.user.full_name = 'Administrator';
+        }
+      } catch(e) {}
     }
 
     this.startClock();
@@ -420,6 +426,10 @@ const App = {
 
   login(token, user) {
     this.token = token;
+    if (user) {
+      if (user.role === 'Super Administrator') user.role = 'Administrator';
+      if (user.full_name === 'Super Administrator') user.full_name = 'Administrator';
+    }
     this.user = user;
     localStorage.setItem('uppcl_smc_token', token);
     localStorage.setItem('uppcl_smc_user', JSON.stringify(user));
@@ -468,9 +478,6 @@ const App = {
       this.renderComplaintRegister(container);
     } else if (page === 'add-complaint') {
       this.renderAddComplaint(container);
-    } else if (page === 'forwarding') {
-      this.currentFilters.status = 'awaiting_discom';
-      this.renderComplaintRegister(container, 'Forwarding & Follow-Up Register');
     } else if (page === 'pending-overdue') {
       this.currentFilters.status = 'overdue';
       this.renderComplaintRegister(container, 'Overdue & Breached SLA Register');
@@ -513,9 +520,9 @@ const App = {
   // -----------------------------------------------------------
   renderApp() {
     const root = document.getElementById('app');
-    const isSuperAdmin = this.user.role === 'Super Administrator';
-    const isOperator = ['Super Administrator', 'Social Media Cell Operator', 'Complaint Handler'].includes(this.user.role);
-    const isSupervisor = ['Super Administrator', 'Supervisor / Management'].includes(this.user.role);
+    const isSuperAdmin = ['Administrator', 'Admin', 'Super Administrator'].includes(this.user.role);
+    const isOperator = ['Administrator', 'Admin', 'Super Administrator', 'Social Media Cell Operator', 'Complaint Handler'].includes(this.user.role);
+    const isSupervisor = ['Administrator', 'Admin', 'Super Administrator', 'Supervisor / Management'].includes(this.user.role);
     const isDiscomNodal = this.user.role === 'DISCOM Nodal Officer';
 
     root.innerHTML = `
@@ -549,9 +556,6 @@ const App = {
             </a>
             <a class="nav-item" data-page="unassigned-queue" onclick="App.navigate('unassigned-queue')">
               <i class="fa-solid fa-question-circle"></i> Needs Review (Unassigned)
-            </a>
-            <a class="nav-item" data-page="forwarding" onclick="App.navigate('forwarding')">
-              <i class="fa-solid fa-share-nodes"></i> Forwarding & Follow-Up
             </a>
             <a class="nav-item" data-page="pending-overdue" onclick="App.navigate('pending-overdue')">
               <i class="fa-solid fa-triangle-exclamation"></i> Pending & Overdue
@@ -1697,11 +1701,8 @@ const App = {
 
   renderRowQuickAction(c) {
     const isDiscom = this.user.role === 'DISCOM Nodal Officer';
-    const isOperator = ['Super Administrator', 'Social Media Cell Operator', 'Supervisor / Management'].includes(this.user.role);
+    const isOperator = ['Administrator', 'Admin', 'Super Administrator', 'Social Media Cell Operator', 'Supervisor / Management'].includes(this.user.role);
 
-    if (c.current_status === 'New' && isOperator) {
-      return `<button class="btn btn-accent btn-sm" title="Forward to DISCOM" onclick="App.openForwardModal(${c.id})"><i class="fa-solid fa-share-nodes"></i></button>`;
-    }
     if (c.current_status === 'Forwarded' && isOperator) {
       return `<button class="btn btn-secondary btn-sm" title="Follow Up" onclick="App.openFollowupModal(${c.id})"><i class="fa-solid fa-phone"></i></button>`;
     }
@@ -1886,46 +1887,7 @@ const App = {
             <textarea id="add-complaint-text" class="form-control" rows="4" placeholder="Enter complete grievance text copied from post or comment..." required onblur="App.checkDuplicateText(this.value)"></textarea>
           </div>
 
-          <!-- Immediate Forwarding Section -->
-          <div style="background-color: var(--bg-subtle); border: 1px solid var(--border-color); border-radius: 6px; padding: 14px; margin-bottom: 20px;">
-            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 10px;">
-              <input type="checkbox" id="add-forward-now" onchange="App.toggleForwardSection(this.checked)">
-              <label for="add-forward-now" style="font-weight: 700; color: var(--primary); font-size: 13px; cursor: pointer;">
-                Forward immediately to DISCOM / Field X-Handle upon registration
-              </label>
-            </div>
-
-            <div id="forward-fields" style="display: none; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 12px;">
-              <div class="filter-group">
-                <label>Assigned X-Handle</label>
-                <select id="add-nodal-name" class="form-control">
-                  <option value="">-- Select District Above --</option>
-                </select>
-                <input type="hidden" id="add-nodal-id">
-                <input type="hidden" id="add-nodal-mobile">
-              </div>
-
-              <div class="filter-group">
-                <label>Communication Channel</label>
-                <select id="add-forward-channel" class="form-control">
-                  <option value="Twitter / X Escalation">Twitter / X Escalation</option>
-                  <option value="Facebook">Facebook</option>
-                </select>
-              </div>
-
-              <div class="filter-group">
-                <label>Forwarding Ref / Dispatch No</label>
-                <input type="text" id="add-forward-ref" class="form-control" placeholder="e.g. SMC/FWD/2026/...">
-              </div>
-
-              <div class="filter-group" style="grid-column: span 3;">
-                <label>Forwarding Instructions / Action Summary</label>
-                <input type="text" id="add-forward-remarks" class="form-control" placeholder="Action instructions for field staff...">
-              </div>
-            </div>
-          </div>
-
-          <div style="display: flex; gap: 12px; justify-content: flex-end;">
+          <div style="display: flex; gap: 12px; justify-content: flex-end; margin-top: 20px;">
             <button type="button" class="btn btn-secondary" onclick="App.navigate('register')">Cancel</button>
             <button type="submit" class="btn btn-primary"><i class="fa-solid fa-save"></i> Register Complaint</button>
           </div>
@@ -2084,7 +2046,6 @@ const App = {
 
   async submitNewComplaint(e) {
     e.preventDefault();
-    const forwardNow = document.getElementById('add-forward-now').checked;
 
     const payload = {
       platform: document.getElementById('add-platform').value,
@@ -2101,16 +2062,6 @@ const App = {
       consumer_account_no: document.getElementById('add-consumer-account').value.trim(),
       complaint_text: document.getElementById('add-complaint-text').value.trim()
     };
-
-    if (forwardNow) {
-      payload.forwarding_date = new Date().toISOString().replace('T', ' ').substring(0, 19);
-      payload.assigned_nodal_officer_id = document.getElementById('add-nodal-id').value;
-      payload.assigned_nodal_officer_name = document.getElementById('add-nodal-name').value;
-      payload.assigned_nodal_officer_mobile = document.getElementById('add-nodal-mobile').value;
-      payload.forwarding_channel = document.getElementById('add-forward-channel').value;
-      payload.forwarding_ref_no = document.getElementById('add-forward-ref').value;
-      payload.forwarding_remarks = document.getElementById('add-forward-remarks').value;
-    }
 
     try {
       const res = await this.api('/api/complaints', {
@@ -2330,25 +2281,27 @@ const App = {
                     <div class="info-row"><span class="info-label">Contact:</span><span class="info-value">${c.consumer_mobile || 'Not Provided'}</span></div>
                   </div>
 
-                  <!-- Assignment & Nodal Officer -->
+                  <!-- DISCOM & Authority Data Representation -->
                   <div class="details-card" style="border-left: 4px solid var(--primary);">
                     <div class="details-card-header">
-                      <span><i class="fa-solid fa-share-nodes"></i> Field Forwarding & Assigned X-Handle</span>
-                      ${c.forwarding_ref_no ? `<span style="font-size: 11px; font-weight: 700; color: var(--primary);"><i class="fa-solid fa-hashtag"></i> ${c.forwarding_ref_no}</span>` : ''}
+                      <span><i class="fa-solid fa-building-flag"></i> DISCOM & Authority Information</span>
                     </div>
-                    <div class="info-row"><span class="info-label">Assigned X-Handle:</span><span class="info-value"><b>${c.assigned_nodal_officer_name ? (c.assigned_nodal_officer_name.startsWith('@') ? `<a href="https://x.com/${c.assigned_nodal_officer_name.replace('@', '')}" target="_blank" rel="noopener noreferrer" style="color: var(--primary); font-weight: 700;"><i class="fa-brands fa-x-twitter"></i> ${c.assigned_nodal_officer_name}</a>` : c.assigned_nodal_officer_name) : '<span style="color: var(--text-muted); font-style: italic;">Unassigned (Awaiting Forwarding)</span>'}</b></span></div>
-                    <div class="info-row"><span class="info-label">Dispatch Ref No:</span><span class="info-value"><b>${c.forwarding_ref_no ? `<code style="font-size: 11px; font-weight: 700; color: var(--primary); background: var(--bg-subtle); padding: 2px 6px; border-radius: 4px;">${c.forwarding_ref_no}</code>` : '<span style="color: var(--text-muted);">Not assigned yet</span>'}</b></span></div>
-                    <div class="info-row"><span class="info-label">Official Mobile:</span><span class="info-value"><b>${c.assigned_nodal_officer_mobile || 'Contact HQ'}</b></span></div>
-                    <div class="info-row"><span class="info-label">Forwarded At:</span><span class="info-value">${c.forwarding_date ? `<b>${c.forwarding_date} IST</b>` : '<span style="color: var(--text-muted);">Not forwarded yet</span>'}</span></div>
-                    <div class="info-row"><span class="info-label">Channel:</span><span class="info-value">${c.forwarding_channel || 'Twitter / X Escalation'}</span></div>
-                    <div class="info-row"><span class="info-label">Expected SLA:</span><span class="info-value" style="color: ${isOverdue ? '#ef4444' : 'inherit'}; font-weight: 700;">${c.expected_response_date || 'Pending'}</span></div>
-
-                    ${c.forwarding_remarks ? `
+                    <div class="info-row"><span class="info-label">DISCOM:</span><span class="info-value"><b>${c.discom_name || 'UPPCL'}</b></span></div>
+                    <div class="info-row"><span class="info-label">District:</span><span class="info-value"><b>${c.district_name || 'HQ / Unassigned'}</b></span></div>
+                    <div class="info-row"><span class="info-label">Zone:</span><span class="info-value">${c.zone_name || '-'}</span></div>
+                    <div class="info-row"><span class="info-label">Official Handle:</span><span class="info-value"><b>${c.assigned_nodal_officer_name ? (c.assigned_nodal_officer_name.startsWith('@') ? `<a href="https://x.com/${c.assigned_nodal_officer_name.replace('@', '')}" target="_blank" rel="noopener noreferrer" style="color: var(--primary); font-weight: 700;"><i class="fa-brands fa-x-twitter"></i> ${c.assigned_nodal_officer_name}</a>` : c.assigned_nodal_officer_name) : (c.discom_name ? '@' + c.discom_name + 'HQ' : '@UPPCLLKO')}</b></span></div>
+                    <div class="info-row"><span class="info-label">Monitored Account:</span><span class="info-value">${c.monitored_account || '@UPPCLLKO'}</span></div>
+                    <div class="info-row"><span class="info-label">Google Sheet Status:</span><span class="info-value"><span class="badge-status badge-${(c.current_status || '').replace(/[\s—/]+/g, '-')}">${c.current_status}</span></span></div>
+                    <div class="info-row"><span class="info-label">Picked Status:</span><span class="info-value"><b>${c.picked_status || 'YES'}</b></span></div>
+                    <div class="info-row"><span class="info-label">Shift:</span><span class="info-value">${c.link_shift || '-'}</span></div>
+                    ${c.sheet_row_index ? `<div class="info-row"><span class="info-label">Sheet Row:</span><span class="info-value"><span class="badge-sheet-row">Row #${c.sheet_row_index}</span></span></div>` : ''}
+                    <div class="info-row"><span class="info-label">30m SLA Status:</span><span class="info-value"><b>${c.reply_within_30_min || '-'}</b></span></div>
+                    ${c.forwarding_remarks || c.remark ? `
                     <div style="margin-top: 10px; padding: 10px; background: var(--bg-subtle); border-radius: 4px; border: 1px solid var(--border-color);">
                       <div style="font-size: 11px; font-weight: 700; color: var(--primary); margin-bottom: 4px;">
-                        <i class="fa-solid fa-file-invoice"></i> Field Action Instructions (अग्रसारण निर्देश):
+                        <i class="fa-solid fa-note-sticky"></i> Remarks:
                       </div>
-                      <div style="font-size: 12px; line-height: 1.4; color: var(--text-main); white-space: pre-wrap;">${c.forwarding_remarks}</div>
+                      <div style="font-size: 12px; line-height: 1.4; color: var(--text-main); white-space: pre-wrap;">${c.forwarding_remarks || c.remark}</div>
                     </div>
                     ` : ''}
 
@@ -2400,11 +2353,14 @@ const App = {
 
   renderDetailActionButtons(c) {
     const isDiscom = this.user.role === 'DISCOM Nodal Officer';
-    const isOperator = ['Super Administrator', 'Social Media Cell Operator', 'Supervisor / Management'].includes(this.user.role);
+    const isOperator = ['Administrator', 'Admin', 'Super Administrator', 'Social Media Cell Operator', 'Supervisor / Management'].includes(this.user.role);
     let btns = [];
 
+    if (c.post_url) {
+      btns.push(`<a href="${c.post_url}" target="_blank" rel="noopener noreferrer" class="btn btn-primary btn-sm" style="display:inline-flex; align-items:center; gap:6px; text-decoration:none;"><i class="fa-brands fa-x-twitter"></i> Reply on X & Tag DISCOM <i class="fa-solid fa-arrow-up-right-from-square" style="font-size:10px;"></i></a>`);
+    }
+
     if (isOperator) {
-      btns.push(`<button class="btn btn-primary btn-sm" onclick="App.openForwardModal(${c.id})"><i class="fa-solid fa-share-nodes"></i> Forward / Re-Route</button>`);
       btns.push(`<button class="btn btn-secondary btn-sm" onclick="App.openFollowupModal(${c.id})"><i class="fa-solid fa-phone"></i> Record Follow-Up</button>`);
       btns.push(`<button class="btn btn-danger btn-sm" onclick="App.openEscalateModal(${c.id})"><i class="fa-solid fa-arrow-up-right-dots"></i> Escalate Complaint</button>`);
     }
@@ -3710,7 +3666,7 @@ const App = {
           <p>Authoritative Source of Truth for UPPCL Apex, DISCOM HQs, and Field District Handles</p>
         </div>
         <div class="page-actions">
-          ${this.user.role === 'Super Administrator' ? `
+          ${['Administrator', 'Admin', 'Super Administrator'].includes(this.user.role) ? `
           <button class="btn btn-primary btn-sm" onclick="App.openAddXHandleModal()">
             <i class="fa-solid fa-plus"></i> Add Handle
           </button>` : ''}
@@ -4905,7 +4861,7 @@ const App = {
           <div style="margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--border-color); font-size: 11px;">
             <div style="font-weight: 700; color: var(--text-muted); margin-bottom: 8px;">Quick Role Switch (Demo Credentials):</div>
             <div style="display: flex; flex-wrap: wrap; gap: 4px;">
-              <span class="role-pill-btn" onclick="App.quickFill('admin', 'Admin@UPPCL2026')">Super Admin</span>
+              <span class="role-pill-btn" onclick="App.quickFill('admin', 'Admin@UPPCL2026')">Administrator</span>
               <span class="role-pill-btn" onclick="App.quickFill('operator', 'Operator@UPPCL2026')">SMC Operator</span>
               <span class="role-pill-btn" onclick="App.quickFill('supervisor', 'Supervisor@UPPCL2026')">Supervisor</span>
               <span class="role-pill-btn" onclick="App.quickFill('nodal_puvvnl', 'Nodal@PUVVNL2026')">PuVVNL Nodal</span>

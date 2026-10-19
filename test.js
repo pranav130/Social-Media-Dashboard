@@ -54,7 +54,7 @@ async function runTests() {
   console.log('\n[2. Authentication & Role-Based Access Control]');
   it('Default users exist for all 5 roles', () => {
     const roles = db.query('SELECT DISTINCT role FROM users;').map(u => u.role);
-    assert.ok(roles.includes('Super Administrator'));
+    assert.ok(roles.includes('Administrator') || roles.includes('Super Administrator'));
     assert.ok(roles.includes('Social Media Cell Operator'));
     assert.ok(roles.includes('Supervisor / Management'));
     assert.ok(roles.includes('DISCOM Nodal Officer'));
@@ -233,7 +233,7 @@ async function runTests() {
   it('Emergency stop blocks outbound reply dispatch immediately', async () => {
     // Temporarily enable emergency stop
     db.run("UPDATE system_settings SET value = 'true' WHERE key = 'emergency_stop';");
-    const fakeUser = { id: 1, full_name: 'Admin', role: 'Super Administrator' };
+    const fakeUser = { id: 1, full_name: 'Admin', role: 'Administrator' };
     const res = await XService.publishReply(1, fakeUser, 'Test reply');
     assert.strictEqual(res.success, false);
     assert.strictEqual(res.code, 'EMERGENCY_STOP_ACTIVE');

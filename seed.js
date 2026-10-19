@@ -379,9 +379,9 @@ async function runSeed() {
     {
       username: 'admin',
       password: 'Admin@UPPCL2026',
-      full_name: 'Super Administrator',
+      full_name: 'Administrator',
       email: 'admin.smc@uppcl.org',
-      role: 'Super Administrator',
+      role: 'Administrator',
       discom_name: 'All DISCOMs',
       designation: 'Chief Systems Administrator',
       mobile: '9415000001'
@@ -1108,7 +1108,7 @@ async function runSeed() {
   if (!ticketCount || ticketCount.cnt === 0) {
     db.run(`
       INSERT INTO internal_tickets (ticket_no, user_id, username, user_role, category, priority, subject, description, status, resolver_name, created_at, updated_at)
-      VALUES ('TKT-UPPCL-202610-001', 2, 'operator', 'Social Media Cell Operator', 'X Ingestion', 'Normal', 'Handle @MVVNLHQ rate-limit check', 'Verifying recent mentions quota on corporate HQ handle.', 'Open', 'Super Administrator', datetime('now'), datetime('now'));
+      VALUES ('TKT-UPPCL-202610-001', 2, 'operator', 'Social Media Cell Operator', 'X Ingestion', 'Normal', 'Handle @MVVNLHQ rate-limit check', 'Verifying recent mentions quota on corporate HQ handle.', 'Open', 'Administrator', datetime('now'), datetime('now'));
     `);
   }
 
@@ -1121,7 +1121,7 @@ async function runSeed() {
   // 14. Initial Audit Logs
   db.run(`
     INSERT INTO audit_logs (user_id, username, user_role, action, entity_type, entity_id, details, ip_address, created_at)
-    VALUES (1, 'system', 'Super Administrator', 'SYSTEM_INITIALIZATION', 'SYSTEM', '0', 'UPPCL Grievance Command Centre production seed verified', '127.0.0.1', datetime('now'));
+    VALUES (1, 'system', 'Administrator', 'SYSTEM_INITIALIZATION', 'SYSTEM', '0', 'UPPCL Grievance Command Centre production seed verified', '127.0.0.1', datetime('now'));
   `);
 
   db.flush();

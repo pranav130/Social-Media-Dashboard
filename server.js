@@ -113,7 +113,7 @@ function authMiddleware(req, res, next) {
 function requireRoles(...roles) {
   return (req, res, next) => {
     if (!req.user) return res.status(401).json({ error: 'Authentication required' });
-    if (req.user.role === 'Super Administrator') return next(); // Super Admin bypass
+    if (['Administrator', 'Super Administrator', 'Admin'].includes(req.user.role)) return next(); // Admin bypass
     if (roles.includes(req.user.role)) return next();
     return res.status(403).json({ error: `Forbidden: Access requires one of [${roles.join(', ')}]` });
   };
@@ -2351,7 +2351,7 @@ app.get('/api/internal-tickets', authMiddleware, (req, res) => {
   let params = [];
 
   // Scoping: non-admins only see tickets they raised
-  if (!['Super Administrator', 'Supervisor / Management'].includes(req.user.role)) {
+  if (!['Administrator', 'Super Administrator', 'Admin', 'Supervisor / Management'].includes(req.user.role)) {
     whereClauses.push('created_by_user_id = ?');
     params.push(req.user.id);
   }
