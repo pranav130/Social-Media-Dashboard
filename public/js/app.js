@@ -550,24 +550,6 @@ const App = {
               <i class="fa-solid fa-circle-plus"></i> Add Complaint
             </a>` : ''}
 
-            <div class="nav-section-title">Workflow Tracking</div>
-            <a class="nav-item" data-page="draft-review" onclick="App.navigate('draft-review')">
-              <i class="fa-solid fa-pen-to-square"></i> Draft & Review Queue
-            </a>
-            <a class="nav-item" data-page="unassigned-queue" onclick="App.navigate('unassigned-queue')">
-              <i class="fa-solid fa-question-circle"></i> Needs Review (Unassigned)
-            </a>
-            <a class="nav-item" data-page="pending-overdue" onclick="App.navigate('pending-overdue')">
-              <i class="fa-solid fa-triangle-exclamation"></i> Pending & Overdue
-            </a>
-            <a class="nav-item" data-page="discom-responses" onclick="App.navigate('discom-responses')">
-              <i class="fa-solid fa-reply-all"></i> DISCOM Responses
-            </a>
-            ${!isDiscomNodal ? `
-            <a class="nav-item" data-page="closure-verification" onclick="App.navigate('closure-verification')">
-              <i class="fa-solid fa-clipboard-check"></i> Closure Verification
-            </a>` : ''}
-
             <div class="nav-section-title">Intelligence & Masters</div>
             <a class="nav-item" data-page="reports" onclick="App.navigate('reports')">
               <i class="fa-solid fa-file-invoice"></i> Reports & Exports

@@ -512,9 +512,13 @@ function processSheetMatrix(headers, data, method, startTime = Date.now()) {
   let validCount = 0;
   let qualityIssuesCount = 0;
 
-  // Clean out previous non-seed Twitter/X cache from SQLite to ensure exact 1-to-1 parity
-  // (Preserves test seed records created by SMC System Seed)
-  db.run("DELETE FROM complaints WHERE platform = 'Twitter/X' AND (created_by IS NULL OR created_by != 'SMC System Seed');");
+  // Clean out previous Twitter/X cache and remove all legacy demo seed records
+  // to ensure 100% exact 1-to-1 parity with authoritative sheet
+  db.run("DELETE FROM complaints WHERE platform = 'Twitter/X' OR created_by = 'SMC System Seed' OR complaint_no LIKE 'UPPCL-SMC-%';");
+  db.run("DELETE FROM complaint_timeline WHERE complaint_id NOT IN (SELECT id FROM complaints);");
+  db.run("DELETE FROM complaint_forwarding_logs WHERE complaint_id NOT IN (SELECT id FROM complaints);");
+  db.run("DELETE FROM complaint_escalation_logs WHERE complaint_id NOT IN (SELECT id FROM complaints);");
+  db.run("DELETE FROM x_outgoing_replies WHERE complaint_id NOT IN (SELECT id FROM complaints);");
 
   // Track used complaint numbers to guarantee uniqueness
   const usedComplaintNos = new Set();
@@ -637,15 +641,14 @@ function processSheetMatrix(headers, data, method, startTime = Date.now()) {
       }
     }
 
-    // Determine stable Complaint Number strictly matching UPPCL-SMC-YYYYMM-XXXX
-    let complaintNo = rawComplaintNo;
+    // Determine sequential Complaint Number strictly matching UPPCL-SMC-YYYYMM-XXXX
+    // Starting from UPPCL-SMC-YYYYMM-0001 sequentially
     const ym = (istDate ? istDate.replace(/-/g, '').substring(0, 6) : '202610');
-    if (!complaintNo || !/^UPPCL-SMC-\d{6}-\d{4}$/.test(complaintNo) || usedComplaintNos.has(complaintNo)) {
-      let seq = validCount + 1;
-      do {
-        complaintNo = `UPPCL-SMC-${ym}-${String(seq).padStart(4, '0')}`;
-        seq++;
-      } while (usedComplaintNos.has(complaintNo));
+    let seq = validCount + 1;
+    let complaintNo = `UPPCL-SMC-${ym}-${String(seq).padStart(4, '0')}`;
+    while (usedComplaintNos.has(complaintNo)) {
+      seq++;
+      complaintNo = `UPPCL-SMC-${ym}-${String(seq).padStart(4, '0')}`;
     }
     usedComplaintNos.add(complaintNo);
 
