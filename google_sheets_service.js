@@ -570,6 +570,11 @@ function processSheetMatrix(headers, data, method, startTime = Date.now()) {
     const consumerHandle = twitterId.startsWith('@') ? twitterId : ('@' + twitterId);
     const consumerName = consumerHandle.replace('@', '');
 
+    // Strictly skip empty or phantom rows with no URL, Twitter ID, or complaint text
+    if (!linkUrl && !twitterId && !rawPostText) {
+      continue;
+    }
+
     // Strictly skip posts initiated by official accounts
     if (isOfficialHandle(consumerHandle) || isOfficialHandle(linkUrl)) {
       continue;
