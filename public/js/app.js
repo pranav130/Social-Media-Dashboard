@@ -573,14 +573,8 @@ const App = {
             <a class="nav-item" data-page="audit-logs" onclick="App.navigate('audit-logs')">
               <i class="fa-solid fa-shield-halved"></i> Audit Trail
             </a>` : ''}
-            <a class="nav-item" data-page="internal-tickets" onclick="App.navigate('internal-tickets')">
-              <i class="fa-solid fa-headset"></i> Support Tickets
-            </a>
 
             ${isSuperAdmin ? `
-            <a class="nav-item" data-page="users" onclick="App.navigate('users')">
-              <i class="fa-solid fa-users-gear"></i> Users & Roles
-            </a>
             <a class="nav-item" data-page="settings" onclick="App.navigate('settings')">
               <i class="fa-solid fa-sliders"></i> System Settings
             </a>` : ''}
