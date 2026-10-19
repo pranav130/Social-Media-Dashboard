@@ -157,6 +157,56 @@ function normalizeDiscom(discomStr, text = '') {
 }
 
 /**
+ * 90+ Official UPPCL and DISCOM Handles
+ */
+const UPPCL_OFFICIAL_HANDLES = new Set([
+  'uppcllko', 'cmofficeup', 'emofficeup', 'aksharmaoffice', 'aksharmabharat', 'chairmanuppcl', 'mduppcl',
+  'pvvnlhq', '1912pvvnl', 'pvvnl', 'dvvnlhq', 'dvvnl_care', '1912dvvnl', 'puvvnlhq', 'puvvnl', '1912puvvnl',
+  'kescohq', 'skescokanpur', '1912kesco', 'mvvnlhq', 'mvvnlmd', 'madhyanchalv', '1912mvvnl',
+  'puvvnlazamgarh', 'puvvnlbhadohi', 'puvvnlballia', 'puvvnlbasti', 'puvvnlchandauli', 'puvvnldeoria',
+  'puvvnlfatehpur', 'puvvnlghazipur', 'puvvnlgorakhpur', 'puvvnljaunpur', 'puvvnlkaushambi', 'puvvnlkusinagar',
+  'puvvnlmhrjganj', 'puvvnlmau', 'puvvnlmirzapur1', 'puvvnlprtapgarh', 'puvvnlprayagraj', 'puvvnlsknagar',
+  'puvvnlsdnagar', 'puvvnlsonbhadra', 'puvvnlvaranasi',
+  'mvvnlbareilly', 'mvvnlbudaun', 'mvvnlpilibhit', 'mvvnlsahjahapur', 'edc_ambdkrnagar', 'mvvnlamethi',
+  'mvvnlbarabanki', 'mvvnlayodhya', 'mvvnlsultanpur', 'mvvnlbahraich', 'mvvnlbalrampur', 'mvvnlgonda',
+  'mvvnlshrawasti', 'zoneamausi', 'mvvnlcisgomti2', 'zonegomtinagar', 'mvvnllesatrans', 'mvvnllakhimpur',
+  'mvvnlhardoi', 'mvvnlraebareli', 'mvvnlsitapur', 'mvvnlunnao', 'gomtinagarzone', 'cebareilly1',
+  'dvvnlagra', 'dvvnlaligarh', 'dvvnlauraiya', 'dvvnlbanda', 'dvvnlchitrakoot', 'dvvnletah',
+  'dvvnletawah01', 'dvvnlfarrukhaba', 'dvvnlfirozabad', 'dvvnlhamirpur', 'dvvnlhathras', 'dvvnljalaun2',
+  'dvvnljhansi', 'dvvnlkannauj', 'dvvnlkanpurdeha', 'dvvnlkanpurnagr', 'dvvnlkasganj', 'dvvnllalitpur2',
+  'dvvnlmahoba', 'dvvnlmainpuri', 'dvvnlmathura1',
+  'pvvnlamroha', 'pvvnlbaghpat', 'pvvnlbijnor', 'pvvnlbulandshr', 'pvvnlgbnagar', 'pvvnlghaziabad',
+  'pvvnlhapur', 'pvvnlmeerut', 'pvvnlmoradabad', 'pvvnlmuzafarngr', 'pvvnlrampur', 'pvvnlsaharanpur',
+  'pvvnlsambhal', 'pvvnlshamli', 'pvvnlnoida'
+]);
+
+function isOfficialHandle(str) {
+  if (!str) return false;
+  let clean = String(str).toLowerCase().replace(/^@/, '').trim();
+  const urlMatch = clean.match(/(?:x|twitter)\.com\/([^\/\?#]+)/i);
+  if (urlMatch && urlMatch[1]) {
+    clean = urlMatch[1].toLowerCase().replace(/^@/, '').trim();
+  }
+  if (UPPCL_OFFICIAL_HANDLES.has(clean)) return true;
+  if (/^(uppcl|kesco|pvvnl|dvvnl|puvvnl|mvvnl|1912|cmoffice|emoffice|aksharma|chairman|mduppcl|zone|ce|se|ee|sdohq|lesa|edc_)/i.test(clean)) return true;
+  if (clean.endsWith('hq') || clean.endsWith('care')) return true;
+  return false;
+}
+
+function endsWithOfficialHandle(text) {
+  if (!text) return false;
+  const stripped = String(text).trim().replace(/(?:#\w+|\bhttps?:\/\/\S+|[.,!?;:\s])+$/gi, '').trim();
+  const match = stripped.match(/((?:@[\w]+\s*)+)$/);
+  if (match) {
+    const handles = match[1].match(/@([\w]+)/g) || [];
+    for (let i = 0; i < handles.length; i++) {
+      if (isOfficialHandle(handles[i])) return true;
+    }
+  }
+  return false;
+}
+
+/**
  * Fetch raw sheet matrix from all available transports
  */
 async function fetchSheetMatrix() {
@@ -520,6 +570,19 @@ function processSheetMatrix(headers, data, method, startTime = Date.now()) {
     const consumerHandle = twitterId.startsWith('@') ? twitterId : ('@' + twitterId);
     const consumerName = consumerHandle.replace('@', '');
 
+    // Strictly skip posts initiated by official accounts
+    if (isOfficialHandle(consumerHandle) || isOfficialHandle(linkUrl)) {
+      continue;
+    }
+
+    // Any post/reply that ends with official handles or is an official response is NOT Appreciation
+    let normalizedPickedStatus = pickedStatus.toUpperCase();
+    if (normalizedPickedStatus === 'APPRECIATION') {
+      if (endsWithOfficialHandle(rawPostText) || /update\s*you|work\s*is\s*going|प्रिय\s*उपभोक्ता|पूर्व\s*में\s*दर्ज|शिकायत\s*संख्या/i.test(rawPostText)) {
+        normalizedPickedStatus = 'YES';
+      }
+    }
+
     // Determine stable Complaint Number strictly matching UPPCL-SMC-YYYYMM-XXXX
     let complaintNo = rawComplaintNo;
     if (!complaintNo || !/^UPPCL-SMC-\d{6}-\d{4}$/.test(complaintNo)) {
@@ -550,7 +613,7 @@ function processSheetMatrix(headers, data, method, startTime = Date.now()) {
     else if (/resolved|समाधान/i.test(rawStatus)) status = 'Resolved — Verification Pending';
     else if (/closed|निस्तारित/i.test(rawStatus)) status = 'Closed';
     else if (/progress|काम चल रहा/i.test(rawStatus)) status = 'Under Investigation';
-    else if (pickedStatus === 'APPRECIATION') status = 'Appreciation';
+    else if (normalizedPickedStatus === 'APPRECIATION') status = 'Appreciation';
 
     db.run(insertStmt, [
       complaintNo,
@@ -583,7 +646,7 @@ function processSheetMatrix(headers, data, method, startTime = Date.now()) {
       cf,
       head,
       untagged,
-      pickedStatus.toUpperCase(),
+      normalizedPickedStatus,
       rawCategory,
       reply30,
       reply60,
