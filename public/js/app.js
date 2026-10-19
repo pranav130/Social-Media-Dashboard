@@ -545,10 +545,6 @@ const App = {
             <a class="nav-item" data-page="register" onclick="App.navigate('register')">
               <i class="fa-solid fa-table-list"></i> Complaint Register
             </a>
-            ${isOperator || isSupervisor ? `
-            <a class="nav-item" data-page="add-complaint" onclick="App.navigate('add-complaint')">
-              <i class="fa-solid fa-circle-plus"></i> Add Complaint
-            </a>` : ''}
 
             <div class="nav-section-title">Intelligence & Masters</div>
             <a class="nav-item" data-page="reports" onclick="App.navigate('reports')">
