@@ -1065,8 +1065,8 @@ app.post('/api/complaints/:id/invalidate', authMiddleware, requireRoles('Super A
   res.json({ message: 'Complaint marked as duplicate / invalid' });
 });
 
-// 11b. Delete Frivolous Complaint
-const handleDeleteFrivolous = (req, res) => {
+// 11b. Delete Frivolous Complaint (Dashboard + Google Sheet)
+const handleDeleteFrivolous = async (req, res) => {
   const id = parseInt(req.params.id, 10);
   const complaint = db.get('SELECT * FROM complaints WHERE id = ?;', [id]);
   if (!complaint) return res.status(404).json({ error: 'Complaint not found or already deleted' });
@@ -1076,6 +1076,7 @@ const handleDeleteFrivolous = (req, res) => {
   const tweetId = m ? m[1] : '';
   const istTime = getIstTimestamp();
   const reason = (req.body && req.body.reason) ? req.body.reason.trim() : 'Marked as Frivolous';
+  const sheetRowIndex = complaint.sheet_row_index;
 
   // 1. Record into frivolous_complaints table so Google Sheets background sync never resurrects it
   try {
@@ -1094,7 +1095,7 @@ const handleDeleteFrivolous = (req, res) => {
     console.warn('[Frivolous] Warning saving frivolous record:', err.message);
   }
 
-  // 2. Cascade delete complaint and all related records
+  // 2. Cascade delete complaint and all related records from dashboard
   db.run('DELETE FROM complaint_timeline WHERE complaint_id = ?;', [id]);
   db.run('DELETE FROM complaint_forwarding_logs WHERE complaint_id = ?;', [id]);
   db.run('DELETE FROM complaint_followup_logs WHERE complaint_id = ?;', [id]);
@@ -1106,9 +1107,38 @@ const handleDeleteFrivolous = (req, res) => {
 
   logAudit(req, req.user, 'COMPLAINT_DELETED_FRIVOLOUS', 'COMPLAINT', id, `Deleted frivolous complaint ${complaint.complaint_no} (${complaint.consumer_handle || ''})`);
 
+  // 3. Dispatch delete request to Google Sheet webhook
+  let sheetDeleteStatus = null;
+  const webhookUrl = process.env.GOOGLE_WEBHOOK_URL || 'https://script.google.com/macros/s/AKfycbx3uJpVaB33ss8jGnmfArBpDXBc4o-pQ6fsD0x-FggDWRT1_pWEHNPDUWKpf5uG0B6HCQ/exec';
+  if (webhookUrl) {
+    try {
+      const resp = await fetch(webhookUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'delete_frivolous',
+          sheetRowIndex: sheetRowIndex,
+          postUrl: postUrl,
+          tweetId: tweetId,
+          complaintNo: complaint.complaint_no
+        })
+      });
+      if (resp.ok) {
+        sheetDeleteStatus = await resp.json().catch(() => ({}));
+      }
+    } catch (e) {
+      console.warn('[Frivolous] Google Sheet webhook delete error:', e.message);
+    }
+  }
+
+  const sheetMsg = (sheetDeleteStatus && sheetDeleteStatus.deleted)
+    ? ` and Row ${sheetDeleteStatus.deletedRow} deleted from Google Sheet.`
+    : ` and permanently removed from Google Sheet sync.`;
+
   res.json({
     success: true,
-    message: `Complaint ${complaint.complaint_no} deleted successfully as frivolous.`
+    message: `Complaint ${complaint.complaint_no} deleted successfully from dashboard${sheetMsg}`,
+    sheetDeleteStatus
   });
 };
 

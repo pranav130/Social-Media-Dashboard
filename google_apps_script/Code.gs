@@ -20,6 +20,7 @@ function onOpen() {
     .addItem('Apply Original Formatting (Blue Links & 45px Rows)', 'applyOriginalFormatting')
     .addItem('🧹 Remove Duplicate Rows from Sheet', 'removeDuplicateRowsFromSheet')
     .addItem('🧹 Remove Official Initiated Posts', 'removeOfficialPostsFromSheet')
+    .addItem('🗑 Delete Selected Row as Frivolous', 'deleteSelectedRowAsFrivolous')
     .addItem('Fix Misclassified Appreciation Rows', 'fixMisclassifiedComplaints')
     .addItem('Make Rows Compact (22px)', 'makeRowsCompact')
     .addSeparator()
@@ -640,6 +641,11 @@ function doPost(e) {
       return ContentService.createTextOutput(JSON.stringify({ status: 'ok', action: contents.action, fixedCount: fixed }))
         .setMimeType(ContentService.MimeType.JSON);
     }
+    if (contents.action === 'delete_frivolous' || contents.action === 'delete_complaint') {
+      const deleteResult = deleteComplaintFromSheet(contents);
+      return ContentService.createTextOutput(JSON.stringify(deleteResult))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
 
     const rows = contents.rows;
     if (!rows || !rows.length) {
@@ -1175,3 +1181,99 @@ function classifyTweetInScript(text, username) {
     draftReply: draftReply
   };
 }
+
+/**
+ * Deletes a complaint row from Google Sheet by URL, Tweet ID, or row index.
+ */
+function deleteComplaintFromSheet(contents) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sheet = ss.getSheetByName('Twitter Complaint List');
+  if (!sheet) {
+    sheet = ss.getActiveSheet();
+  }
+
+  const targetUrl = String(contents.postUrl || '').trim();
+  const targetTweetId = String(contents.tweetId || '').trim();
+  const targetComplaintNo = String(contents.complaintNo || '').trim();
+  const hintedRowIndex = parseInt(contents.sheetRowIndex, 10);
+
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 3) {
+    return { status: 'not_found', deleted: false, message: 'Sheet has no complaint rows.' };
+  }
+
+  let deletedRow = -1;
+
+  // 1. Check hinted row index first
+  if (!isNaN(hintedRowIndex) && hintedRowIndex >= 3 && hintedRowIndex <= lastRow) {
+    const urlAtHint = String(sheet.getRange(hintedRowIndex, 5).getValue() || '').trim();
+    if ((targetUrl && urlAtHint === targetUrl) || (targetTweetId && urlAtHint.includes(targetTweetId))) {
+      deletedRow = hintedRowIndex;
+    }
+  }
+
+  // 2. Scan Column E (Link URL) for exact URL or Tweet ID
+  if (deletedRow === -1 && (targetUrl || targetTweetId)) {
+    const urlValues = sheet.getRange(3, 5, lastRow - 2, 1).getValues();
+    for (let i = 0; i < urlValues.length; i++) {
+      const val = String(urlValues[i][0] || '').trim();
+      if ((targetUrl && val === targetUrl) || (targetTweetId && val.includes(targetTweetId))) {
+        deletedRow = i + 3; // 1-based row number
+        break;
+      }
+    }
+  }
+
+  // 3. Scan Column R (Complaint No)
+  if (deletedRow === -1 && targetComplaintNo) {
+    const compValues = sheet.getRange(3, 18, lastRow - 2, 1).getValues();
+    for (let i = 0; i < compValues.length; i++) {
+      const val = String(compValues[i][0] || '').trim();
+      if (val && val.toLowerCase() === targetComplaintNo.toLowerCase()) {
+        deletedRow = i + 3;
+        break;
+      }
+    }
+  }
+
+  if (deletedRow !== -1) {
+    sheet.deleteRow(deletedRow);
+    SpreadsheetApp.flush();
+    return {
+      status: 'ok',
+      deleted: true,
+      deletedRow: deletedRow,
+      message: 'Row ' + deletedRow + ' deleted successfully from Google Sheet'
+    };
+  }
+
+  return {
+    status: 'not_found',
+    deleted: false,
+    message: 'Complaint was not found in Google Sheet (might have already been removed)'
+  };
+}
+
+/**
+ * Deletes the currently selected row in Google Sheet as Frivolous
+ */
+function deleteSelectedRowAsFrivolous() {
+  const sheet = SpreadsheetApp.getActiveSheet();
+  const activeCell = sheet.getActiveCell();
+  const row = activeCell.getRow();
+  if (row < 3) {
+    SpreadsheetApp.getUi().alert('Please select a complaint row (Row 3 or below).');
+    return;
+  }
+  const complaintUrl = sheet.getRange(row, 5).getValue();
+  const prompt = SpreadsheetApp.getUi().alert(
+    'Delete Frivolous Complaint',
+    'Are you sure you want to delete Row ' + row + ' (' + complaintUrl + ') as Frivolous from this sheet?',
+    SpreadsheetApp.getUi().ButtonSet.YES_NO
+  );
+  if (prompt === SpreadsheetApp.getUi().Button.YES) {
+    sheet.deleteRow(row);
+    SpreadsheetApp.getUi().alert('Row ' + row + ' deleted successfully.');
+  }
+}
+

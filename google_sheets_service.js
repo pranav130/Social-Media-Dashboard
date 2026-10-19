@@ -254,6 +254,160 @@ const UPPCL_OFFICIAL_HANDLES = new Set([
   'pvvnlsambhal', 'pvvnlshamli', 'pvvnlnoida'
 ]);
 
+/**
+ * 89 Official Non-UPPCL Hierarchy Handles (Apex & Ministerial, DISCOM HQs, and Regional/Field handles)
+ * Rule: If ANY of these 89 handles replies to a consumer post BEFORE @UPPCLLKO,
+ * that post must NOT land on Google Sheet, and if already present, must be DELETED from the dashboard and sheet.
+ */
+const NON_UPPCL_OFFICIAL_HANDLES = new Set([
+  // Apex & Ministerial (6 handles)
+  'cmofficeup', 'emofficeup', 'aksharmaoffice', 'aksharmabharat', 'chairmanuppcl', 'mduppcl',
+  // DISCOM Corporate HQs (5 handles)
+  'pvvnlhq', 'dvvnlhq', 'puvvnlhq', 'mvvnlhq', 'kescohq',
+  // PuVVNL Regional & Field (21 handles)
+  'puvvnlazamgarh', 'puvvnlbhadohi', 'puvvnlballia', 'puvvnlbasti', 'puvvnlchandauli', 'puvvnldeoria',
+  'puvvnlfatehpur', 'puvvnlghazipur', 'puvvnlgorakhpur', 'puvvnljaunpur', 'puvvnlkaushambi', 'puvvnlkusinagar',
+  'puvvnlmhrjganj', 'puvvnlmau', 'puvvnlmirzapur1', 'puvvnlprtapgarh', 'puvvnlprayagraj', 'puvvnlsknagar',
+  'puvvnlsdnagar', 'puvvnlsonbhadra', 'puvvnlvaranasi',
+  // MVVNL Regional & Field (22 handles)
+  'mvvnlbareilly', 'mvvnlbudaun', 'mvvnlpilibhit', 'mvvnlsahjahapur', 'edc_ambdkrnagar', 'mvvnlamethi',
+  'mvvnlbarabanki', 'mvvnlayodhya', 'mvvnlsultanpur', 'mvvnlbahraich', 'mvvnlbalrampur', 'mvvnlgonda',
+  'mvvnlshrawasti', 'zoneamausi', 'mvvnlcisgomti2', 'zonegomtinagar', 'mvvnllesatrans', 'mvvnllakhimpur',
+  'mvvnlhardoi', 'mvvnlraebareli', 'mvvnlsitapur', 'mvvnlunnao',
+  // DVVNL Regional & Field (21 handles)
+  'dvvnlagra', 'dvvnlaligarh', 'dvvnlauraiya', 'dvvnlbanda', 'dvvnlchitrakoot', 'dvvnletah',
+  'dvvnletawah01', 'dvvnlfarrukhaba', 'dvvnlfirozabad', 'dvvnlhamirpur', 'dvvnlhathras', 'dvvnljalaun2',
+  'dvvnljhansi', 'dvvnlkannauj', 'dvvnlkanpurdeha', 'dvvnlkanpurnagr', 'dvvnlkasganj', 'dvvnllalitpur2',
+  'dvvnlmahoba', 'dvvnlmainpuri', 'dvvnlmathura1',
+  // PVVNL Regional & Field (14 handles)
+  'pvvnlamroha', 'pvvnlbaghpat', 'pvvnlbijnor', 'pvvnlbulandshr', 'pvvnlgbnagar', 'pvvnlghaziabad',
+  'pvvnlhapur', 'pvvnlmeerut', 'pvvnlmoradabad', 'pvvnlmuzafarngr', 'pvvnlrampur', 'pvvnlsaharanpur',
+  'pvvnlsambhal', 'pvvnlshamli'
+]);
+
+function isNonUppclOfficialHandle(str) {
+  if (!str) return false;
+  let clean = String(str).toLowerCase().replace(/^@/, '').trim();
+  const urlMatch = clean.match(/(?:x|twitter)\.com\/([^\/\?#]+)/i);
+  if (urlMatch && urlMatch[1]) {
+    clean = urlMatch[1].toLowerCase().replace(/^@/, '').trim();
+  }
+  return NON_UPPCL_OFFICIAL_HANDLES.has(clean);
+}
+
+/**
+ * Checks whether a post should be deleted or omitted because:
+ * 1) Remark or status contains 'delete'/'deleted'
+ * 2) DISCOM / field handle replied without or before @UPPCLLKO
+ * 3) Remark states DISCOM/field handle already replied
+ */
+function shouldDeleteOrOmitPost({ remark = '', status = '', reply30 = '', reply60 = '', tweetId = '', threadCheckResult = null }) {
+  const cleanRemark = String(remark || '').toLowerCase().trim();
+  const cleanStatus = String(status || '').toLowerCase().trim();
+  const cleanR30 = String(reply30 || '').toUpperCase().trim();
+  const cleanR60 = String(reply60 || '').toUpperCase().trim();
+
+  // 1. Explicit deletion in Remark or Status (e.g. 'deleted', 'delete')
+  if (cleanRemark.includes('delete') || cleanStatus.includes('delete')) {
+    return { shouldOmit: true, reason: 'EXPLICIT_DELETED_IN_SHEET' };
+  }
+
+  // 2. Remark indicates DISCOM or field handle already replied / attended before UPPCLLKO
+  if (/replied.*(?:discom|pvvnl|puvvnl|mvvnl|dvvnl|kesco|field|cmoffice|emoffice)|(?:discom|pvvnl|puvvnl|mvvnl|dvvnl|kesco|field).*replied|attended.*(?:discom|field)/i.test(cleanRemark)) {
+    return { shouldOmit: true, reason: 'REMARK_INDICATES_OFFICIAL_REPLY' };
+  }
+
+  // 3. Sheet Reply columns: DISCOM replied (Col 16) but UPPCLLKO (Col 15) did not reply
+  const isDiscomReplied = cleanR60 && cleanR60 !== 'NO' && cleanR60 !== '-';
+  const isUppclReplied = cleanR30 && cleanR30 !== 'NO' && cleanR30 !== '-';
+  if (isDiscomReplied && !isUppclReplied) {
+    return { shouldOmit: true, reason: 'DISCOM_REPLIED_WITHOUT_UPPCLLKO' };
+  }
+
+  // 4. Live X API conversation thread check
+  if (threadCheckResult && threadCheckResult.officialRepliedFirst) {
+    return { shouldOmit: true, reason: `OFFICIAL_HANDLE_${threadCheckResult.handle}_REPLIED_BEFORE_UPPCL` };
+  }
+
+  return { shouldOmit: false };
+}
+
+const threadCheckCache = new Map();
+
+/**
+ * Live X API check: verifies if any of the 89 non-UPPCL official handles replied
+ * to a conversation before @UPPCLLKO replied.
+ */
+async function checkOfficialRepliedBeforeUppcl(tweetId, customBearerToken) {
+  if (!tweetId) return { officialRepliedFirst: false };
+  if (threadCheckCache.has(tweetId)) {
+    return threadCheckCache.get(tweetId);
+  }
+
+  const bearerToken = customBearerToken || process.env.X_BEARER_TOKEN || 'AAAAAAAAAAAAAAAAAAAAACbr%2FwEAAAAAySPqrdOjXkNWagBKKbkzMA97ZnI%3DRBPSknXnu5S8uXS3j7lPbXPHlYCpiLfD2Yt8cRtRvWm1NcSi1E';
+  if (!bearerToken || bearerToken.length < 20) {
+    return { officialRepliedFirst: false };
+  }
+
+  try {
+    const query = `conversation_id:${tweetId}`;
+    const url = `https://api.twitter.com/2/tweets/search/recent?query=${encodeURIComponent(query)}&tweet.fields=created_at,author_id,conversation_id&expansions=author_id&user.fields=username`;
+
+    const resp = await fetch(url, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${bearerToken}`,
+        'User-Agent': 'UPPCL-Grievance-Command-Centre/2.0'
+      }
+    });
+
+    if (!resp.ok) {
+      return { officialRepliedFirst: false };
+    }
+
+    const json = await resp.json();
+    const tweets = json.data || [];
+    const users = (json.includes && json.includes.users) ? json.includes.users : [];
+    const userMap = {};
+    users.forEach(u => { userMap[u.id] = (u.username || '').toLowerCase(); });
+
+    let uppclReplyTime = null;
+    let officialReplyTime = null;
+    let officialRepliedHandle = null;
+
+    for (const tw of tweets) {
+      const username = userMap[tw.author_id];
+      if (username === 'uppcllko') {
+        const t = new Date(tw.created_at).getTime();
+        if (!uppclReplyTime || t < uppclReplyTime) uppclReplyTime = t;
+      } else if (NON_UPPCL_OFFICIAL_HANDLES.has(username)) {
+        const t = new Date(tw.created_at).getTime();
+        if (!officialReplyTime || t < officialReplyTime) {
+          officialReplyTime = t;
+          officialRepliedHandle = username;
+        }
+      }
+    }
+
+    let result = { officialRepliedFirst: false };
+    if (officialReplyTime) {
+      if (!uppclReplyTime || officialReplyTime < uppclReplyTime) {
+        result = {
+          officialRepliedFirst: true,
+          handle: officialRepliedHandle,
+          officialTime: officialReplyTime,
+          uppclTime: uppclReplyTime
+        };
+      }
+    }
+
+    threadCheckCache.set(tweetId, result);
+    return result;
+  } catch (e) {
+    return { officialRepliedFirst: false };
+  }
+}
+
 function isOfficialHandle(str) {
   if (!str) return false;
   let clean = String(str).toLowerCase().replace(/^@/, '').trim();
@@ -346,12 +500,25 @@ async function fetchSheetMatrix() {
         const url = (row[4] || '').trim();
         const handle = (row[5] || '').trim();
         const text = (row[20] || row[17] || row[13] || '').trim();
+        const remark = (row[13] || '').trim();
+        const status = (row[14] || '').trim();
+        const reply30 = (row[15] || '').trim();
+        const reply60 = (row[16] || '').trim();
+
         if (!url && !handle && !text) continue;
         if (isOfficialHandle(handle) || isOfficialHandle(url)) continue;
 
         const tid = extractTweetId(url) || url;
         if (!tid) continue;
         if (frivolousSet.has(tid) || (url && frivolousSet.has(url.toLowerCase()))) continue;
+
+        // Skip posts where official handle replied before UPPCLLKO or marked deleted
+        const check = shouldDeleteOrOmitPost({ remark, status, reply30, reply60, tweetId: tid });
+        if (check.shouldOmit) {
+          frivolousSet.add(tid);
+          if (url) frivolousSet.add(url.toLowerCase());
+          continue;
+        }
 
         mergedMap.set(tid, {
           row,
@@ -366,12 +533,25 @@ async function fetchSheetMatrix() {
         const url = (row[4] || '').trim();
         const handle = (row[5] || '').trim();
         const text = (row[20] || row[17] || row[13] || '').trim();
+        const remark = (row[13] || '').trim();
+        const status = (row[14] || '').trim();
+        const reply30 = (row[15] || '').trim();
+        const reply60 = (row[16] || '').trim();
+
         if (!url && !handle && !text) continue;
         if (isOfficialHandle(handle) || isOfficialHandle(url)) continue;
 
         const tid = extractTweetId(url) || url;
         if (!tid) continue;
         if (frivolousSet.has(tid) || (url && frivolousSet.has(url.toLowerCase()))) continue;
+
+        // Skip posts where official handle replied before UPPCLLKO or marked deleted
+        const check = shouldDeleteOrOmitPost({ remark, status, reply30, reply60, tweetId: tid });
+        if (check.shouldOmit) {
+          frivolousSet.add(tid);
+          if (url) frivolousSet.add(url.toLowerCase());
+          continue;
+        }
 
         if (!mergedMap.has(tid)) {
           mergedMap.set(tid, {
@@ -392,18 +572,58 @@ async function fetchSheetMatrix() {
 
     // Fallback: If only manual working sheet succeeded
     if (manualRows) {
+      const frivolousSet = getFrivolousIdentifiersSet();
+      const validData = [];
+      for (let idx = 0; idx < manualRows.slice(2).length; idx++) {
+        const row = manualRows[idx + 2];
+        const url = (row[4] || '').trim();
+        const handle = (row[5] || '').trim();
+        const remark = (row[13] || '').trim();
+        const status = (row[14] || '').trim();
+        const reply30 = (row[15] || '').trim();
+        const reply60 = (row[16] || '').trim();
+        const tid = extractTweetId(url) || url;
+
+        if (isOfficialHandle(handle) || isOfficialHandle(url)) continue;
+        if (tid && frivolousSet.has(tid)) continue;
+        if (url && frivolousSet.has(url.toLowerCase())) continue;
+        if (shouldDeleteOrOmitPost({ remark, status, reply30, reply60, tweetId: tid }).shouldOmit) continue;
+
+        validData.push({ row, source: 'MANUAL_SHEET', sheetRowIndex: idx + 3 });
+      }
+
       return {
         headers: manualRows[0],
-        data: manualRows.slice(2).map((row, idx) => ({ row, source: 'MANUAL_SHEET', sheetRowIndex: idx + 3 })),
+        data: validData,
         method: 'GOOGLE_SHEETS_MANUAL_CSV'
       };
     }
 
     // Fallback: If only auto sheet succeeded
     if (autoRows) {
+      const frivolousSet = getFrivolousIdentifiersSet();
+      const validData = [];
+      for (let idx = 0; idx < autoRows.slice(2).length; idx++) {
+        const row = autoRows[idx + 2];
+        const url = (row[4] || '').trim();
+        const handle = (row[5] || '').trim();
+        const remark = (row[13] || '').trim();
+        const status = (row[14] || '').trim();
+        const reply30 = (row[15] || '').trim();
+        const reply60 = (row[16] || '').trim();
+        const tid = extractTweetId(url) || url;
+
+        if (isOfficialHandle(handle) || isOfficialHandle(url)) continue;
+        if (tid && frivolousSet.has(tid)) continue;
+        if (url && frivolousSet.has(url.toLowerCase())) continue;
+        if (shouldDeleteOrOmitPost({ remark, status, reply30, reply60, tweetId: tid }).shouldOmit) continue;
+
+        validData.push({ row, source: 'AUTO_SHEET', sheetRowIndex: idx + 3 });
+      }
+
       return {
         headers: autoRows[0],
-        data: autoRows.slice(2).map((row, idx) => ({ row, source: 'AUTO_SHEET', sheetRowIndex: idx + 3 })),
+        data: validData,
         method: 'GOOGLE_SHEETS_AUTO_CSV'
       };
     }
@@ -668,10 +888,40 @@ function processSheetMatrix(headers, data, method, startTime = Date.now()) {
       continue;
     }
 
-    // Strictly skip frivolous / deleted complaints
+    // Strictly skip frivolous / deleted complaints or posts replied by official handles before UPPCLLKO
     const rowTid = extractTweetId(linkUrl) || twitterId;
     if (frivolousSet.has(rowTid) || (linkUrl && frivolousSet.has(linkUrl.toLowerCase())) || (rawComplaintNo && frivolousSet.has(rawComplaintNo.toLowerCase()))) {
       continue;
+    }
+
+    const omitCheck = shouldDeleteOrOmitPost({ remark, status: rawStatus, reply30, reply60, tweetId: rowTid });
+    if (omitCheck.shouldOmit) {
+      try {
+        db.run(`
+          INSERT OR IGNORE INTO frivolous_complaints (post_url, tweet_id, complaint_no, deleted_at, reason)
+          VALUES (?, ?, ?, datetime('now'), ?);
+        `, [linkUrl, rowTid, rawComplaintNo || null, omitCheck.reason]);
+        if (linkUrl) {
+          db.run("DELETE FROM complaints WHERE post_url = ?;", [linkUrl]);
+        }
+      } catch (e) {}
+      continue;
+    }
+
+    if (threadCheckCache.has(rowTid)) {
+      const tc = threadCheckCache.get(rowTid);
+      if (tc.officialRepliedFirst) {
+        try {
+          db.run(`
+            INSERT OR IGNORE INTO frivolous_complaints (post_url, tweet_id, complaint_no, deleted_at, reason)
+            VALUES (?, ?, ?, datetime('now'), ?);
+          `, [linkUrl, rowTid, rawComplaintNo || null, `Replied by @${tc.handle} before @UPPCLLKO`]);
+          if (linkUrl) {
+            db.run("DELETE FROM complaints WHERE post_url = ?;", [linkUrl]);
+          }
+        } catch (e) {}
+        continue;
+      }
     }
 
     // Strictly skip posts initiated by official accounts
