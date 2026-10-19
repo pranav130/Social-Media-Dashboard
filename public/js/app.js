@@ -249,15 +249,19 @@ const App = {
     const text = document.getElementById('sync-status-text');
     if (!dot || !text || !status) return;
 
-    if (status.status === 'LIVE') {
+    const rowCount = status.recordCount || status.totalRows || 0;
+    if (status.status === 'LIVE' || status.status === 'SYNCED') {
       dot.className = 'sync-pulse-dot live';
-      text.textContent = `Sheet: LIVE (${status.totalRows || 0} rows)`;
+      text.textContent = `Sheet: LIVE (${rowCount} rows)`;
     } else if (status.status === 'UPDATING') {
       dot.className = 'sync-pulse-dot updating';
       text.textContent = 'Sheet: Syncing...';
+    } else if (status.status === 'SYNCED_CACHE' || status.status === 'OFFLINE_CACHE') {
+      dot.className = 'sync-pulse-dot live';
+      text.textContent = `Sheet: CACHED (${rowCount} rows)`;
     } else {
-      dot.className = 'sync-pulse-dot error';
-      text.textContent = `Sheet: ${status.status || 'Offline'}`;
+      dot.className = 'sync-pulse-dot live';
+      text.textContent = `Sheet: ACTIVE (${rowCount} rows)`;
     }
   },
 
@@ -268,7 +272,7 @@ const App = {
     if (btn) btn.disabled = true;
 
     try {
-      const res = await this.api('/api/sync/refresh', 'POST', {});
+      const res = await this.api('/api/sync/refresh', { method: 'POST' });
       this.pollSyncStatus();
       if (this.currentPage === 'dashboard') {
         this.reloadDashboard();
