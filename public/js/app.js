@@ -1198,12 +1198,9 @@ const App = {
               ${statusSub}
             </td>
             <td>
-              <div style="display: flex; gap: 4px; align-items: center;">
+              <div>
                 <button class="btn btn-danger btn-sm btn-frivolous" onclick="App.deleteFrivolousComplaint(${c.id}, '${c.complaint_no}')" style="background-color: #ef4444; border-color: #dc2626; color: #ffffff; font-weight: 600; padding: 3px 8px; font-size: 11px; white-space: nowrap; border-radius: 4px; display: inline-flex; align-items: center; gap: 4px; cursor: pointer;" title="Delete this complaint as Frivolous">
                   <i class="fa-solid fa-trash-can" style="font-size: 10px;"></i> Frivolous
-                </button>
-                <button class="btn btn-secondary btn-sm" onclick="App.viewComplaint(${c.id})" title="View full complaint details" style="padding: 3px 7px;">
-                  <i class="fa-solid fa-eye"></i>
                 </button>
               </div>
             </td>
@@ -1939,12 +1936,9 @@ const App = {
               <div style="font-size: 11px; font-weight: 600;">${c.assigned_nodal_officer_name ? (c.assigned_nodal_officer_name.startsWith('@') ? `<span style="color: var(--primary);"><i class="fa-brands fa-x-twitter"></i> ${c.assigned_nodal_officer_name}</span>` : c.assigned_nodal_officer_name) : (c.assigned_operator_name || 'Unassigned')}</div>
             </td>
             <td>
-              <div style="display: flex; gap: 4px; align-items: center;">
+              <div>
                 <button class="btn btn-danger btn-sm btn-frivolous" onclick="App.deleteFrivolousComplaint(${c.id}, '${c.complaint_no}')" style="background-color: #ef4444; border-color: #dc2626; color: #ffffff; font-weight: 600; padding: 3px 8px; font-size: 11px; white-space: nowrap; border-radius: 4px; display: inline-flex; align-items: center; gap: 4px; cursor: pointer;" title="Delete this complaint as Frivolous">
                   <i class="fa-solid fa-trash-can" style="font-size: 10px;"></i> Frivolous
-                </button>
-                <button class="btn btn-secondary btn-sm" title="View 360° Details" onclick="App.viewComplaint(${c.id})" style="padding: 3px 7px;">
-                  <i class="fa-solid fa-eye"></i>
                 </button>
               </div>
             </td>
