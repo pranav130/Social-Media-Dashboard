@@ -768,9 +768,11 @@ const App = {
 
         <div class="chart-card">
           <div class="chart-header">
-            <div class="chart-title"><i class="fa-brands fa-x-twitter"></i> Official Monitored Handles Breakdown</div>
+            <div class="chart-title"><i class="fa-brands fa-x-twitter"></i> Official Monitored Handles List</div>
+            <span style="font-size: 11px; color: var(--text-muted); font-weight: 600;"><i class="fa-solid fa-satellite-dish" style="color: #10b981;"></i> 7 Monitored Handles</span>
           </div>
-          <div class="chart-body"><canvas id="chart-handles"></canvas></div>
+          <div class="chart-body" id="official-monitored-handles-container" style="overflow-y: auto; display: flex; flex-direction: column; gap: 5px; height: 260px; padding: 2px;">
+          </div>
         </div>
 
         <div class="chart-card">
@@ -1279,38 +1281,8 @@ const App = {
     }
 
 
-    // Chart 3: Handles Breakdown
-    const ctxHandles = document.getElementById('chart-handles');
-    if (ctxHandles) {
-      if (this.charts.handles) this.charts.handles.destroy();
-      const labels = c.handles.map(h => h.handle);
-      const counts = c.handles.map(h => h.count);
-
-      this.charts.handles = new Chart(ctxHandles, {
-        type: 'bar',
-        data: {
-          labels: labels.length ? labels : ['None'],
-          datasets: [{
-            label: 'Complaints',
-            data: counts,
-            backgroundColor: '#123456'
-          }]
-        },
-        options: {
-          indexAxis: 'y',
-          responsive: true,
-          maintainAspectRatio: false,
-          plugins: { legend: { display: false } },
-          scales: { x: { beginAtZero: true, ticks: { precision: 0 } } },
-          onClick: (e, els, chart) => {
-            if (els && els.length > 0) {
-              const handle = chart.data.labels[els[0].index];
-              if (handle && handle !== 'None') App.navigate('register', { assigned_handle: handle });
-            }
-          }
-        }
-      });
-    }
+    // Official Monitored Handles List
+    this.renderMonitoredHandlesList();
 
     // Chart 4: Categories
     const ctxCats = document.getElementById('chart-categories');
@@ -1437,6 +1409,45 @@ const App = {
         }
       });
     }
+  },
+
+  renderMonitoredHandlesList() {
+    const container = document.getElementById('official-monitored-handles-container');
+    if (!container) return;
+
+    const monitoredHandles = [
+      { handle: '@UPPCLLKO', title: 'UPPCL Official HQ', role: 'Central Social Media Cell & Corporate HQ' },
+      { handle: '@CMOfficeUP', title: 'Chief Minister Office UP', role: 'Hon. CM Office (Apex Escalation)' },
+      { handle: '@EMofficeUP', title: 'Energy Minister Office UP', role: 'Office of Hon. Energy Minister' },
+      { handle: '@AKSharmaOffice', title: 'A.K. Sharma Office', role: 'Cabinet Minister Official Office' },
+      { handle: '@aksharmaBharat', title: 'A.K. Sharma', role: 'Hon. Minister (Personal/Public)' },
+      { handle: '@ChairmanUppcl', title: 'Chairman, UPPCL', role: 'Executive Leadership & Governance' },
+      { handle: '@mduppcl', title: 'Managing Director, UPPCL', role: 'DISCOM Operational Oversight' }
+    ];
+
+    container.innerHTML = monitoredHandles.map(h => `
+      <div style="display: flex; align-items: center; justify-content: space-between; padding: 5px 10px; background: var(--bg-subtle); border: 1px solid var(--border-color); border-radius: 6px; gap: 8px;">
+        <div style="display: flex; align-items: center; gap: 9px; min-width: 0;">
+          <span style="display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 50%; background: #000; color: #fff; font-size: 10px; flex-shrink: 0;">
+            <i class="fa-brands fa-x-twitter"></i>
+          </span>
+          <div style="min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+            <a href="https://x.com/${h.handle.replace('@', '')}" target="_blank" rel="noopener noreferrer" style="font-weight: 700; font-size: 12px; color: var(--primary); text-decoration: none;" title="Open ${h.handle} profile on X">
+              ${h.handle} <i class="fa-solid fa-arrow-up-right-from-square" style="font-size: 8px; color: var(--text-muted);"></i>
+            </a>
+            <span style="font-size: 11px; color: var(--text-muted); margin-left: 6px;">&bull; ${h.title}</span>
+          </div>
+        </div>
+        <div style="display: flex; align-items: center; gap: 6px; flex-shrink: 0;">
+          <span style="display: inline-flex; align-items: center; gap: 4px; background: rgba(16, 185, 129, 0.12); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.25); font-size: 10px; font-weight: 600; padding: 1px 6px; border-radius: 4px;" title="Actively monitored 24/7">
+            <span class="sync-pulse-dot live" style="width: 5px; height: 5px; display: inline-block;"></span> Monitored
+          </span>
+          <button type="button" class="btn btn-sm btn-outline" onclick="App.navigate('register', { search: '${h.handle}' })" style="padding: 1px 7px; font-size: 10px; cursor: pointer;" title="Filter complaints mentioning ${h.handle}">
+            <i class="fa-solid fa-filter"></i> Filter
+          </button>
+        </div>
+      </div>
+    `).join('');
   },
 
   // -----------------------------------------------------------
