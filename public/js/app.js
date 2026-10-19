@@ -1581,6 +1581,13 @@ const App = {
                   <span class="badge-sheet-row" title="Authoritative Google Sheet Row index">Row #${c.sheet_row_index}</span>
                 </div>
               ` : ''}
+              ${c.post_url ? `
+                <div style="margin-top: 4px;">
+                  <a href="${c.post_url}" target="_blank" rel="noopener noreferrer" class="blue-post-link" style="color: #1155cc; font-size: 11px; font-weight: 600; text-decoration: underline;" title="Open source post on X/web">
+                    <i class="fa-solid fa-arrow-up-right-from-square" style="font-size: 10px;"></i> Post Link
+                  </a>
+                </div>
+              ` : ''}
             </td>
             <td>
               <div style="font-weight: 600;">${c.received_at.substring(0, 10)}</div>
@@ -1595,7 +1602,7 @@ const App = {
               ${c.consumer_handle ? `<div style="font-size: 11px; color: var(--text-muted);">${c.consumer_handle}</div>` : ''}
               ${c.post_url ? `
                 <div style="margin-top: 3px;">
-                  <a href="${c.post_url}" target="_blank" rel="noopener noreferrer" class="blue-post-link" title="Open source post on X/web">
+                  <a href="${c.post_url}" target="_blank" rel="noopener noreferrer" class="blue-post-link" style="color: #1155cc; font-size: 11px; font-weight: 600; text-decoration: underline;" title="Open source post on X/web">
                     <i class="fa-solid fa-arrow-up-right-from-square" style="font-size: 10px;"></i> View Post
                   </a>
                 </div>

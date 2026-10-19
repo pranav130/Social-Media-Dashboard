@@ -2617,6 +2617,17 @@ if (process.env.NO_SERVER_AUTOSTART !== 'true') {
       console.warn('[Server] Purge warning:', pErr.message);
     }
 
+    // Purge phantom records with no post URL and no handle
+    try {
+      const purgedPhantom = db.run("DELETE FROM complaints WHERE (post_url IS NULL OR post_url = '') AND (consumer_handle IS NULL OR consumer_handle = '' OR consumer_handle = '@');");
+      if (purgedPhantom && purgedPhantom.changes > 0) {
+        console.log(`[Server] Purged ${purgedPhantom.changes} phantom complaints with no post URL.`);
+        db.saveToDiskSync();
+      }
+    } catch (phErr) {
+      console.warn('[Server] Phantom purge warning:', phErr.message);
+    }
+
     app.listen(PORT, '0.0.0.0', () => {
       console.log(`===========================================================`);
       console.log(` UPPCL Social Media Cell Complaint Management System`);
