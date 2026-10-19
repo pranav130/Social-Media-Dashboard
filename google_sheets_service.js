@@ -966,10 +966,12 @@ function processSheetMatrix(headers, data, method, startTime = Date.now()) {
     }
 
     // Operational Status Mapping
+    // Business Rule: Assigned to DISCOM only when Any discom got tagged by UPPCLLKO
+    const isDiscomTagged = discom && ['PVVNL', 'PUVVNL', 'MVVNL', 'DVVNL', 'KESCO'].includes(discom.toUpperCase());
     let status = 'New';
     if (/follow/i.test(rawStatus) || /discom.*reply/i.test(rawStatus) || (reply60 && reply60.toUpperCase() === 'YES')) {
       status = 'DISCOM Follow Up';
-    } else if (/forwarded/i.test(rawStatus)) {
+    } else if (/forwarded/i.test(rawStatus) && isDiscomTagged) {
       status = 'Assigned to DISCOM';
     } else if (/resolved|समाधान/i.test(rawStatus)) {
       status = 'Resolved — Verification Pending';
@@ -986,7 +988,7 @@ function processSheetMatrix(headers, data, method, startTime = Date.now()) {
       receivedAt,
       'Twitter/X',
       '@UPPCLLKO',
-      discom ? ('@' + discom + 'HQ') : '@UPPCLLKO',
+      isDiscomTagged ? ('@' + discom + 'HQ') : '@UPPCLLKO',
       untagged.toUpperCase() === 'YES' ? 0 : 1,
       consumerName,
       consumerHandle,

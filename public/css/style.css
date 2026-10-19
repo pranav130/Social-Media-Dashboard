@@ -756,7 +756,9 @@ body {
 
 .badge-New { background-color: #dbeafe; color: #1e40af; }
 .badge-Forwarded { background-color: #e0e7ff; color: #3730a3; }
-.badge-DISCOM-Follow-Up { background-color: #fef3c7; color: #92400e; }
+.badge-Assigned-to-DISCOM { background-color: #e0e7ff; color: #3730a3; border: 1px solid #c7d2fe; }
+.badge-DISCOM-Follow-Up { background-color: #fef3c7; color: #92400e; border: 1px solid #fde68a; }
+.badge-Appreciation { background-color: #fef3c7; color: #b45309; border: 1px solid #fde68a; }
 .badge-Pending { background-color: #ffedd5; color: #9a3412; }
 .badge-Escalated { background-color: #fee2e2; color: #991b1b; }
 .badge-Resolved--Verification-Pending { background-color: #ccfbf1; color: #115e59; }

@@ -745,9 +745,9 @@ const App = {
                 <th>Consumer</th>
                 <th>Grievance Summary</th>
                 <th>DISCOM / Dist.</th>
-                <th>Picked Status</th>
-                <th>30m First Reply</th>
-                <th>Status</th>
+                <th title="Picked: YES — If UPPCLLKO replied in that post | Picked: NO — If UPPCLLKO not replied in that post">Picked Status</th>
+                <th title="Complaints: 30-Min First Reply — Time difference between post time and UPPCLLKO replied time <30Mins">30-Min First Reply</th>
+                <th title="Status — Assigned to DISCOM only when Any discom got tagged by UPPCLLKO">Status</th>
                 <th>Actions</th>
               </tr>
             </thead>
@@ -761,20 +761,13 @@ const App = {
         </div>
       </div>
 
-      <!-- Visual Charts Grid -->
+      <!-- Visual Charts Grid (6 Core Analytics Charts) -->
       <div class="charts-grid">
         <div class="chart-card">
           <div class="chart-header">
             <div class="chart-title"><i class="fa-solid fa-chart-line"></i> Grievance Inflow Trend (Daily)</div>
           </div>
           <div class="chart-body"><canvas id="chart-trend"></canvas></div>
-        </div>
-
-        <div class="chart-card">
-          <div class="chart-header">
-            <div class="chart-title"><i class="fa-solid fa-building-columns"></i> DISCOM Volume & Resolution Matrix</div>
-          </div>
-          <div class="chart-body"><canvas id="chart-discom"></canvas></div>
         </div>
 
         <div class="chart-card">
@@ -790,10 +783,7 @@ const App = {
           </div>
           <div class="chart-body"><canvas id="chart-categories"></canvas></div>
         </div>
-      </div>
 
-      <!-- Bottom District & Platform Distribution -->
-      <div class="charts-grid">
         <div class="chart-card">
           <div class="chart-header">
             <div class="chart-title"><i class="fa-solid fa-map-location-dot"></i> Top 10 High Grievance Districts</div>
@@ -801,16 +791,6 @@ const App = {
           <div class="chart-body"><canvas id="chart-districts"></canvas></div>
         </div>
 
-        <div class="chart-card">
-          <div class="chart-header">
-            <div class="chart-title"><i class="fa-solid fa-pie-chart"></i> Operational Status Distribution</div>
-          </div>
-          <div class="chart-body"><canvas id="chart-status"></canvas></div>
-        </div>
-      </div>
-
-      <!-- Shifts & Ingestion Picked Status Distribution -->
-      <div class="charts-grid" style="margin-bottom: 0;">
         <div class="chart-card">
           <div class="chart-header">
             <div class="chart-title"><i class="fa-solid fa-business-time"></i> Grievance Volume by Shift</div>
@@ -1085,7 +1065,88 @@ const App = {
       }
 
       tbody.innerHTML = data.map(c => {
-        const statusBadgeClass = `badge-${(c.current_status || '').replace(/[\s—/]+/g, '-')}`;
+        const isDiscomTagged = c.discom_name && ['PVVNL', 'PUVVNL', 'MVVNL', 'DVVNL', 'KESCO'].includes(c.discom_name.toUpperCase());
+        let displayStatus = c.current_status;
+        let statusSub = '';
+
+        if (c.current_status === 'Assigned to DISCOM') {
+          if (isDiscomTagged) {
+            statusSub = `<div style="font-size: 10px; color: var(--primary); font-weight: 600; margin-top: 2px;" title="Assigned to DISCOM — Tagged by UPPCLLKO to @${c.discom_name}HQ"><i class="fa-brands fa-x-twitter"></i> Tagged @${c.discom_name}HQ</div>`;
+          } else {
+            // Rule: Assigned to DISCOM only when Any discom got tagged by UPPCLLKO
+            displayStatus = 'New';
+            statusSub = `<div style="font-size: 10px; color: var(--text-muted); font-weight: 500; margin-top: 2px;">Not Tagged to DISCOM</div>`;
+          }
+        } else if (c.current_status === 'DISCOM Follow Up') {
+          statusSub = `<div style="font-size: 10px; color: #4338ca; font-weight: 500; margin-top: 2px;" title="If Discom/division replies after getting Tagged on reply from UPPCLLKO"><i class="fa-solid fa-reply"></i> DISCOM Replied</div>`;
+        } else if (c.current_status === 'Appreciation') {
+          statusSub = `<div style="font-size: 10px; color: #d97706; font-weight: 500; margin-top: 2px;" title="Consumer appreciation & gratitude posts"><i class="fa-solid fa-heart"></i> Gratitude</div>`;
+        } else if (c.current_status === 'New') {
+          statusSub = `<div style="font-size: 10px; color: var(--text-muted); font-weight: 500; margin-top: 2px;">${c.picked_status === 'NO' ? 'Awaiting UPPCLLKO Reply' : 'Pending Assignment'}</div>`;
+        }
+
+        const statusBadgeClass = `badge-${(displayStatus || '').replace(/[\s—/]+/g, '-')}`;
+
+        let pickedCell = '<span style="color: var(--text-light); font-size: 11px;">-</span>';
+        if (c.picked_status === 'YES') {
+          pickedCell = `
+            <div style="font-weight: 700; font-size: 11px;">
+              <span class="badge-picked yes" title="Complaints: Picked: YES — If UPPCLLKO replied in that post">
+                <i class="fa-solid fa-circle-check" style="font-size: 10px;"></i> Picked: YES
+              </span>
+            </div>
+            <div style="font-size: 10px; color: #059669; margin-top: 2px; font-weight: 600;" title="Complaints: Picked: YES — If UPPCLLKO replied in that post">
+              UPPCLLKO Replied
+            </div>
+          `;
+        } else if (c.picked_status === 'NO') {
+          pickedCell = `
+            <div style="font-weight: 700; font-size: 11px;">
+              <span class="badge-picked no" title="Complaints: Picked: NO — If UPPCLLKO not replied in that post">
+                <i class="fa-solid fa-circle-xmark" style="font-size: 10px;"></i> Picked: NO
+              </span>
+            </div>
+            <div style="font-size: 10px; color: #64748b; margin-top: 2px; font-weight: 600;" title="Complaints: Picked: NO — If UPPCLLKO not replied in that post">
+              UPPCLLKO Not Replied
+            </div>
+          `;
+        } else if (c.picked_status === 'APPRECIATION') {
+          pickedCell = `
+            <div style="font-weight: 700; font-size: 11px;">
+              <span class="badge-picked appreciation" title="Consumer appreciation & gratitude posts">
+                <i class="fa-solid fa-heart" style="font-size: 10px;"></i> Appreciation
+              </span>
+            </div>
+            <div style="font-size: 10px; color: #d97706; margin-top: 2px; font-weight: 600;">
+              Gratitude Post
+            </div>
+          `;
+        }
+
+        let reply30Cell = '<span style="color: var(--text-light); font-size: 11px;">-</span>';
+        if (c.reply_within_30_min === 'YES') {
+          reply30Cell = `
+            <div style="font-weight: 700; font-size: 11px;">
+              <span class="badge-30m-yes" title="Complaints: 30-Min First Reply — Time difference between post time and UPPCLLKO replied time <30Mins">
+                <i class="fa-solid fa-stopwatch"></i> YES
+              </span>
+            </div>
+            <div style="font-size: 10px; color: #0284c7; margin-top: 2px; font-weight: 600;" title="Complaints: 30-Min First Reply — Time difference between post time and UPPCLLKO replied time <30Mins">
+              &lt; 30 Mins
+            </div>
+          `;
+        } else if (c.reply_within_30_min === 'NO') {
+          reply30Cell = `
+            <div style="font-weight: 600; font-size: 11px;">
+              <span class="badge-30m-no" title="Complaints: 30-Min First Reply — Time difference between post time and UPPCLLKO replied time ≥ 30 Mins">
+                NO
+              </span>
+            </div>
+            <div style="font-size: 10px; color: var(--text-muted); margin-top: 2px; font-weight: 500;">
+              &ge; 30 Mins
+            </div>
+          `;
+        }
 
         return `
           <tr>
@@ -1125,17 +1186,16 @@ const App = {
               <div style="font-size: 11px; color: var(--text-muted);">${c.district_name || 'HQ'}</div>
             </td>
             <td>
-              ${c.picked_status ? `<span class="badge-picked ${c.picked_status.toLowerCase()}" title="${c.picked_status === 'YES' ? 'If UPPCLLKO replied in that post' : (c.picked_status === 'NO' ? 'If UPPCLLKO not replied in that post' : 'Consumer appreciation & gratitude post')}">${c.picked_status}</span>` : '-'}
+              ${pickedCell}
             </td>
             <td>
-              ${c.reply_within_30_min ? `
-                <span class="${c.reply_within_30_min === 'YES' ? 'badge-30m-yes' : 'badge-30m-no'}" title="Time difference between post time and UPPCLLKO replied time < 30 Mins: ${c.reply_within_30_min}">
-                  30m: ${c.reply_within_30_min}
-                </span>
-              ` : '<span style="color: var(--text-light); font-size: 11px;">-</span>'}
+              ${reply30Cell}
             </td>
             <td>
-              <span class="badge-status ${statusBadgeClass}">${c.current_status}</span>
+              <div>
+                <span class="badge-status ${statusBadgeClass}">${displayStatus}</span>
+              </div>
+              ${statusSub}
             </td>
             <td>
               <div style="display: flex; gap: 4px; align-items: center;">
@@ -1345,47 +1405,6 @@ const App = {
               const raw = chart.data.labels[els[0].index];
               const dist = raw.split(' (')[0].trim();
               if (dist && dist !== 'None') App.navigate('register', { district: dist });
-            }
-          }
-        }
-      });
-    }
-
-    // Chart 6: Status Distribution
-    const ctxStatus = document.getElementById('chart-status');
-    if (ctxStatus) {
-      if (this.charts.status) this.charts.status.destroy();
-      const labels = c.statuses.map(s => s.current_status);
-      const counts = c.statuses.map(s => s.count);
-      const colorMap = {
-        'New': '#3b82f6',
-        'Forwarded': '#6366f1',
-        'DISCOM Follow Up': '#f59e0b',
-        'Pending': '#ea580c',
-        'Escalated': '#dc2626',
-        'Resolved — Verification Pending': '#10b981',
-        'Closed': '#059669',
-        'Reopened': '#8b5cf6',
-        'Duplicate / Invalid': '#64748b'
-      };
-
-      this.charts.status = new Chart(ctxStatus, {
-        type: 'pie',
-        data: {
-          labels: labels.length ? labels : ['None'],
-          datasets: [{
-            data: counts.length ? counts : [1],
-            backgroundColor: labels.map(l => colorMap[l] || '#94a3b8')
-          }]
-        },
-        options: {
-          responsive: true,
-          maintainAspectRatio: false,
-          plugins: { legend: { position: 'right', labels: { boxWidth: 12, font: { size: 10 } } } },
-          onClick: (e, els, chart) => {
-            if (els && els.length > 0) {
-              const st = chart.data.labels[els[0].index];
-              if (st && st !== 'None') App.navigate('register', { status: st });
             }
           }
         }
@@ -1892,26 +1911,52 @@ const App = {
               <span class="badge-prio ${prioBadgeClass}">${c.priority}</span>
             </td>
             <td>
-              <div style="margin-bottom: 3px;">
-                <span class="badge-status ${statusBadgeClass}">${c.current_status}</span>
-              </div>
-              ${c.picked_status ? `
-                <div style="margin-bottom: 2px;">
-                  <span class="badge-picked ${c.picked_status.toLowerCase()}" title="${c.picked_status === 'YES' ? 'If UPPCLLKO replied in that post' : (c.picked_status === 'NO' ? 'If UPPCLLKO not replied in that post' : 'Consumer appreciation & gratitude post')}">${c.picked_status}</span>
-                </div>
-              ` : ''}
-              ${c.reply_within_30_min ? `
-                <div style="margin-top: 2px;">
-                  <span class="${c.reply_within_30_min === 'YES' ? 'badge-30m-yes' : 'badge-30m-no'}" title="Time difference between post time and UPPCLLKO replied time < 30 Mins: ${c.reply_within_30_min}">
-                    30m: ${c.reply_within_30_min}
-                  </span>
-                </div>
-              ` : ''}
-              ${c.data_quality_flags ? `
-                <div style="margin-top: 2px;">
-                  <span class="badge-quality-issue" title="Data quality issue: ${c.data_quality_flags}"><i class="fa-solid fa-triangle-exclamation"></i> Flagged</span>
-                </div>
-              ` : ''}
+              ${(() => {
+                const isDiscomTagged = c.discom_name && ['PVVNL', 'PUVVNL', 'MVVNL', 'DVVNL', 'KESCO'].includes(c.discom_name.toUpperCase());
+                let displayStatus = c.current_status;
+                let statusSub = '';
+
+                if (c.current_status === 'Assigned to DISCOM') {
+                  if (isDiscomTagged) {
+                    statusSub = `<div style="font-size: 10px; color: var(--primary); font-weight: 600; margin-top: 2px;" title="Assigned to DISCOM — Tagged by UPPCLLKO to @${c.discom_name}HQ"><i class="fa-brands fa-x-twitter"></i> Tagged @${c.discom_name}HQ</div>`;
+                  } else {
+                    displayStatus = 'New';
+                    statusSub = `<div style="font-size: 10px; color: var(--text-muted); font-weight: 500; margin-top: 2px;">Not Tagged to DISCOM</div>`;
+                  }
+                } else if (c.current_status === 'DISCOM Follow Up') {
+                  statusSub = `<div style="font-size: 10px; color: #4338ca; font-weight: 500; margin-top: 2px;" title="If Discom/division replies after getting Tagged on reply from UPPCLLKO"><i class="fa-solid fa-reply"></i> DISCOM Replied</div>`;
+                } else if (c.current_status === 'Appreciation') {
+                  statusSub = `<div style="font-size: 10px; color: #d97706; font-weight: 500; margin-top: 2px;" title="Consumer appreciation & gratitude posts"><i class="fa-solid fa-heart"></i> Gratitude</div>`;
+                }
+
+                const sBadge = `badge-${(displayStatus || '').replace(/[\s—/]+/g, '-')}`;
+
+                return `
+                  <div style="margin-bottom: 2px;">
+                    <span class="badge-status ${sBadge}">${displayStatus}</span>
+                  </div>
+                  ${statusSub}
+                  ${c.picked_status ? `
+                    <div style="margin-top: 3px;">
+                      <span class="badge-picked ${c.picked_status.toLowerCase()}" title="${c.picked_status === 'YES' ? 'Complaints: Picked: YES — If UPPCLLKO replied in that post' : (c.picked_status === 'NO' ? 'Complaints: Picked: NO — If UPPCLLKO not replied in that post' : 'Consumer appreciation & gratitude post')}">
+                        ${c.picked_status === 'YES' ? 'Picked: YES' : (c.picked_status === 'NO' ? 'Picked: NO' : 'Appreciation')}
+                      </span>
+                    </div>
+                  ` : ''}
+                  ${c.reply_within_30_min ? `
+                    <div style="margin-top: 2px;">
+                      <span class="${c.reply_within_30_min === 'YES' ? 'badge-30m-yes' : 'badge-30m-no'}" title="Complaints: 30-Min First Reply — Time difference between post time and UPPCLLKO replied time <30Mins: ${c.reply_within_30_min}">
+                        ${c.reply_within_30_min === 'YES' ? '<i class=\"fa-solid fa-stopwatch\"></i> 30m: YES' : '30m: NO'}
+                      </span>
+                    </div>
+                  ` : ''}
+                  ${c.data_quality_flags ? `
+                    <div style="margin-top: 2px;">
+                      <span class="badge-quality-issue" title="Data quality issue: ${c.data_quality_flags}"><i class="fa-solid fa-triangle-exclamation"></i> Flagged</span>
+                    </div>
+                  ` : ''}
+                `;
+              })()}
             </td>
             <td>
               ${c.link_shift ? `
