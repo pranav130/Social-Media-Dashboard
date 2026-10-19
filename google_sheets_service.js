@@ -2,19 +2,16 @@
  * ==============================================================================
  * UPPCL SOCIAL MEDIA CELL — GOOGLE SHEETS INTEGRATION & SYNCHRONIZATION ENGINE
  * ==============================================================================
- * Authoritative Database: https://docs.google.com/spreadsheets/d/10_210Ynr_F0Pj1Yov_pqjVZ1kaYIEWrbGF1jn16sgNY/edit?gid=598922870
- * Spreadsheet ID: 10_210Ynr_F0Pj1Yov_pqjVZ1kaYIEWrbGF1jn16sgNY
- * Worksheet GID: 598922870 (Twitter Complaint List)
+ * Primary Working Sheet: https://docs.google.com/spreadsheets/d/1shjWcK69y0S7pIHI-2V5Wh6c2SSSQBKcpgprmPbeNe8/edit?gid=283417465
+ * Automated Trial Sheet: https://docs.google.com/spreadsheets/d/10_210Ynr_F0Pj1Yov_pqjVZ1kaYIEWrbGF1jn16sgNY/edit?gid=598922870
  * 
  * Non-negotiable Architecture:
  * - Google Sheets is the sole authoritative source of truth.
  * - This engine pulls, validates, normalizes, and maintains a derived, rebuildable
  *   cache in SQLite for performant dashboard queries, analytics, and exports.
- * - Supports Multi-Transport:
- *   1. Google Apps Script Webhook (direct container-bound read)
- *   2. Google Sheets API v4 (Service Account or API Key)
- *   3. Published / Shared CSV Export
- *   4. Last Known Good Data Fallback (marked STALE)
+ * - Decodes Twitter Snowflake IDs to exact IST seconds (never hardcoded 12:00:00).
+ * - Multi-transport dual-sheet reconciliation seamlessly combines operator manual
+ *   classifications with automated monitoring.
  * ==============================================================================
  */
 
@@ -22,9 +19,20 @@ const fs = require('fs');
 const path = require('path');
 const db = require('./db');
 
-const SPREADSHEET_ID = process.env.GOOGLE_SPREADSHEET_ID || '10_210Ynr_F0Pj1Yov_pqjVZ1kaYIEWrbGF1jn16sgNY';
-const WORKSHEET_GID = process.env.GOOGLE_SHEET_GID || '598922870';
-const WORKSHEET_NAME = process.env.GOOGLE_SHEET_TAB_NAME || 'Twitter Complaint List';
+// Primary: Operational Manual Working Sheet (Active Daily Sheet)
+const MANUAL_SPREADSHEET_ID = process.env.GOOGLE_MANUAL_SPREADSHEET_ID || '1shjWcK69y0S7pIHI-2V5Wh6c2SSSQBKcpgprmPbeNe8';
+const MANUAL_WORKSHEET_GID = process.env.GOOGLE_MANUAL_SHEET_GID || '283417465';
+const MANUAL_WORKSHEET_NAME = process.env.GOOGLE_MANUAL_SHEET_TAB_NAME || '19-10-26';
+
+// Secondary: Automated Trial Monitoring Sheet
+const AUTO_SPREADSHEET_ID = process.env.GOOGLE_SPREADSHEET_ID || '10_210Ynr_F0Pj1Yov_pqjVZ1kaYIEWrbGF1jn16sgNY';
+const AUTO_WORKSHEET_GID = process.env.GOOGLE_SHEET_GID || '598922870';
+const AUTO_WORKSHEET_NAME = process.env.GOOGLE_SHEET_TAB_NAME || 'Twitter Complaint List';
+
+const SPREADSHEET_ID = MANUAL_SPREADSHEET_ID;
+const WORKSHEET_GID = MANUAL_WORKSHEET_GID;
+const WORKSHEET_NAME = MANUAL_WORKSHEET_NAME;
+
 const WEBHOOK_URL = process.env.GOOGLE_WEBHOOK_URL || 'https://script.google.com/macros/s/AKfycbx3uJpVaB33ss8jGnmfArBpDXBc4o-pQ6fsD0x-FggDWRT1_pWEHNPDUWKpf5uG0B6HCQ/exec';
 
 // Sync state tracker
@@ -66,32 +74,78 @@ function parseDateIST(dateVal, timeVal = '') {
   const str = String(dateVal).trim();
 
   // Excel serial number (e.g. 45584)
-  if (/^\d{5}$/.test(str)) {
-    const epoch = new Date((parseInt(str, 10) - 25569) * 86400 * 1000);
-    return getIstTimestamp(epoch).split(' ')[0];
+  if (/^\d{4,5}$/.test(str)) {
+    const serial = parseInt(str, 10);
+    if (serial > 40000) {
+      const epoch = new Date((serial - 25569) * 86400 * 1000);
+      return getIstTimestamp(epoch).split(' ')[0];
+    }
   }
 
   // YYYY-MM-DD
   if (/^\d{4}-\d{2}-\d{2}/.test(str)) {
-    return str.substring(0, 10);
+    const y = parseInt(str.substring(0, 4), 10);
+    if (y >= 2020 && y <= 2030) return str.substring(0, 10);
   }
 
   // DD-MM-YYYY or DD/MM/YYYY
   const dmy = str.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})/);
   if (dmy) {
-    const d = String(dmy[1]).padStart(2, '0');
-    const m = String(dmy[2]).padStart(2, '0');
-    const y = dmy[3];
-    return `${y}-${m}-${d}`;
+    const y = parseInt(dmy[3], 10);
+    if (y >= 2020 && y <= 2030) {
+      const d = String(dmy[1]).padStart(2, '0');
+      const m = String(dmy[2]).padStart(2, '0');
+      return `${y}-${m}-${d}`;
+    }
   }
 
   // General Date parse fallback
   const parsed = new Date(str);
   if (!isNaN(parsed.getTime())) {
-    return getIstTimestamp(parsed).split(' ')[0];
+    const y = parsed.getFullYear();
+    if (y >= 2020 && y <= 2030) {
+      return getIstTimestamp(parsed).split(' ')[0];
+    }
   }
 
   return getIstTimestamp().split(' ')[0];
+}
+
+/**
+ * Extract Twitter/X Status ID from URL
+ */
+function extractTweetId(url) {
+  if (!url) return '';
+  const m = String(url).match(/status\/(\d+)/i);
+  return m ? m[1] : '';
+}
+
+/**
+ * Extract exact IST creation timestamp down to the second from Twitter Snowflake ID.
+ * Falls back to shift approximate time if ID is absent, never flat 12:00:00.
+ */
+function extractExactTimestampIST(linkUrl, rawDate, shift = '') {
+  if (linkUrl) {
+    const tweetId = extractTweetId(linkUrl);
+    if (tweetId) {
+      try {
+        const tweetIdBig = BigInt(tweetId);
+        const epochMs = (tweetIdBig >> 22n) + 1288834974657n;
+        const d = new Date(Number(epochMs));
+        if (!isNaN(d.getTime()) && d.getFullYear() >= 2020 && d.getFullYear() <= 2030) {
+          return getIstTimestamp(d);
+        }
+      } catch (e) {}
+    }
+  }
+
+  const istDate = parseDateIST(rawDate);
+  const s = String(shift || '').toUpperCase();
+  let timeStr = '12:00:00';
+  if (s.includes('NIGHT')) timeStr = '02:30:00';
+  else if (s.includes('MORNING')) timeStr = '09:30:00';
+  else if (s.includes('EVENING')) timeStr = '17:30:00';
+  return `${istDate} ${timeStr}`;
 }
 
 /**
@@ -109,13 +163,13 @@ function buildHeaderIndexMap(headers) {
     if (clean === 'date' || clean === 'receiveddate') map['date'] = idx;
     else if (clean === 'linkshift') map['link_shift'] = idx;
     else if (clean === 'replyshift') map['reply_shift'] = idx;
-    else if (clean === 'cf') map['c_f'] = idx;
-    else if (clean === 'linkurl' || clean === 'link' || clean === 'posturl' || clean === 'tweeturl' || (clean.includes('url') && !clean.includes('reply'))) map['link_url'] = idx;
-    else if (clean.includes('twitterid') || clean.includes('handle') || clean === 'username' || clean === 'consumerhandle') map['twitter_id'] = idx;
+    else if (clean === 'cf' || clean === 'cfstatus') map['c_f'] = idx;
+    else if (clean === 'linkurl' || clean === 'posturl' || clean === 'tweeturl' || (clean.includes('link') && clean.includes('url'))) map['link_url'] = idx;
+    else if (clean === 'twitterid' || clean === 'twitterhandle' || clean === 'consumerhandle' || clean === 'handle') map['twitter_id'] = idx;
     else if (clean === 'head') map['head'] = idx;
-    else if (clean.includes('untagged')) map['untagged_complaint'] = idx;
-    else if (clean.includes('pickedstatus') || clean.includes('picked')) map['picked_status'] = idx;
-    else if (clean.includes('complainttype') || clean.includes('category')) map['complaint_type'] = idx;
+    else if (clean === 'untaggedcomplaint' || clean.includes('untagged')) map['untagged_complaint'] = idx;
+    else if (clean === 'pickedstatus' || clean === 'picked') map['picked_status'] = idx;
+    else if (clean === 'complainttype' || clean === 'category') map['complaint_type'] = idx;
     else if (clean === 'discom') map['discom'] = idx;
     else if (clean === 'zone') map['zone'] = idx;
     else if (clean === 'district') map['district'] = idx;
@@ -209,12 +263,118 @@ function endsWithOfficialHandle(text) {
 }
 
 /**
- * Fetch raw sheet matrix from all available transports
+ * Fetch raw sheet matrix from all available transports, seamlessly reconciling
+ * both the Active Manual Working Sheet and the Automated Monitoring Sheet.
  */
 async function fetchSheetMatrix() {
   const errors = [];
 
-  // Transport 1: Google Apps Script Webhook (POST action: get_complaints)
+  // Transport 1: Dual-Sheet CSV Export (Direct Link-Shared Fetch)
+  try {
+    const manualCsvUrl = `https://docs.google.com/spreadsheets/d/${MANUAL_SPREADSHEET_ID}/export?format=csv&gid=${MANUAL_WORKSHEET_GID}`;
+    const autoCsvUrl = `https://docs.google.com/spreadsheets/d/${AUTO_SPREADSHEET_ID}/export?format=csv&gid=${AUTO_WORKSHEET_GID}`;
+
+    const [manualRes, autoRes] = await Promise.allSettled([
+      fetch(manualCsvUrl),
+      fetch(autoCsvUrl)
+    ]);
+
+    let manualRows = null;
+    let autoRows = null;
+
+    if (manualRes.status === 'fulfilled' && manualRes.value.ok) {
+      const csvText = await manualRes.value.text();
+      if (!csvText.includes('<!DOCTYPE html>') && !csvText.includes('<html')) {
+        const parsed = parseCSV(csvText);
+        if (parsed.length >= 2) manualRows = parsed;
+      }
+    }
+
+    if (autoRes.status === 'fulfilled' && autoRes.value.ok) {
+      const csvText = await autoRes.value.text();
+      if (!csvText.includes('<!DOCTYPE html>') && !csvText.includes('<html')) {
+        const parsed = parseCSV(csvText);
+        if (parsed.length >= 2) autoRows = parsed;
+      }
+    }
+
+    // If both sheets succeeded, merge them intelligently
+    if (manualRows && autoRows) {
+      const headers = manualRows[0];
+      const mergedMap = new Map();
+
+      // 1. Process manual working sheet first (authoritative human-classified values)
+      for (let r = 2; r < manualRows.length; r++) {
+        const row = manualRows[r];
+        const url = (row[4] || '').trim();
+        const handle = (row[5] || '').trim();
+        const text = (row[20] || row[17] || row[13] || '').trim();
+        if (!url && !handle && !text) continue;
+        if (isOfficialHandle(handle) || isOfficialHandle(url)) continue;
+
+        const tid = extractTweetId(url) || url;
+        if (!tid) continue;
+
+        mergedMap.set(tid, {
+          row,
+          source: 'MANUAL_SHEET',
+          sheetRowIndex: r + 1
+        });
+      }
+
+      // 2. Append any unique non-official complaints from auto monitoring sheet
+      for (let r = 2; r < autoRows.length; r++) {
+        const row = autoRows[r];
+        const url = (row[4] || '').trim();
+        const handle = (row[5] || '').trim();
+        const text = (row[20] || row[17] || row[13] || '').trim();
+        if (!url && !handle && !text) continue;
+        if (isOfficialHandle(handle) || isOfficialHandle(url)) continue;
+
+        const tid = extractTweetId(url) || url;
+        if (!tid) continue;
+
+        if (!mergedMap.has(tid)) {
+          mergedMap.set(tid, {
+            row,
+            source: 'AUTO_SHEET',
+            sheetRowIndex: r + 1
+          });
+        }
+      }
+
+      const mergedData = Array.from(mergedMap.values());
+      return {
+        headers,
+        data: mergedData,
+        method: 'GOOGLE_SHEETS_DUAL_SYNC'
+      };
+    }
+
+    // Fallback: If only manual working sheet succeeded
+    if (manualRows) {
+      return {
+        headers: manualRows[0],
+        data: manualRows.slice(2).map((row, idx) => ({ row, source: 'MANUAL_SHEET', sheetRowIndex: idx + 3 })),
+        method: 'GOOGLE_SHEETS_MANUAL_CSV'
+      };
+    }
+
+    // Fallback: If only auto sheet succeeded
+    if (autoRows) {
+      return {
+        headers: autoRows[0],
+        data: autoRows.slice(2).map((row, idx) => ({ row, source: 'AUTO_SHEET', sheetRowIndex: idx + 3 })),
+        method: 'GOOGLE_SHEETS_AUTO_CSV'
+      };
+    }
+
+    errors.push('Both CSV exports were redirected or returned invalid responses');
+  } catch (e) {
+    errors.push(`CSV fetch failed: ${e.message}`);
+  }
+
+  // Transport 2: Google Apps Script Webhook
   if (WEBHOOK_URL) {
     try {
       const resp = await fetch(WEBHOOK_URL, {
@@ -227,7 +387,7 @@ async function fetchSheetMatrix() {
         if (json.status === 'ok' && Array.isArray(json.data) && json.data.length > 0) {
           return {
             headers: json.headers || [],
-            data: json.data,
+            data: json.data.map((row, idx) => ({ row, source: 'WEBHOOK', sheetRowIndex: idx + 3 })),
             method: 'APPS_SCRIPT_WEBHOOK_POST'
           };
         }
@@ -235,157 +395,9 @@ async function fetchSheetMatrix() {
     } catch (e) {
       errors.push(`Webhook POST failed: ${e.message}`);
     }
-
-    // Transport 1b: Google Apps Script Webhook (GET)
-    try {
-      const resp = await fetch(WEBHOOK_URL, { method: 'GET' });
-      if (resp.ok) {
-        const text = await resp.text();
-        if (text.startsWith('{') && text.endsWith('}')) {
-          const json = JSON.parse(text);
-          if (json.status === 'ok' && Array.isArray(json.data) && json.data.length > 0) {
-            return {
-              headers: json.headers || [],
-              data: json.data,
-              method: 'APPS_SCRIPT_WEBHOOK_GET'
-            };
-          }
-        }
-      }
-    } catch (e) {
-      errors.push(`Webhook GET failed: ${e.message}`);
-    }
   }
 
-  // Transport 2: Google Sheets API v4 (if API Key provided)
-  const API_KEY = process.env.GOOGLE_SHEETS_API_KEY;
-  if (API_KEY) {
-    try {
-      const sheetNameEnc = encodeURIComponent(WORKSHEET_NAME);
-      const apiUrl = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${sheetNameEnc}!A1:AF3000?key=${API_KEY}`;
-      const resp = await fetch(apiUrl);
-      if (resp.ok) {
-        const json = await resp.json();
-        if (json.values && json.values.length >= 2) {
-          return {
-            headers: json.values[0],
-            data: json.values.slice(2),
-            method: 'GOOGLE_SHEETS_API_V4'
-          };
-        }
-      } else {
-        errors.push(`Google Sheets API v4 returned HTTP ${resp.status}`);
-      }
-    } catch (e) {
-      errors.push(`Google Sheets API v4 failed: ${e.message}`);
-    }
-  }
-
-  // Transport 3: Published Web CSV / Custom CSV URL
-  const publishedUrl = process.env.GOOGLE_SHEETS_PUBLISHED_CSV_URL ||
-    `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/pub?gid=${WORKSHEET_GID}&single=true&output=csv`;
-  try {
-    const resp = await fetch(publishedUrl);
-    if (resp.ok) {
-      const csvText = await resp.text();
-      if (!csvText.includes('<!DOCTYPE html>') && !csvText.includes('<html')) {
-        const parsedRows = parseCSV(csvText);
-        if (parsedRows.length >= 2) {
-          return {
-            headers: parsedRows[0],
-            data: parsedRows.slice(2),
-            method: 'GOOGLE_SHEETS_PUBLISHED_CSV'
-          };
-        }
-      }
-    }
-  } catch (e) {
-    // Non-fatal, try direct export next
-  }
-
-  // Transport 4: Link-shared CSV export (Requires "Anyone with the link can view")
-  try {
-    const csvUrl = `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/export?format=csv&gid=${WORKSHEET_GID}`;
-    const resp = await fetch(csvUrl);
-    if (resp.ok) {
-      const csvText = await resp.text();
-      if (!csvText.includes('<!DOCTYPE html>') && !csvText.includes('<html')) {
-        const parsedRows = parseCSV(csvText);
-        if (parsedRows.length >= 2) {
-          const headers = parsedRows[0];
-          const data = parsedRows.slice(2); // Skip Row 1 (Header) and Row 2 (Subheader/Counter)
-          return {
-            headers: headers,
-            data: data,
-            method: 'GOOGLE_SHEETS_CSV_EXPORT'
-          };
-        }
-      } else {
-        errors.push('CSV Export redirected to Google Login (Sheet sharing is restricted)');
-      }
-    } else {
-      errors.push(`CSV Export returned HTTP ${resp.status}`);
-    }
-  } catch (e) {
-    errors.push(`CSV Export failed: ${e.message}`);
-  }
-
-  // Transport 5: Derive from local monitored database if available
-  const localDbPath = path.join(__dirname, '../uppcl-x-complaint-system/data/uppcl_monitor.db');
-  if (fs.existsSync(localDbPath)) {
-    try {
-      const initSqlJs = require('sql.js');
-      const SQL = await initSqlJs();
-      const buffer = fs.readFileSync(localDbPath);
-      const monDb = new SQL.Database(buffer);
-      const res = monDb.exec("SELECT post_id, post_url, author_username, text, first_detected_at_ist, discom, zone, district, complaint_type, picked_status, draft_text, approval_status, sheet_row_index FROM processed_posts ORDER BY rowid ASC");
-      if (res && res.length && res[0].values.length) {
-        const headers = [
-          'S.No.', 'DATE', 'COMPLAINT_NO', 'Source', 'LINK URL', 'Twitter Id', 'Head', 'Untagged Complaint',
-          'Picked Status', 'Complaint Type', 'DISCOM', 'District', 'Zone', 'Region', 'Status',
-          'REPLY_WITHIN_30_MIN_BY_Laqshya Media', 'Time of Tweet', 'Complaint Detail', 'Action Taken',
-          'Remarks', 'Original Tweet Text', 'Retweet', 'Media Link', 'Verified', 'Followers', 'Language',
-          'Draft Reply', 'Approval Status'
-        ];
-        const data = res[0].values.map((v, i) => {
-          const istDate = (v[4] || '').split(' ')[0] || getIstTimestamp().split(' ')[0];
-          const istTime = (v[4] || '').split(' ')[1] || '12:00:00';
-          const row = new Array(32).fill('');
-          row[0] = v[12] || (i + 1);
-          row[1] = istDate;
-          row[2] = v[0]; // post_id / complaint_no
-          row[3] = 'Twitter/X';
-          row[4] = v[1]; // post_url
-          row[5] = '@' + (v[2] || 'citizen'); // username
-          row[6] = 'Official';
-          row[7] = 'NO';
-          row[8] = v[9] || 'YES'; // picked_status
-          row[9] = v[8] || 'DISSATISFIED_CONSUMER'; // complaint_type
-          row[10] = v[5] || 'UPPCL'; // discom
-          row[11] = v[7] || ''; // district
-          row[12] = v[6] || ''; // zone
-          row[14] = 'Forwarded to Discom';
-          row[15] = 'YES';
-          row[16] = istTime;
-          row[17] = String(v[3] || '').substring(0, 150);
-          row[18] = 'Forwarded to Discom';
-          row[20] = v[3] || ''; // full text
-          row[26] = v[10] || ''; // draft
-          row[27] = v[11] || 'DRAFT_READY';
-          return row;
-        });
-        return {
-          headers: headers,
-          data: data,
-          method: 'LOCAL_AUTHORITATIVE_CACHE_SYNC'
-        };
-      }
-    } catch (e) {
-      errors.push(`Local DB sync fallback failed: ${e.message}`);
-    }
-  }
-
-  // Transport 6: Graceful verification of existing SQLite replica cache
+  // Transport 3: Graceful fallback to existing SQLite replica cache
   const existingRecords = db.get("SELECT COUNT(*) as cnt FROM complaints;");
   if (existingRecords && existingRecords.cnt > 0) {
     return {
@@ -393,7 +405,7 @@ async function fetchSheetMatrix() {
       data: [],
       method: 'COMMITTED_SQLITE_REPLICA',
       existingCount: existingRecords.cnt,
-      warning: `Google Sheet requires 'Anyone with the link can view' permission. Serving verified database cache of ${existingRecords.cnt} records.`
+      warning: `Serving verified SQLite replica cache of ${existingRecords.cnt} records.`
     };
   }
 
@@ -466,9 +478,9 @@ async function syncGoogleSheets(isManual = false) {
         syncDurationMs: Date.now() - startTime,
         lastError: warning || null,
         syncMethod: 'COMMITTED_SQLITE_REPLICA',
-        spreadsheetId: SPREADSHEET_ID,
-        worksheetGid: WORKSHEET_GID,
-        worksheetName: WORKSHEET_NAME
+        spreadsheetId: MANUAL_SPREADSHEET_ID,
+        worksheetGid: MANUAL_WORKSHEET_GID,
+        worksheetName: MANUAL_WORKSHEET_NAME
       };
       syncInProgress = false;
       return {
@@ -500,7 +512,18 @@ function processSheetMatrix(headers, data, method, startTime = Date.now()) {
   let validCount = 0;
   let qualityIssuesCount = 0;
 
-  // Prepare statement for inserting/replacing normalized complaint
+  // Clean out previous non-seed Twitter/X cache from SQLite to ensure exact 1-to-1 parity
+  // (Preserves test seed records created by SMC System Seed)
+  db.run("DELETE FROM complaints WHERE platform = 'Twitter/X' AND (created_by IS NULL OR created_by != 'SMC System Seed');");
+
+  // Track used complaint numbers to guarantee uniqueness
+  const usedComplaintNos = new Set();
+  const existingNos = db.query("SELECT complaint_no FROM complaints;");
+  for (const en of existingNos) {
+    if (en.complaint_no) usedComplaintNos.add(en.complaint_no);
+  }
+
+  // Prepare statement for inserting normalized complaint
   const insertStmt = `
     INSERT OR REPLACE INTO complaints (
       complaint_no, received_at, platform, monitored_account, hierarchy_handle_name,
@@ -523,14 +546,15 @@ function processSheetMatrix(headers, data, method, startTime = Date.now()) {
     );
   `;
 
-  // Process every data row
+  // Process every data item
   for (let r = 0; r < data.length; r++) {
-    const row = data[r];
+    const item = data[r];
+    const row = (item && item.row) ? item.row : item;
     if (!row || !row.length || row.every(c => String(c).trim() === '')) {
       continue;
     }
 
-    const rowIndex = r + 3; // Row 1: Header, Row 2: Subheader/Counter, Data starts at Row 3
+    const rowIndex = (item && item.sheetRowIndex) ? item.sheetRowIndex : (r + 3);
 
     // Extract values using headerMap with index fallbacks (0-indexed)
     const getVal = (canonicalKey, fallbackIdx) => {
@@ -565,8 +589,7 @@ function processSheetMatrix(headers, data, method, startTime = Date.now()) {
     const draftReply = getVal('draft_reply', 25);
     const approvalStatus = getVal('approval_status', 26) || 'DRAFT_READY';
 
-    // Bulletproof URL auto-recovery:
-    // If linkUrl is not a valid HTTP URL, check row[4] directly or scan any cell for an X/Twitter URL
+    // Bulletproof URL auto-recovery
     if (!linkUrl || !linkUrl.startsWith('http')) {
       if (row[4] && String(row[4]).trim().startsWith('http')) {
         linkUrl = String(row[4]).trim();
@@ -589,9 +612,9 @@ function processSheetMatrix(headers, data, method, startTime = Date.now()) {
       }
     }
 
-    // Normalization
+    // Normalization & Exact IST Timestamp (calculated from Twitter Snowflake ID down to second)
     const istDate = parseDateIST(rawDate);
-    const receivedAt = `${istDate} 12:00:00`;
+    const receivedAt = extractExactTimestampIST(linkUrl, rawDate, linkShift);
     const discom = normalizeDiscom(rawDiscom, rawPostText);
     const consumerHandle = twitterId.startsWith('@') ? twitterId : ('@' + twitterId);
     const consumerName = consumerHandle.replace('@', '');
@@ -616,10 +639,15 @@ function processSheetMatrix(headers, data, method, startTime = Date.now()) {
 
     // Determine stable Complaint Number strictly matching UPPCL-SMC-YYYYMM-XXXX
     let complaintNo = rawComplaintNo;
-    if (!complaintNo || !/^UPPCL-SMC-\d{6}-\d{4}$/.test(complaintNo)) {
-      const ym = (istDate ? istDate.replace(/-/g, '').substring(0, 6) : '202610');
-      complaintNo = `UPPCL-SMC-${ym}-${String(rowIndex + 1000).padStart(4, '0')}`;
+    const ym = (istDate ? istDate.replace(/-/g, '').substring(0, 6) : '202610');
+    if (!complaintNo || !/^UPPCL-SMC-\d{6}-\d{4}$/.test(complaintNo) || usedComplaintNos.has(complaintNo)) {
+      let seq = validCount + 1;
+      do {
+        complaintNo = `UPPCL-SMC-${ym}-${String(seq).padStart(4, '0')}`;
+        seq++;
+      } while (usedComplaintNos.has(complaintNo));
     }
+    usedComplaintNos.add(complaintNo);
 
     // Data Quality Audit
     const qualityFlags = [];
@@ -664,7 +692,7 @@ function processSheetMatrix(headers, data, method, startTime = Date.now()) {
       rawZone || (rawDistrict ? rawDistrict + ' Zone' : ''),
       priority,
       status,
-      `Fwd-${discom}-${complaintNo.slice(-6)}`,
+      `Fwd-${discom}-${complaintNo.slice(-4)}`,
       remark,
       0, // is_overdue
       0, // escalation_level
@@ -701,16 +729,16 @@ function processSheetMatrix(headers, data, method, startTime = Date.now()) {
     syncDurationMs: duration,
     lastError: null,
     syncMethod: method,
-    spreadsheetId: SPREADSHEET_ID,
-    worksheetGid: WORKSHEET_GID,
-    worksheetName: WORKSHEET_NAME
+    spreadsheetId: MANUAL_SPREADSHEET_ID,
+    worksheetGid: MANUAL_WORKSHEET_GID,
+    worksheetName: MANUAL_WORKSHEET_NAME
   };
 
   syncInProgress = false;
 
   return {
     status: 'LIVE',
-    message: `Synchronized ${validCount} complaints from authoritative Google Sheet`,
+    message: `Synchronized ${validCount} complaints from authoritative Google Sheets`,
     syncedCount: validCount,
     lastSyncInfo
   };
@@ -733,7 +761,7 @@ function syncFromFile(filePath) {
     throw new Error('Uploaded file must contain a header row and at least one data row.');
   }
   const headers = parsedRows[0];
-  const data = parsedRows.slice(2);
+  const data = parsedRows.slice(2).map((row, idx) => ({ row, source: 'UPLOAD', sheetRowIndex: idx + 3 }));
   return processSheetMatrix(headers, data, 'MANUAL_SHEET_UPLOAD', Date.now());
 }
 
@@ -812,5 +840,6 @@ module.exports = {
   getSyncStatus,
   getIstTimestamp,
   parseDateIST,
-  normalizeDiscom
+  normalizeDiscom,
+  extractExactTimestampIST
 };
