@@ -1278,41 +1278,6 @@ const App = {
       });
     }
 
-    // Chart 2: DISCOM Matrix
-    const ctxDiscom = document.getElementById('chart-discom');
-    if (ctxDiscom) {
-      if (this.charts.discom) this.charts.discom.destroy();
-      const labels = c.discoms.map(d => d.discom_name);
-      const closed = c.discoms.map(d => d.closed);
-      const pending = c.discoms.map(d => d.pending);
-      const overdue = c.discoms.map(d => d.overdue);
-
-      this.charts.discom = new Chart(ctxDiscom, {
-        type: 'bar',
-        data: {
-          labels: labels.length ? labels : ['No DISCOM'],
-          datasets: [
-            { label: 'Verified Closed', data: closed, backgroundColor: '#059669' },
-            { label: 'Pending Action', data: pending, backgroundColor: '#f59e0b' },
-            { label: 'Overdue (SLA Breached)', data: overdue, backgroundColor: '#ef4444' }
-          ]
-        },
-        options: {
-          responsive: true,
-          maintainAspectRatio: false,
-          scales: {
-            x: { stacked: true },
-            y: { stacked: true, beginAtZero: true, ticks: { precision: 0 } }
-          },
-          onClick: (e, els, chart) => {
-            if (els && els.length > 0) {
-              const discom = chart.data.labels[els[0].index];
-              if (discom && discom !== 'No DISCOM') App.navigate('register', { discom });
-            }
-          }
-        }
-      });
-    }
 
     // Chart 3: Handles Breakdown
     const ctxHandles = document.getElementById('chart-handles');
