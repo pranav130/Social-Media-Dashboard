@@ -748,7 +748,7 @@ const App = {
                 <th>Picked Status</th>
                 <th>30m First Reply</th>
                 <th>Status</th>
-                <th>Action</th>
+                <th>Actions</th>
               </tr>
             </thead>
             <tbody id="dash-table-tbody">
@@ -1138,9 +1138,14 @@ const App = {
               <span class="badge-status ${statusBadgeClass}">${c.current_status}</span>
             </td>
             <td>
-              <button class="btn btn-secondary btn-sm" onclick="App.viewComplaint(${c.id})" title="View full complaint details">
-                <i class="fa-solid fa-eye"></i> View
-              </button>
+              <div style="display: flex; gap: 4px; align-items: center;">
+                <button class="btn btn-danger btn-sm btn-frivolous" onclick="App.deleteFrivolousComplaint(${c.id}, '${c.complaint_no}')" style="background-color: #ef4444; border-color: #dc2626; color: #ffffff; font-weight: 600; padding: 3px 8px; font-size: 11px; white-space: nowrap; border-radius: 4px; display: inline-flex; align-items: center; gap: 4px; cursor: pointer;" title="Delete this complaint as Frivolous">
+                  <i class="fa-solid fa-trash-can" style="font-size: 10px;"></i> Frivolous
+                </button>
+                <button class="btn btn-secondary btn-sm" onclick="App.viewComplaint(${c.id})" title="View full complaint details" style="padding: 3px 7px;">
+                  <i class="fa-solid fa-eye"></i>
+                </button>
+              </div>
             </td>
           </tr>
         `;
@@ -2661,10 +2666,14 @@ const App = {
 
       alert(res.message || `Complaint ${complaintNo} deleted successfully.`);
       this.closeModal();
-      if (this.currentPage === 'register') {
-        this.loadRegisterData();
-      } else if (this.currentPage === 'dashboard') {
+      if (typeof this.loadDashTableData === 'function') {
+        this.loadDashTableData();
+      }
+      if (typeof this.reloadDashboard === 'function') {
         this.reloadDashboard();
+      }
+      if (this.currentPage === 'register' && typeof this.loadRegisterData === 'function') {
+        this.loadRegisterData();
       }
       this.pollSyncStatus();
     } catch (err) {

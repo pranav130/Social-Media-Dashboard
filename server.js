@@ -20,8 +20,14 @@ app.use(cors());
 app.use(express.json({ limit: '20mb' }));
 app.use(express.urlencoded({ extended: true, limit: '20mb' }));
 
-// Static frontend
-app.use(express.static(path.join(__dirname, 'public')));
+// Static frontend with cache revalidation
+app.use(express.static(path.join(__dirname, 'public'), {
+  setHeaders: (res, filePath) => {
+    if (filePath.endsWith('.html') || filePath.endsWith('.js') || filePath.endsWith('.css')) {
+      res.setHeader('Cache-Control', 'no-cache, must-revalidate');
+    }
+  }
+}));
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // File Upload Config
