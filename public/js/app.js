@@ -1150,19 +1150,6 @@ const App = {
       </div>
 
       <div class="card-table">
-        <!-- Quick Status Tabs -->
-        <div class="status-tabs">
-          <div class="status-tab ${this.currentFilters.status === 'All' && this.currentFilters.overdue !== '1' ? 'active' : ''}" onclick="App.filterTab('All')">All Complaints</div>
-          <div class="status-tab ${this.currentFilters.status === 'my_assigned' ? 'active' : ''}" onclick="App.filterTab('my_assigned')"><i class="fa-solid fa-user"></i> My Assigned</div>
-          <div class="status-tab ${this.currentFilters.status === 'New' ? 'active' : ''}" onclick="App.filterTab('New')">New</div>
-          <div class="status-tab ${this.currentFilters.status === 'Forwarded' ? 'active' : ''}" onclick="App.filterTab('Forwarded')">Forwarded</div>
-          <div class="status-tab ${this.currentFilters.status === 'DISCOM Follow Up' ? 'active' : ''}" onclick="App.filterTab('DISCOM Follow Up')">Follow-Up Due</div>
-          <div class="status-tab ${this.currentFilters.overdue === '1' ? 'active' : ''}" onclick="App.filterTab('overdue')"><span style="color:#ef4444; font-weight:700;"><i class="fa-solid fa-clock"></i> Overdue</span></div>
-          <div class="status-tab ${this.currentFilters.status === 'Escalated' ? 'active' : ''}" onclick="App.filterTab('Escalated')">Escalated</div>
-          <div class="status-tab ${this.currentFilters.status === 'Resolved — Verification Pending' ? 'active' : ''}" onclick="App.filterTab('Resolved — Verification Pending')">Verification Due</div>
-          <div class="status-tab ${this.currentFilters.status === 'Closed' ? 'active' : ''}" onclick="App.filterTab('Closed')">Closed</div>
-        </div>
-
         <!-- Filter Bar -->
         <div class="filter-bar">
           <div class="filter-group" style="flex: 2; min-width: 200px;">
