@@ -407,6 +407,12 @@ app.get('/api/complaints', authMiddleware, (req, res) => {
     params.push(picked_status.toUpperCase());
   }
 
+  const reply_within_30_min = req.query.reply_within_30_min;
+  if (reply_within_30_min && reply_within_30_min !== 'All') {
+    whereClauses.push('reply_within_30_min = ?');
+    params.push(reply_within_30_min.toUpperCase());
+  }
+
   const shift = req.query.shift;
   if (shift && shift !== 'All') {
     whereClauses.push('(link_shift = ? OR reply_shift = ?)');

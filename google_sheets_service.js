@@ -689,11 +689,19 @@ function processSheetMatrix(headers, data, method, startTime = Date.now()) {
 
     // Operational Status Mapping
     let status = 'New';
-    if (/forwarded/i.test(rawStatus)) status = 'Assigned to DISCOM';
-    else if (/resolved|समाधान/i.test(rawStatus)) status = 'Resolved — Verification Pending';
-    else if (/closed|निस्तारित/i.test(rawStatus)) status = 'Closed';
-    else if (/progress|काम चल रहा/i.test(rawStatus)) status = 'Under Investigation';
-    else if (normalizedPickedStatus === 'APPRECIATION') status = 'Appreciation';
+    if (/follow/i.test(rawStatus) || /discom.*reply/i.test(rawStatus) || (reply60 && reply60.toUpperCase() === 'YES')) {
+      status = 'DISCOM Follow Up';
+    } else if (/forwarded/i.test(rawStatus)) {
+      status = 'Assigned to DISCOM';
+    } else if (/resolved|समाधान/i.test(rawStatus)) {
+      status = 'Resolved — Verification Pending';
+    } else if (/closed|निस्तारित/i.test(rawStatus)) {
+      status = 'Closed';
+    } else if (/progress|काम चल रहा/i.test(rawStatus)) {
+      status = 'Under Investigation';
+    } else if (normalizedPickedStatus === 'APPRECIATION') {
+      status = 'Appreciation';
+    }
 
     db.run(insertStmt, [
       complaintNo,

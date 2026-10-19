@@ -199,6 +199,16 @@ const App = {
     }
   },
 
+  getIstDateStr() {
+    const now = new Date();
+    const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
+    const ist = new Date(utc + (3600000 * 5.5));
+    const y = ist.getFullYear();
+    const m = String(ist.getMonth() + 1).padStart(2, '0');
+    const d = String(ist.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  },
+
   startClock() {
     setInterval(() => {
       const el = document.getElementById('ist-clock');
@@ -799,44 +809,46 @@ const App = {
     const container = document.getElementById('dash-kpi-grid');
     if (!container) return;
 
+    const todayDate = this.getIstDateStr ? this.getIstDateStr() : new Date().toISOString().substring(0, 10);
+
     container.innerHTML = `
-      <div class="kpi-card kpi-total" onclick="App.navigate('register', { status: 'All' })" title="Click to view all complaints">
+      <div class="kpi-card kpi-total" onclick="App.navigate('register', { status: 'All' })" title="Total no. of complaints received till now">
         <div class="kpi-label">Total Received</div>
         <div class="kpi-value">${k.total}</div>
-        <div class="kpi-sub">Authoritative Google Sheet</div>
+        <div class="kpi-sub">Total no. of complaints received till now</div>
       </div>
 
-      <div class="kpi-card kpi-today" onclick="App.navigate('register', { from_date: new Date().toISOString().substring(0, 10) })" title="Click to view today's incoming complaints">
+      <div class="kpi-card kpi-today" onclick="App.navigate('register', { from_date: '${todayDate}' })" title="Total no. of complaints received today's date">
         <div class="kpi-label">Received Today</div>
         <div class="kpi-value">${k.receivedToday}</div>
-        <div class="kpi-sub">Today's social media inflow</div>
+        <div class="kpi-sub">Total no. of complaints received today's date</div>
       </div>
 
-      <div class="kpi-card" style="border-top: 3px solid #059669;" onclick="App.navigate('register', { picked_status: 'YES' })" title="Click to view Actionable Complaints">
+      <div class="kpi-card" style="border-top: 3px solid #059669;" onclick="App.navigate('register', { picked_status: 'YES' })" title="If UPPCLLKO replied in that post">
         <div class="kpi-label" style="color: #059669;">Picked: YES</div>
         <div class="kpi-value" style="color: #059669;">${k.pickedYes || 0}</div>
-        <div class="kpi-sub">Actionable grievances</div>
+        <div class="kpi-sub">If UPPCLLKO replied in that post</div>
       </div>
 
-      <div class="kpi-card" style="border-top: 3px solid #64748b;" onclick="App.navigate('register', { picked_status: 'NO' })" title="Click to view Filtered Non-Complaints">
+      <div class="kpi-card" style="border-top: 3px solid #64748b;" onclick="App.navigate('register', { picked_status: 'NO' })" title="If UPPCLLKO not replied in that post">
         <div class="kpi-label" style="color: #64748b;">Picked: NO</div>
         <div class="kpi-value" style="color: #64748b;">${k.pickedNo || 0}</div>
-        <div class="kpi-sub">Filtered non-complaints</div>
+        <div class="kpi-sub">If UPPCLLKO not replied in that post</div>
       </div>
 
-      <div class="kpi-card" style="border-top: 3px solid #d97706;" onclick="App.navigate('register', { picked_status: 'APPRECIATION' })" title="Click to view Consumer Appreciation">
+      <div class="kpi-card" style="border-top: 3px solid #d97706;" onclick="App.navigate('register', { picked_status: 'APPRECIATION' })" title="Consumer appreciation & gratitude posts">
         <div class="kpi-label" style="color: #d97706;">Appreciation</div>
         <div class="kpi-value" style="color: #d97706;">${k.pickedAppreciation || 0}</div>
-        <div class="kpi-sub">Consumer gratitude posts</div>
+        <div class="kpi-sub">Consumer appreciation & gratitude posts</div>
       </div>
 
-      <div class="kpi-card" style="border-top: 3px solid #0284c7;" onclick="App.navigate('reports', { tab: 'sla_compliance' })" title="Click to view 30-min compliance analytics">
+      <div class="kpi-card" style="border-top: 3px solid #0284c7;" onclick="App.navigate('reports', { tab: 'sla_compliance' })" title="Time difference between post time and UPPCLLKO replied time < 30 Mins (${k.replyWithin30MinCount || 0} of ${k.total || 0} posts)">
         <div class="kpi-label" style="color: #0284c7;">30-Min First Reply</div>
         <div class="kpi-value" style="color: #0284c7;">${k.replyWithin30MinRate || 0}%</div>
-        <div class="kpi-sub">${k.replyWithin30MinCount || 0} replied within 30 min</div>
+        <div class="kpi-sub">Time difference between post time and UPPCLLKO replied time &lt;30Mins</div>
       </div>
 
-      <div class="kpi-card kpi-followup" onclick="App.navigate('register', { status: 'DISCOM Follow Up' })" title="Click to view DISCOM follow-ups">
+      <div class="kpi-card kpi-followup" onclick="App.navigate('register', { status: 'DISCOM Follow Up' })" title="If Discom/division replies after getting Tagged on reply from UPPCLLKO">
         <div class="kpi-label">DISCOM Follow Up</div>
         <div class="kpi-value">${k.followup}</div>
         <div class="kpi-sub">If Discom/division replies after getting Tagged on reply from UPPCLLKO</div>
@@ -1202,9 +1214,9 @@ const App = {
             <label>Picked Status</label>
             <select id="reg-picked-status" class="form-control">
               <option value="All" ${this.currentFilters.picked_status === 'All' ? 'selected' : ''}>All Posts</option>
-              <option value="YES" ${this.currentFilters.picked_status === 'YES' ? 'selected' : ''}>YES (Actionable)</option>
-              <option value="NO" ${this.currentFilters.picked_status === 'NO' ? 'selected' : ''}>NO (Non-Complaint)</option>
-              <option value="APPRECIATION" ${this.currentFilters.picked_status === 'APPRECIATION' ? 'selected' : ''}>APPRECIATION</option>
+              <option value="YES" ${this.currentFilters.picked_status === 'YES' ? 'selected' : ''}>YES (UPPCLLKO Replied)</option>
+              <option value="NO" ${this.currentFilters.picked_status === 'NO' ? 'selected' : ''}>NO (UPPCLLKO Not Replied)</option>
+              <option value="APPRECIATION" ${this.currentFilters.picked_status === 'APPRECIATION' ? 'selected' : ''}>APPRECIATION (Gratitude)</option>
             </select>
           </div>
 
@@ -1554,12 +1566,12 @@ const App = {
               </div>
               ${c.picked_status ? `
                 <div style="margin-bottom: 2px;">
-                  <span class="badge-picked ${c.picked_status.toLowerCase()}">${c.picked_status}</span>
+                  <span class="badge-picked ${c.picked_status.toLowerCase()}" title="${c.picked_status === 'YES' ? 'If UPPCLLKO replied in that post' : (c.picked_status === 'NO' ? 'If UPPCLLKO not replied in that post' : 'Consumer appreciation & gratitude post')}">${c.picked_status}</span>
                 </div>
               ` : ''}
               ${c.reply_within_30_min ? `
                 <div style="margin-top: 2px;">
-                  <span class="${c.reply_within_30_min === 'YES' ? 'badge-30m-yes' : 'badge-30m-no'}" title="Response SLA within 30 min">
+                  <span class="${c.reply_within_30_min === 'YES' ? 'badge-30m-yes' : 'badge-30m-no'}" title="Time difference between post time and UPPCLLKO replied time < 30 Mins: ${c.reply_within_30_min}">
                     30m: ${c.reply_within_30_min}
                   </span>
                 </div>
@@ -2208,10 +2220,10 @@ const App = {
                     <div class="info-row"><span class="info-label">Official Handle:</span><span class="info-value"><b>${c.assigned_nodal_officer_name ? (c.assigned_nodal_officer_name.startsWith('@') ? `<a href="https://x.com/${c.assigned_nodal_officer_name.replace('@', '')}" target="_blank" rel="noopener noreferrer" style="color: var(--primary); font-weight: 700;"><i class="fa-brands fa-x-twitter"></i> ${c.assigned_nodal_officer_name}</a>` : c.assigned_nodal_officer_name) : (c.discom_name ? '@' + c.discom_name + 'HQ' : '@UPPCLLKO')}</b></span></div>
                     <div class="info-row"><span class="info-label">Monitored Account:</span><span class="info-value">${c.monitored_account || '@UPPCLLKO'}</span></div>
                     <div class="info-row"><span class="info-label">Google Sheet Status:</span><span class="info-value"><span class="badge-status badge-${(c.current_status || '').replace(/[\s—/]+/g, '-')}">${c.current_status}</span></span></div>
-                    <div class="info-row"><span class="info-label">Picked Status:</span><span class="info-value"><b>${c.picked_status || 'YES'}</b></span></div>
+                    <div class="info-row"><span class="info-label">Picked Status:</span><span class="info-value"><b>${c.picked_status || 'YES'}</b> <small style="color: var(--text-muted);">(${c.picked_status === 'YES' ? 'UPPCLLKO replied in post' : (c.picked_status === 'NO' ? 'UPPCLLKO not replied in post' : 'Consumer appreciation')})</small></span></div>
                     <div class="info-row"><span class="info-label">Shift:</span><span class="info-value">${c.link_shift || '-'}</span></div>
                     ${c.sheet_row_index ? `<div class="info-row"><span class="info-label">Sheet Row:</span><span class="info-value"><span class="badge-sheet-row">Row #${c.sheet_row_index}</span></span></div>` : ''}
-                    <div class="info-row"><span class="info-label">30m SLA Status:</span><span class="info-value"><b>${c.reply_within_30_min || '-'}</b></span></div>
+                    <div class="info-row"><span class="info-label">30-Min First Reply:</span><span class="info-value"><b>${c.reply_within_30_min || '-'}</b> <small style="color: var(--text-muted);">(Time diff &lt; 30 mins)</small></span></div>
                     ${c.forwarding_remarks || c.remark ? `
                     <div style="margin-top: 10px; padding: 10px; background: var(--bg-subtle); border-radius: 4px; border: 1px solid var(--border-color);">
                       <div style="font-size: 11px; font-weight: 700; color: var(--primary); margin-bottom: 4px;">
