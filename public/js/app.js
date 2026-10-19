@@ -1596,6 +1596,13 @@ const App = {
             <td>
               <div><i class="${platformIcon}"></i> ${c.platform}</div>
               <div style="font-size: 11px; color: var(--accent); font-weight: 600;">${c.monitored_account || '@UPPCLLKO'}</div>
+              ${c.post_url ? `
+                <div style="margin-top: 4px;">
+                  <a href="${c.post_url}" target="_blank" rel="noopener noreferrer" style="display: inline-flex; align-items: center; gap: 4px; padding: 2px 7px; background: rgba(29, 155, 240, 0.1); color: #1d9bf0; border-radius: 4px; font-size: 11px; font-weight: 600; text-decoration: none; border: 1px solid rgba(29, 155, 240, 0.25);" title="Open source tweet on X">
+                    <i class="fa-brands fa-x-twitter"></i> Open Post <i class="fa-solid fa-arrow-up-right-from-square" style="font-size: 9px;"></i>
+                  </a>
+                </div>
+              ` : ''}
             </td>
             <td>
               <div style="font-weight: 600;">${c.consumer_name || 'Consumer'}</div>

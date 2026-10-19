@@ -107,11 +107,11 @@ function buildHeaderIndexMap(headers) {
     
     // Map canonical fields
     if (clean === 'date' || clean === 'receiveddate') map['date'] = idx;
-    else if (clean.includes('linkshift')) map['link_shift'] = idx;
-    else if (clean.includes('replyshift')) map['reply_shift'] = idx;
+    else if (clean === 'linkshift') map['link_shift'] = idx;
+    else if (clean === 'replyshift') map['reply_shift'] = idx;
     else if (clean === 'cf') map['c_f'] = idx;
-    else if (clean.includes('linkurl') || clean.includes('url') || clean === 'link') map['link_url'] = idx;
-    else if (clean.includes('twitterid') || clean.includes('handle') || clean === 'username') map['twitter_id'] = idx;
+    else if (clean === 'linkurl' || clean === 'link' || clean === 'posturl' || clean === 'tweeturl' || (clean.includes('url') && !clean.includes('reply'))) map['link_url'] = idx;
+    else if (clean.includes('twitterid') || clean.includes('handle') || clean === 'username' || clean === 'consumerhandle') map['twitter_id'] = idx;
     else if (clean === 'head') map['head'] = idx;
     else if (clean.includes('untagged')) map['untagged_complaint'] = idx;
     else if (clean.includes('pickedstatus') || clean.includes('picked')) map['picked_status'] = idx;
@@ -125,10 +125,12 @@ function buildHeaderIndexMap(headers) {
     else if (clean.includes('60min') || clean.includes('reply60')) map['reply_within_60_min'] = idx;
     else if (clean.includes('complaintno') || clean === 'cno') map['complaint_no'] = idx;
     else if (clean === 'sts') map['sts'] = idx;
-    else if (clean.includes('postid')) map['post_id'] = idx;
-    else if (clean.includes('posttext') || clean.includes('tweettext') || clean === 'text') map['post_text'] = idx;
+    else if (clean === 'postid' || clean === 'tweetid' || (clean.includes('postid') && !clean.includes('reply'))) map['post_id'] = idx;
+    else if (clean.includes('posttext') || clean.includes('tweettext') || clean === 'complaintdetail' || clean === 'text') map['post_text'] = idx;
     else if (clean.includes('draft') || clean.includes('replydraft')) map['draft_reply'] = idx;
     else if (clean.includes('approval')) map['approval_status'] = idx;
+    else if (clean.includes('replyposturl')) map['reply_post_url'] = idx;
+    else if (clean.includes('replypostid')) map['reply_post_id'] = idx;
   });
 
   return map;
@@ -530,10 +532,10 @@ function processSheetMatrix(headers, data, method, startTime = Date.now()) {
 
     const rowIndex = r + 3; // Row 1: Header, Row 2: Subheader/Counter, Data starts at Row 3
 
-    // Extract values using headerMap with index fallbacks
+    // Extract values using headerMap with index fallbacks (0-indexed)
     const getVal = (canonicalKey, fallbackIdx) => {
-      if (headerMap[canonicalKey] !== undefined && row[headerMap[canonicalKey]] !== undefined) {
-        return String(row[headerMap[canonicalKey]] || '').trim();
+      if (headerMap[canonicalKey] !== undefined && row[headerMap[canonicalKey]] !== undefined && String(row[headerMap[canonicalKey]]).trim() !== '') {
+        return String(row[headerMap[canonicalKey]]).trim();
       }
       if (fallbackIdx !== undefined && row[fallbackIdx] !== undefined) {
         return String(row[fallbackIdx] || '').trim();
@@ -541,27 +543,51 @@ function processSheetMatrix(headers, data, method, startTime = Date.now()) {
       return '';
     };
 
-    const rawDate = getVal('date', 1);
-    const linkShift = getVal('link_shift', 2);
-    const replyShift = getVal('reply_shift', 3);
-    const cf = getVal('c_f', 4);
-    const linkUrl = getVal('link_url', 5);
-    const twitterId = getVal('twitter_id', 6);
-    const head = getVal('head', 7);
-    const untagged = getVal('untagged_complaint', 8);
-    const pickedStatus = getVal('picked_status', 9) || 'YES';
-    const rawCategory = getVal('complaint_type', 10) || 'DISSATISFIED_CONSUMER';
-    const rawDiscom = getVal('discom', 11);
-    const rawZone = getVal('zone', 12);
-    const rawDistrict = getVal('district', 13);
-    const remark = getVal('remark', 14);
-    const rawStatus = getVal('status', 15) || 'Pending';
-    const reply30 = getVal('reply_within_30_min', 16);
-    const reply60 = getVal('reply_within_60_min', 17);
-    const rawComplaintNo = getVal('complaint_no', 18);
-    const rawPostText = getVal('post_text', 21) || getVal('post_text', 17) || remark;
-    const draftReply = getVal('draft_reply', 27);
-    const approvalStatus = getVal('approval_status', 28) || 'DRAFT_READY';
+    const rawDate = getVal('date', 0);
+    const linkShift = getVal('link_shift', 1);
+    const replyShift = getVal('reply_shift', 2);
+    const cf = getVal('c_f', 3);
+    let linkUrl = getVal('link_url', 4);
+    let twitterId = getVal('twitter_id', 5);
+    const head = getVal('head', 6);
+    const untagged = getVal('untagged_complaint', 7);
+    const pickedStatus = getVal('picked_status', 8) || 'YES';
+    const rawCategory = getVal('complaint_type', 9) || 'DISSATISFIED_CONSUMER';
+    const rawDiscom = getVal('discom', 10);
+    const rawZone = getVal('zone', 11);
+    const rawDistrict = getVal('district', 12);
+    const remark = getVal('remark', 13);
+    const rawStatus = getVal('status', 14) || 'Pending';
+    const reply30 = getVal('reply_within_30_min', 15);
+    const reply60 = getVal('reply_within_60_min', 16);
+    const rawComplaintNo = getVal('complaint_no', 17);
+    const rawPostText = getVal('post_text', 20) || getVal('post_text', 16) || remark;
+    const draftReply = getVal('draft_reply', 25);
+    const approvalStatus = getVal('approval_status', 26) || 'DRAFT_READY';
+
+    // Bulletproof URL auto-recovery:
+    // If linkUrl is not a valid HTTP URL, check row[4] directly or scan any cell for an X/Twitter URL
+    if (!linkUrl || !linkUrl.startsWith('http')) {
+      if (row[4] && String(row[4]).trim().startsWith('http')) {
+        linkUrl = String(row[4]).trim();
+      } else {
+        for (let colIdx = 0; colIdx < row.length; colIdx++) {
+          const cellStr = String(row[colIdx] || '').trim();
+          if (/^https?:\/\/(?:x|twitter)\.com\/\S+/i.test(cellStr)) {
+            linkUrl = cellStr;
+            break;
+          }
+        }
+      }
+    }
+
+    // Auto-recover twitterId from linkUrl if missing
+    if (!twitterId && linkUrl) {
+      const match = linkUrl.match(/https?:\/\/(?:x|twitter)\.com\/([^\/\?]+)/i);
+      if (match && !['i', 'intent', 'status'].includes(match[1].toLowerCase())) {
+        twitterId = match[1];
+      }
+    }
 
     // Normalization
     const istDate = parseDateIST(rawDate);
