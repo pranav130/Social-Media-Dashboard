@@ -5182,32 +5182,18 @@ const App = {
           <form onsubmit="App.handleLogin(event)">
             <div class="filter-group" style="margin-bottom: 14px;">
               <label>Username</label>
-              <input type="text" id="login-username" class="form-control" placeholder="Enter username..." required value="admin">
+              <input type="text" id="login-username" class="form-control" placeholder="Enter username..." required autocomplete="username">
             </div>
 
             <div class="filter-group" style="margin-bottom: 20px;">
               <label>Password</label>
-              <input type="password" id="login-password" class="form-control" placeholder="Enter password..." required value="Admin@UPPCL2026">
+              <input type="password" id="login-password" class="form-control" placeholder="Enter password..." required autocomplete="current-password">
             </div>
 
             <button type="submit" class="btn btn-primary" style="width: 100%; justify-content: center; padding: 10px;">
               <i class="fa-solid fa-lock"></i> Secure Sign In
             </button>
           </form>
-
-          <div style="margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--border-color); font-size: 11px;">
-            <div style="font-weight: 700; color: var(--text-muted); margin-bottom: 8px;">Quick Role Switch (Demo Credentials):</div>
-            <div style="display: flex; flex-wrap: wrap; gap: 4px;">
-              <span class="role-pill-btn" onclick="App.quickFill('admin', 'Admin@UPPCL2026')">Administrator</span>
-              <span class="role-pill-btn" onclick="App.quickFill('operator', 'Operator@UPPCL2026')">SMC Operator</span>
-              <span class="role-pill-btn" onclick="App.quickFill('supervisor', 'Supervisor@UPPCL2026')">Supervisor</span>
-              <span class="role-pill-btn" onclick="App.quickFill('nodal_puvvnl', 'Nodal@PUVVNL2026')">PuVVNL Nodal</span>
-              <span class="role-pill-btn" onclick="App.quickFill('nodal_mvvnl', 'Nodal@MVVNL2026')">MVVNL Nodal</span>
-              <span class="role-pill-btn" onclick="App.quickFill('nodal_dvvnl', 'Nodal@DVVNL2026')">DVVNL Nodal</span>
-              <span class="role-pill-btn" onclick="App.quickFill('nodal_pvvnl', 'Nodal@PVVNL2026')">PVVNL Nodal</span>
-              <span class="role-pill-btn" onclick="App.quickFill('reviewer', 'Reviewer@UPPCL2026')">Reviewer</span>
-            </div>
-          </div>
         </div>
       </div>
     `;
