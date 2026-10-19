@@ -52,6 +52,24 @@ let lastSyncInfo = {
 };
 
 /**
+ * Retrieve set of all frivolous/deleted tweet IDs, URLs, and complaint numbers
+ */
+function getFrivolousIdentifiersSet() {
+  const set = new Set();
+  try {
+    const rows = db.query("SELECT post_url, tweet_id, complaint_no FROM frivolous_complaints;");
+    if (rows && rows.length) {
+      for (const fr of rows) {
+        if (fr.tweet_id) set.add(String(fr.tweet_id).trim());
+        if (fr.post_url) set.add(String(fr.post_url).trim().toLowerCase());
+        if (fr.complaint_no) set.add(String(fr.complaint_no).trim().toLowerCase());
+      }
+    }
+  } catch (e) {}
+  return set;
+}
+
+/**
  * Format IST timestamp: YYYY-MM-DD HH:mm:ss
  */
 function getIstTimestamp(dateObj = new Date()) {
@@ -320,6 +338,7 @@ async function fetchSheetMatrix() {
     if (manualRows && autoRows) {
       const headers = manualRows[0];
       const mergedMap = new Map();
+      const frivolousSet = getFrivolousIdentifiersSet();
 
       // 1. Process manual working sheet first (authoritative human-classified values)
       for (let r = 2; r < manualRows.length; r++) {
@@ -332,6 +351,7 @@ async function fetchSheetMatrix() {
 
         const tid = extractTweetId(url) || url;
         if (!tid) continue;
+        if (frivolousSet.has(tid) || (url && frivolousSet.has(url.toLowerCase()))) continue;
 
         mergedMap.set(tid, {
           row,
@@ -351,6 +371,7 @@ async function fetchSheetMatrix() {
 
         const tid = extractTweetId(url) || url;
         if (!tid) continue;
+        if (frivolousSet.has(tid) || (url && frivolousSet.has(url.toLowerCase()))) continue;
 
         if (!mergedMap.has(tid)) {
           mergedMap.set(tid, {
@@ -526,6 +547,7 @@ async function syncGoogleSheets(isManual = false) {
 function processSheetMatrix(headers, data, method, startTime = Date.now()) {
   const headerMap = buildHeaderIndexMap(headers);
   const nowIst = getIstTimestamp();
+  const frivolousSet = getFrivolousIdentifiersSet();
 
   let validCount = 0;
   let qualityIssuesCount = 0;
@@ -643,6 +665,12 @@ function processSheetMatrix(headers, data, method, startTime = Date.now()) {
 
     // Strictly skip empty or phantom rows with no URL, Twitter ID, or complaint text
     if (!linkUrl && !twitterId && !rawPostText) {
+      continue;
+    }
+
+    // Strictly skip frivolous / deleted complaints
+    const rowTid = extractTweetId(linkUrl) || twitterId;
+    if (frivolousSet.has(rowTid) || (linkUrl && frivolousSet.has(linkUrl.toLowerCase())) || (rawComplaintNo && frivolousSet.has(rawComplaintNo.toLowerCase()))) {
       continue;
     }
 

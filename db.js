@@ -408,6 +408,19 @@ function createSchema() {
       metadata_json TEXT
     );
 
+    CREATE TABLE IF NOT EXISTS frivolous_complaints (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      post_url TEXT UNIQUE,
+      tweet_id TEXT,
+      complaint_no TEXT,
+      deleted_at TEXT NOT NULL,
+      deleted_by_name TEXT,
+      reason TEXT DEFAULT 'Marked as Frivolous'
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_frivolous_tid ON frivolous_complaints(tweet_id);
+    CREATE INDEX IF NOT EXISTS idx_frivolous_url ON frivolous_complaints(post_url);
+
     CREATE INDEX IF NOT EXISTS idx_comp_status ON complaints(current_status);
     CREATE INDEX IF NOT EXISTS idx_comp_discom ON complaints(discom_name);
     CREATE INDEX IF NOT EXISTS idx_comp_district ON complaints(district_name);

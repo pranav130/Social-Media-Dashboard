@@ -1065,6 +1065,57 @@ app.post('/api/complaints/:id/invalidate', authMiddleware, requireRoles('Super A
   res.json({ message: 'Complaint marked as duplicate / invalid' });
 });
 
+// 11b. Delete Frivolous Complaint
+const handleDeleteFrivolous = (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  const complaint = db.get('SELECT * FROM complaints WHERE id = ?;', [id]);
+  if (!complaint) return res.status(404).json({ error: 'Complaint not found or already deleted' });
+
+  const postUrl = complaint.post_url || '';
+  const m = postUrl.match(/status\/(\d+)/i);
+  const tweetId = m ? m[1] : '';
+  const istTime = getIstTimestamp();
+  const reason = (req.body && req.body.reason) ? req.body.reason.trim() : 'Marked as Frivolous';
+
+  // 1. Record into frivolous_complaints table so Google Sheets background sync never resurrects it
+  try {
+    db.run(`
+      INSERT OR REPLACE INTO frivolous_complaints (post_url, tweet_id, complaint_no, deleted_at, deleted_by_name, reason)
+      VALUES (?, ?, ?, ?, ?, ?);
+    `, [
+      postUrl,
+      tweetId,
+      complaint.complaint_no || '',
+      istTime,
+      req.user ? req.user.full_name : 'Staff',
+      reason
+    ]);
+  } catch (err) {
+    console.warn('[Frivolous] Warning saving frivolous record:', err.message);
+  }
+
+  // 2. Cascade delete complaint and all related records
+  db.run('DELETE FROM complaint_timeline WHERE complaint_id = ?;', [id]);
+  db.run('DELETE FROM complaint_forwarding_logs WHERE complaint_id = ?;', [id]);
+  db.run('DELETE FROM complaint_followup_logs WHERE complaint_id = ?;', [id]);
+  db.run('DELETE FROM complaint_escalation_logs WHERE complaint_id = ?;', [id]);
+  db.run('DELETE FROM complaint_evidence WHERE complaint_id = ?;', [id]);
+  db.run('DELETE FROM internal_tickets WHERE complaint_id = ?;', [id]);
+  db.run('DELETE FROM x_outgoing_replies WHERE complaint_id = ?;', [id]);
+  db.run('DELETE FROM complaints WHERE id = ?;', [id]);
+
+  logAudit(req, req.user, 'COMPLAINT_DELETED_FRIVOLOUS', 'COMPLAINT', id, `Deleted frivolous complaint ${complaint.complaint_no} (${complaint.consumer_handle || ''})`);
+
+  res.json({
+    success: true,
+    message: `Complaint ${complaint.complaint_no} deleted successfully as frivolous.`
+  });
+};
+
+app.delete('/api/complaints/:id', authMiddleware, handleDeleteFrivolous);
+app.post('/api/complaints/:id/delete', authMiddleware, handleDeleteFrivolous);
+app.post('/api/complaints/:id/frivolous', authMiddleware, handleDeleteFrivolous);
+
 // 12. Upload Evidence / Attachments
 app.post('/api/complaints/:id/evidence', authMiddleware, upload.single('evidence_file'), (req, res) => {
   const id = parseInt(req.params.id, 10);
