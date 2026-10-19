@@ -474,6 +474,39 @@ body {
   box-shadow: 0 4px 8px rgba(0,0,0,0.08);
 }
 
+.kpi-card.active-card {
+  outline: 2px solid var(--primary, #0f766e);
+  box-shadow: 0 0 0 4px rgba(15, 118, 110, 0.18), 0 6px 14px rgba(0, 0, 0, 0.08);
+  transform: translateY(-2px);
+  background-color: var(--bg-card);
+}
+
+.kpi-active-pill {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--primary, #0f766e);
+  background: rgba(15, 118, 110, 0.12);
+  padding: 2px 7px;
+  border-radius: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  letter-spacing: 0.2px;
+}
+
+[data-theme="dark"] .kpi-card.active-card {
+  outline: 2px solid #2dd4bf;
+  box-shadow: 0 0 0 4px rgba(45, 212, 191, 0.2), 0 6px 16px rgba(0, 0, 0, 0.3);
+}
+
+[data-theme="dark"] .kpi-active-pill {
+  color: #2dd4bf;
+  background: rgba(45, 212, 191, 0.15);
+}
+
 .kpi-card::before {
   content: '';
   position: absolute;

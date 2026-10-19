@@ -16,6 +16,7 @@ const App = {
     priority: 'All',
     assigned_handle: 'All',
     picked_status: 'All',
+    reply_within_30_min: 'All',
     shift: 'All',
     data_quality: 'All',
     overdue: '0',
@@ -23,6 +24,12 @@ const App = {
     to_date: '',
     sort_by: 'received_at',
     sort_order: 'DESC'
+  },
+  dashFilter: {
+    kpi: 'total',
+    page: 1,
+    limit: 15,
+    search: ''
   },
   currentReportTab: 'time_trends',
   charts: {},
@@ -484,6 +491,7 @@ const App = {
       if (params.category !== undefined) this.currentFilters.category = params.category;
       if (params.assigned_handle !== undefined) this.currentFilters.assigned_handle = params.assigned_handle;
       if (params.picked_status !== undefined) this.currentFilters.picked_status = params.picked_status;
+      if (params.reply_within_30_min !== undefined) this.currentFilters.reply_within_30_min = params.reply_within_30_min;
       if (params.shift !== undefined) this.currentFilters.shift = params.shift;
       if (params.data_quality !== undefined) this.currentFilters.data_quality = params.data_quality;
       if (params.from_date !== undefined) this.currentFilters.from_date = params.from_date;
@@ -703,6 +711,56 @@ const App = {
         <div class="kpi-card"><div class="kpi-label">Loading KPIs...</div></div>
       </div>
 
+      <!-- Live Related Complaints Table Filtered by KPI Cards -->
+      <div id="dash-table-wrapper" class="card-table" style="margin-bottom: 24px;">
+        <div style="padding: 14px 18px; border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; background: var(--bg-card); border-radius: 8px 8px 0 0;">
+          <div>
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <h3 id="dash-table-title" style="margin: 0; font-size: 15px; font-weight: 700; color: var(--primary-dark); display: flex; align-items: center; gap: 8px;">
+                <i class="fa-solid fa-table-list"></i> <span>Complaints: Total Received</span>
+              </h3>
+              <span id="dash-table-count-badge" class="badge-status badge-New" style="font-size: 11px; padding: 2px 8px; font-weight: 700;">Loading...</span>
+            </div>
+            <p id="dash-table-subtitle" style="margin: 3px 0 0 0; font-size: 11px; color: var(--text-muted);">
+              Total no. of complaints received till now (Showing live authoritative records)
+            </p>
+          </div>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <div style="position: relative;">
+              <i class="fa-solid fa-magnifying-glass" style="position: absolute; left: 9px; top: 9px; color: var(--text-light); font-size: 11px;"></i>
+              <input type="text" id="dash-table-search" class="form-control" placeholder="Quick search..." style="width: 200px; padding-left: 26px; height: 32px; font-size: 12px;" oninput="App.debounceDashTableSearch()">
+            </div>
+            <button class="btn btn-secondary btn-sm" onclick="App.openActiveCardInRegister()" title="Open filtered list in full Complaint Register view" style="height: 32px;">
+              <i class="fa-solid fa-arrow-up-right-from-square"></i> Full Register
+            </button>
+          </div>
+        </div>
+
+        <div class="table-responsive">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Complaint # / Post</th>
+                <th>Received At (IST)</th>
+                <th>Consumer</th>
+                <th>Grievance Summary</th>
+                <th>DISCOM / Dist.</th>
+                <th>Picked Status</th>
+                <th>30m First Reply</th>
+                <th>Status</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody id="dash-table-tbody">
+              <tr><td colspan="9" style="text-align: center; padding: 25px; color: var(--text-muted);"><i class="fa-solid fa-spinner fa-spin"></i> Loading related complaints...</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div id="dash-table-pagination" style="padding: 10px 18px; border-top: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: var(--text-muted); background: var(--bg-card); border-radius: 0 0 8px 8px;">
+        </div>
+      </div>
+
       <!-- Visual Charts Grid -->
       <div class="charts-grid">
         <div class="chart-card">
@@ -800,6 +858,7 @@ const App = {
 
       this.renderKPIs(kpis);
       this.renderCharts(charts);
+      this.loadDashboardComplaints();
     } catch (e) {
       console.error('Error reloading dashboard:', e);
     }
@@ -810,50 +869,303 @@ const App = {
     if (!container) return;
 
     const todayDate = this.getIstDateStr ? this.getIstDateStr() : new Date().toISOString().substring(0, 10);
+    const activeKpi = this.dashFilter.kpi || 'total';
 
     container.innerHTML = `
-      <div class="kpi-card kpi-total" onclick="App.navigate('register', { status: 'All' })" title="Total no. of complaints received till now">
+      <div class="kpi-card kpi-total ${activeKpi === 'total' ? 'active-card' : ''}" data-kpi="total" onclick="App.selectDashKPI('total')" title="Total no. of complaints received till now">
+        ${activeKpi === 'total' ? '<span class="kpi-active-pill"><i class="fa-solid fa-check"></i> Active</span>' : ''}
         <div class="kpi-label">Total Received</div>
         <div class="kpi-value">${k.total}</div>
         <div class="kpi-sub">Total no. of complaints received till now</div>
       </div>
 
-      <div class="kpi-card kpi-today" onclick="App.navigate('register', { from_date: '${todayDate}' })" title="Total no. of complaints received today's date">
+      <div class="kpi-card kpi-today ${activeKpi === 'today' ? 'active-card' : ''}" data-kpi="today" onclick="App.selectDashKPI('today')" title="Total no. of complaints received today's date">
+        ${activeKpi === 'today' ? '<span class="kpi-active-pill"><i class="fa-solid fa-check"></i> Active</span>' : ''}
         <div class="kpi-label">Received Today</div>
         <div class="kpi-value">${k.receivedToday}</div>
         <div class="kpi-sub">Total no. of complaints received today's date</div>
       </div>
 
-      <div class="kpi-card" style="border-top: 3px solid #059669;" onclick="App.navigate('register', { picked_status: 'YES' })" title="If UPPCLLKO replied in that post">
+      <div class="kpi-card ${activeKpi === 'picked_yes' ? 'active-card' : ''}" data-kpi="picked_yes" style="border-top: 3px solid #059669;" onclick="App.selectDashKPI('picked_yes')" title="If UPPCLLKO replied in that post">
+        ${activeKpi === 'picked_yes' ? '<span class="kpi-active-pill" style="color: #059669; background: rgba(5, 150, 105, 0.12);"><i class="fa-solid fa-check"></i> Active</span>' : ''}
         <div class="kpi-label" style="color: #059669;">Picked: YES</div>
         <div class="kpi-value" style="color: #059669;">${k.pickedYes || 0}</div>
         <div class="kpi-sub">If UPPCLLKO replied in that post</div>
       </div>
 
-      <div class="kpi-card" style="border-top: 3px solid #64748b;" onclick="App.navigate('register', { picked_status: 'NO' })" title="If UPPCLLKO not replied in that post">
+      <div class="kpi-card ${activeKpi === 'picked_no' ? 'active-card' : ''}" data-kpi="picked_no" style="border-top: 3px solid #64748b;" onclick="App.selectDashKPI('picked_no')" title="If UPPCLLKO not replied in that post">
+        ${activeKpi === 'picked_no' ? '<span class="kpi-active-pill" style="color: #64748b; background: rgba(100, 116, 139, 0.15);"><i class="fa-solid fa-check"></i> Active</span>' : ''}
         <div class="kpi-label" style="color: #64748b;">Picked: NO</div>
         <div class="kpi-value" style="color: #64748b;">${k.pickedNo || 0}</div>
         <div class="kpi-sub">If UPPCLLKO not replied in that post</div>
       </div>
 
-      <div class="kpi-card" style="border-top: 3px solid #d97706;" onclick="App.navigate('register', { picked_status: 'APPRECIATION' })" title="Consumer appreciation & gratitude posts">
+      <div class="kpi-card ${activeKpi === 'appreciation' ? 'active-card' : ''}" data-kpi="appreciation" style="border-top: 3px solid #d97706;" onclick="App.selectDashKPI('appreciation')" title="Consumer appreciation & gratitude posts">
+        ${activeKpi === 'appreciation' ? '<span class="kpi-active-pill" style="color: #d97706; background: rgba(217, 119, 6, 0.15);"><i class="fa-solid fa-check"></i> Active</span>' : ''}
         <div class="kpi-label" style="color: #d97706;">Appreciation</div>
         <div class="kpi-value" style="color: #d97706;">${k.pickedAppreciation || 0}</div>
         <div class="kpi-sub">Consumer appreciation & gratitude posts</div>
       </div>
 
-      <div class="kpi-card" style="border-top: 3px solid #0284c7;" onclick="App.navigate('reports', { tab: 'sla_compliance' })" title="Time difference between post time and UPPCLLKO replied time < 30 Mins (${k.replyWithin30MinCount || 0} of ${k.total || 0} posts)">
+      <div class="kpi-card ${activeKpi === 'reply_30' ? 'active-card' : ''}" data-kpi="reply_30" style="border-top: 3px solid #0284c7;" onclick="App.selectDashKPI('reply_30')" title="Time difference between post time and UPPCLLKO replied time < 30 Mins (${k.replyWithin30MinCount || 0} of ${k.total || 0} posts)">
+        ${activeKpi === 'reply_30' ? '<span class="kpi-active-pill" style="color: #0284c7; background: rgba(2, 132, 199, 0.15);"><i class="fa-solid fa-check"></i> Active</span>' : ''}
         <div class="kpi-label" style="color: #0284c7;">30-Min First Reply</div>
         <div class="kpi-value" style="color: #0284c7;">${k.replyWithin30MinRate || 0}%</div>
         <div class="kpi-sub">Time difference between post time and UPPCLLKO replied time &lt;30Mins</div>
       </div>
 
-      <div class="kpi-card kpi-followup" onclick="App.navigate('register', { status: 'DISCOM Follow Up' })" title="If Discom/division replies after getting Tagged on reply from UPPCLLKO">
+      <div class="kpi-card kpi-followup ${activeKpi === 'followup' ? 'active-card' : ''}" data-kpi="followup" onclick="App.selectDashKPI('followup')" title="If Discom/division replies after getting Tagged on reply from UPPCLLKO">
+        ${activeKpi === 'followup' ? '<span class="kpi-active-pill"><i class="fa-solid fa-check"></i> Active</span>' : ''}
         <div class="kpi-label">DISCOM Follow Up</div>
         <div class="kpi-value">${k.followup}</div>
         <div class="kpi-sub">If Discom/division replies after getting Tagged on reply from UPPCLLKO</div>
       </div>
     `;
+  },
+
+  selectDashKPI(kpiKey) {
+    this.dashFilter.kpi = kpiKey;
+    this.dashFilter.page = 1;
+    this.dashFilter.search = '';
+    const searchInput = document.getElementById('dash-table-search');
+    if (searchInput) searchInput.value = '';
+
+    // Update active highlight classes and active pills on cards
+    const cards = document.querySelectorAll('#dash-kpi-grid .kpi-card');
+    cards.forEach(card => {
+      const isTarget = card.getAttribute('data-kpi') === kpiKey;
+      card.classList.toggle('active-card', isTarget);
+      const existingPill = card.querySelector('.kpi-active-pill');
+      if (existingPill) existingPill.remove();
+      if (isTarget) {
+        const pill = document.createElement('span');
+        pill.className = 'kpi-active-pill';
+        pill.innerHTML = '<i class="fa-solid fa-check"></i> Active';
+        card.appendChild(pill);
+      }
+    });
+
+    this.loadDashboardComplaints();
+
+    const tableEl = document.getElementById('dash-table-wrapper');
+    if (tableEl) {
+      tableEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+  },
+
+  debounceDashTableSearch() {
+    clearTimeout(this._dashSearchTimer);
+    this._dashSearchTimer = setTimeout(() => {
+      const input = document.getElementById('dash-table-search');
+      this.dashFilter.search = input ? input.value : '';
+      this.dashFilter.page = 1;
+      this.loadDashboardComplaints();
+    }, 250);
+  },
+
+  changeDashTablePage(newPage) {
+    this.dashFilter.page = newPage;
+    this.loadDashboardComplaints();
+    const tableEl = document.getElementById('dash-table-wrapper');
+    if (tableEl) {
+      tableEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+  },
+
+  openActiveCardInRegister() {
+    const kpi = this.dashFilter.kpi || 'total';
+    const discomVal = document.getElementById('dash-filter-discom') ? document.getElementById('dash-filter-discom').value : 'All';
+    const todayDate = this.getIstDateStr ? this.getIstDateStr() : new Date().toISOString().substring(0, 10);
+
+    const params = {};
+    if (discomVal && discomVal !== 'All') params.discom = discomVal;
+    if (this.dashFilter.search) params.search = this.dashFilter.search;
+
+    if (kpi === 'total') {
+      params.status = 'All';
+    } else if (kpi === 'today') {
+      params.from_date = todayDate;
+      params.to_date = todayDate;
+    } else if (kpi === 'picked_yes') {
+      params.picked_status = 'YES';
+    } else if (kpi === 'picked_no') {
+      params.picked_status = 'NO';
+    } else if (kpi === 'appreciation') {
+      params.picked_status = 'APPRECIATION';
+    } else if (kpi === 'reply_30') {
+      params.reply_within_30_min = 'YES';
+    } else if (kpi === 'followup') {
+      params.status = 'DISCOM Follow Up';
+    }
+
+    this.navigate('register', params);
+  },
+
+  async loadDashboardComplaints() {
+    const tbody = document.getElementById('dash-table-tbody');
+    const pdiv = document.getElementById('dash-table-pagination');
+    const titleEl = document.getElementById('dash-table-title');
+    const subEl = document.getElementById('dash-table-subtitle');
+    const countBadge = document.getElementById('dash-table-count-badge');
+    if (!tbody) return;
+
+    tbody.innerHTML = `<tr><td colspan="9" style="text-align: center; padding: 25px;"><i class="fa-solid fa-spinner fa-spin"></i> Loading complaints...</td></tr>`;
+
+    const kpi = this.dashFilter.kpi || 'total';
+    const discomVal = document.getElementById('dash-filter-discom') ? document.getElementById('dash-filter-discom').value : 'All';
+    const todayDate = this.getIstDateStr ? this.getIstDateStr() : new Date().toISOString().substring(0, 10);
+
+    const q = new URLSearchParams();
+    q.append('page', this.dashFilter.page || 1);
+    q.append('limit', this.dashFilter.limit || 15);
+    q.append('sort_by', 'received_at');
+    q.append('sort_order', 'DESC');
+
+    if (discomVal && discomVal !== 'All') {
+      q.append('discom', discomVal);
+    }
+    if (this.dashFilter.search && this.dashFilter.search.trim()) {
+      q.append('search', this.dashFilter.search.trim());
+    }
+
+    let titleText = 'Total Received';
+    let subText = 'Total no. of complaints received till now';
+    let iconClass = 'fa-solid fa-inbox';
+
+    if (kpi === 'today') {
+      q.append('from_date', todayDate);
+      q.append('to_date', todayDate);
+      titleText = 'Received Today';
+      subText = `Total no. of complaints received today's date (${todayDate})`;
+      iconClass = 'fa-solid fa-calendar-day';
+    } else if (kpi === 'picked_yes') {
+      q.append('picked_status', 'YES');
+      titleText = 'Picked: YES';
+      subText = 'If UPPCLLKO replied in that post';
+      iconClass = 'fa-solid fa-circle-check';
+    } else if (kpi === 'picked_no') {
+      q.append('picked_status', 'NO');
+      titleText = 'Picked: NO';
+      subText = 'If UPPCLLKO not replied in that post';
+      iconClass = 'fa-solid fa-circle-xmark';
+    } else if (kpi === 'appreciation') {
+      q.append('picked_status', 'APPRECIATION');
+      titleText = 'Appreciation';
+      subText = 'Consumer appreciation & gratitude posts';
+      iconClass = 'fa-solid fa-heart';
+    } else if (kpi === 'reply_30') {
+      q.append('reply_within_30_min', 'YES');
+      titleText = '30-Min First Reply';
+      subText = 'Time difference between post time and UPPCLLKO replied time <30Mins';
+      iconClass = 'fa-solid fa-stopwatch';
+    } else if (kpi === 'followup') {
+      q.append('status', 'DISCOM Follow Up');
+      titleText = 'DISCOM Follow Up';
+      subText = 'If Discom/division replies after getting Tagged on reply from UPPCLLKO';
+      iconClass = 'fa-solid fa-arrows-split-up-and-left';
+    }
+
+    if (titleEl) titleEl.innerHTML = `<i class="${iconClass}"></i> <span>Complaints: ${titleText}</span>`;
+    if (subEl) subEl.textContent = subText;
+
+    try {
+      const res = await this.api(`/api/complaints?${q.toString()}`);
+      const data = res.data || [];
+      const pg = res.pagination || { total: 0, page: 1, limit: 15, totalPages: 1 };
+
+      if (countBadge) {
+        countBadge.textContent = `${pg.total} Complaints`;
+        countBadge.className = 'badge-status badge-New';
+      }
+
+      if (data.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="9" style="text-align: center; padding: 35px; color: var(--text-muted);">No complaints found for <b>${titleText}</b>.</td></tr>`;
+        if (pdiv) pdiv.innerHTML = '';
+        return;
+      }
+
+      tbody.innerHTML = data.map(c => {
+        const statusBadgeClass = `badge-${(c.current_status || '').replace(/[\s—/]+/g, '-')}`;
+
+        return `
+          <tr>
+            <td>
+              <a href="javascript:void(0)" onclick="App.viewComplaint(${c.id})" style="font-weight: 700; color: var(--primary); text-decoration: none;">
+                ${c.complaint_no}
+              </a>
+              ${c.sheet_row_index ? `
+                <div style="margin-top: 2px;">
+                  <span class="badge-sheet-row" title="Authoritative Google Sheet Row index">Row #${c.sheet_row_index}</span>
+                </div>
+              ` : ''}
+              ${c.post_url ? `
+                <div style="margin-top: 3px;">
+                  <a href="${c.post_url}" target="_blank" rel="noopener noreferrer" style="color: #1155cc; font-size: 11px; font-weight: 600; text-decoration: underline;" title="Open source post on X">
+                    <i class="fa-solid fa-arrow-up-right-from-square" style="font-size: 9px;"></i> Post Link
+                  </a>
+                </div>
+              ` : ''}
+            </td>
+            <td>
+              <div style="font-weight: 600;">${c.received_at.substring(0, 10)}</div>
+              <div style="font-size: 11px; color: var(--text-muted);">${c.received_at.substring(11, 16)} IST</div>
+            </td>
+            <td>
+              <div style="font-weight: 600;">${c.consumer_name || 'Consumer'}</div>
+              ${c.consumer_handle ? `<div style="font-size: 11px; color: var(--text-muted);">${c.consumer_handle}</div>` : ''}
+            </td>
+            <td style="max-width: 260px;">
+              <div style="font-weight: 600; color: var(--primary); font-size: 12px;">${c.category_name}</div>
+              <div style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 260px; color: var(--text-main); font-size: 12px;" title="${c.complaint_text.replace(/"/g, '&quot;')}">
+                ${c.complaint_text}
+              </div>
+            </td>
+            <td>
+              <div style="font-weight: 700;">${c.discom_name}</div>
+              <div style="font-size: 11px; color: var(--text-muted);">${c.district_name || 'HQ'}</div>
+            </td>
+            <td>
+              ${c.picked_status ? `<span class="badge-picked ${c.picked_status.toLowerCase()}" title="${c.picked_status === 'YES' ? 'If UPPCLLKO replied in that post' : (c.picked_status === 'NO' ? 'If UPPCLLKO not replied in that post' : 'Consumer appreciation & gratitude post')}">${c.picked_status}</span>` : '-'}
+            </td>
+            <td>
+              ${c.reply_within_30_min ? `
+                <span class="${c.reply_within_30_min === 'YES' ? 'badge-30m-yes' : 'badge-30m-no'}" title="Time difference between post time and UPPCLLKO replied time < 30 Mins: ${c.reply_within_30_min}">
+                  30m: ${c.reply_within_30_min}
+                </span>
+              ` : '<span style="color: var(--text-light); font-size: 11px;">-</span>'}
+            </td>
+            <td>
+              <span class="badge-status ${statusBadgeClass}">${c.current_status}</span>
+            </td>
+            <td>
+              <button class="btn btn-secondary btn-sm" onclick="App.viewComplaint(${c.id})" title="View full complaint details">
+                <i class="fa-solid fa-eye"></i> View
+              </button>
+            </td>
+          </tr>
+        `;
+      }).join('');
+
+      if (pdiv) {
+        const start = ((pg.page - 1) * pg.limit) + 1;
+        const end = Math.min(pg.page * pg.limit, pg.total);
+        pdiv.innerHTML = `
+          <div>Showing <b>${start}</b> - <b>${end}</b> of <b>${pg.total}</b> complaints</div>
+          <div style="display: flex; gap: 8px;">
+            <button class="btn btn-secondary btn-sm" ${pg.page <= 1 ? 'disabled' : ''} onclick="App.changeDashTablePage(${pg.page - 1})">
+              <i class="fa-solid fa-chevron-left"></i> Previous
+            </button>
+            <span style="display: flex; align-items: center; padding: 0 6px; font-weight: 600;">Page ${pg.page} of ${pg.totalPages}</span>
+            <button class="btn btn-secondary btn-sm" ${pg.page >= pg.totalPages ? 'disabled' : ''} onclick="App.changeDashTablePage(${pg.page + 1})">
+              Next <i class="fa-solid fa-chevron-right"></i>
+            </button>
+          </div>
+        `;
+      }
+    } catch (e) {
+      console.error('Error loading dashboard complaints:', e);
+      tbody.innerHTML = `<tr><td colspan="9" style="text-align: center; color: #ef4444; padding: 25px;">Failed to load complaints: ${e.message}</td></tr>`;
+    }
   },
 
   renderCharts(c) {
@@ -1220,6 +1532,15 @@ const App = {
             </select>
           </div>
 
+          <div class="filter-group" style="min-width: 140px;">
+            <label>30-Min First Reply</label>
+            <select id="reg-reply-30" class="form-control">
+              <option value="All" ${this.currentFilters.reply_within_30_min === 'All' ? 'selected' : ''}>All Posts</option>
+              <option value="YES" ${this.currentFilters.reply_within_30_min === 'YES' ? 'selected' : ''}>YES (&lt; 30 mins)</option>
+              <option value="NO" ${this.currentFilters.reply_within_30_min === 'NO' ? 'selected' : ''}>NO (&gt;= 30 mins)</option>
+            </select>
+          </div>
+
           <div class="filter-group" style="min-width: 130px;">
             <label>Shift</label>
             <select id="reg-shift" class="form-control">
@@ -1337,6 +1658,10 @@ const App = {
     if (pickedSelect) {
       this.currentFilters.picked_status = pickedSelect.value;
     }
+    const reply30Select = document.getElementById('reg-reply-30');
+    if (reply30Select) {
+      this.currentFilters.reply_within_30_min = reply30Select.value;
+    }
     const shiftSelect = document.getElementById('reg-shift');
     if (shiftSelect) {
       this.currentFilters.shift = shiftSelect.value;
@@ -1362,6 +1687,7 @@ const App = {
       priority: 'All',
       assigned_handle: 'All',
       picked_status: 'All',
+      reply_within_30_min: 'All',
       shift: 'All',
       data_quality: 'All',
       overdue: '0',
