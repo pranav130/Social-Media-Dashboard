@@ -1220,16 +1220,14 @@ const App = {
       tbody.innerHTML = data.map(c => {
         const isDiscomTagged = c.discom_name && ['PVVNL', 'PUVVNL', 'MVVNL', 'DVVNL', 'KESCO'].includes(c.discom_name.toUpperCase());
         const isAppreciation = c.picked_status === 'APPRECIATION' || c.current_status === 'Appreciation' || c.category_name === 'APPRECIATION';
-        // Permanent recognition of verified UPPCLLKO reply
-        const hasUppclReplied = Boolean(
-          c.uppcl_replied === 1 ||
-          c.uppcl_replied === '1' ||
+        // Strict recognition of genuine UPPCLLKO reply
+        const hasUppclReplied = !isAppreciation && (
           c.reply_within_30_min === 'YES' ||
           Boolean(c.published_reply_id) ||
-          (c.reply_evidence && c.reply_evidence.length > 0)
+          ((c.uppcl_replied === 1 || c.uppcl_replied === '1') && c.reply_within_30_min !== 'NO')
         );
         // Picked = Existing_Valid_Pickup_Event OR UPPCLLKO_Replied
-        const isPicked = !isAppreciation && (hasUppclReplied || c.picked_status === 'YES');
+        const isPicked = !isAppreciation && (hasUppclReplied || (c.picked_status === 'YES' && c.reply_within_30_min !== 'NO'));
 
         let displayStatus = c.current_status;
         let statusSub = '';
@@ -2121,16 +2119,14 @@ const App = {
               ${(() => {
                 const isDiscomTagged = c.discom_name && ['PVVNL', 'PUVVNL', 'MVVNL', 'DVVNL', 'KESCO'].includes(c.discom_name.toUpperCase());
                 const isAppreciation = c.picked_status === 'APPRECIATION' || c.current_status === 'Appreciation' || c.category_name === 'APPRECIATION';
-                // Permanent recognition of verified UPPCLLKO reply
-                const hasUppclReplied = Boolean(
-                  c.uppcl_replied === 1 ||
-                  c.uppcl_replied === '1' ||
+                // Strict recognition of genuine UPPCLLKO reply
+                const hasUppclReplied = !isAppreciation && (
                   c.reply_within_30_min === 'YES' ||
                   Boolean(c.published_reply_id) ||
-                  (c.reply_evidence && c.reply_evidence.length > 0)
+                  ((c.uppcl_replied === 1 || c.uppcl_replied === '1') && c.reply_within_30_min !== 'NO')
                 );
                 // Picked = Existing_Valid_Pickup_Event OR UPPCLLKO_Replied
-                const isPicked = !isAppreciation && (hasUppclReplied || c.picked_status === 'YES');
+                const isPicked = !isAppreciation && (hasUppclReplied || (c.picked_status === 'YES' && c.reply_within_30_min !== 'NO'));
 
                 let displayStatus = c.current_status;
                 let statusSub = '';
@@ -2857,16 +2853,25 @@ const App = {
                     <div class="info-row"><span class="info-label">Monitored Account:</span><span class="info-value">${c.monitored_account || '@UPPCLLKO'}</span></div>
                     <div class="info-row"><span class="info-label">Current Status:</span><span class="info-value"><span class="badge-status badge-${(c.current_status || '').replace(/[\s—/]+/g, '-')}">${c.current_status}</span></span></div>
                     <div class="info-row"><span class="info-label">UPPCLLKO Replied:</span><span class="info-value">${(() => {
-                      const hasReplied = Boolean(c.uppcl_replied === 1 || c.uppcl_replied === '1' || c.reply_within_30_min === 'YES' || Boolean(c.published_reply_id) || (c.reply_evidence && c.reply_evidence.length > 0));
+                      const isApprec = c.picked_status === 'APPRECIATION' || c.current_status === 'Appreciation' || c.category_name === 'APPRECIATION';
+                      const hasReplied = !isApprec && (
+                        c.reply_within_30_min === 'YES' ||
+                        Boolean(c.published_reply_id) ||
+                        ((c.uppcl_replied === 1 || c.uppcl_replied === '1') && c.reply_within_30_min !== 'NO')
+                      );
                       return hasReplied 
                         ? `<b style="color: #059669;"><i class="fa-solid fa-circle-check"></i> YES</b> <small style="color: var(--text-muted);">(Verified historical reply on record${c.first_replied_at ? ` at ${c.first_replied_at}` : ''})</small>`
                         : `<b style="color: #64748b;"><i class="fa-solid fa-circle-xmark"></i> NO</b> <small style="color: var(--text-muted);">(No UPPCLLKO reply on record)</small>`;
                     })()}</span></div>
-                    ${c.reply_evidence ? `<div class="info-row"><span class="info-label">Reply Evidence:</span><span class="info-value" style="font-size: 11px; color: #0284c7;"><i class="fa-solid fa-shield-halved"></i> ${c.reply_evidence}</span></div>` : ''}
+                    ${(c.reply_evidence && c.reply_within_30_min === 'YES') ? `<div class="info-row"><span class="info-label">Reply Evidence:</span><span class="info-value" style="font-size: 11px; color: #0284c7;"><i class="fa-solid fa-shield-halved"></i> ${c.reply_evidence}</span></div>` : ''}
                     <div class="info-row"><span class="info-label">Picked Status:</span><span class="info-value">${(() => {
                       const isApprec = c.picked_status === 'APPRECIATION' || c.current_status === 'Appreciation' || c.category_name === 'APPRECIATION';
-                      const hasReplied = Boolean(c.uppcl_replied === 1 || c.uppcl_replied === '1' || c.reply_within_30_min === 'YES' || Boolean(c.published_reply_id) || (c.reply_evidence && c.reply_evidence.length > 0));
-                      const isPicked = !isApprec && (hasReplied || c.picked_status === 'YES');
+                      const hasReplied = !isApprec && (
+                        c.reply_within_30_min === 'YES' ||
+                        Boolean(c.published_reply_id) ||
+                        ((c.uppcl_replied === 1 || c.uppcl_replied === '1') && c.reply_within_30_min !== 'NO')
+                      );
+                      const isPicked = !isApprec && (hasReplied || (c.picked_status === 'YES' && c.reply_within_30_min !== 'NO'));
                       if (isApprec) return `<b>APPRECIATION</b> <small style="color: var(--text-muted);">(Consumer gratitude post)</small>`;
                       if (isPicked) return `<b style="color: #059669;">YES</b> <small style="color: var(--text-muted);">(${hasReplied ? 'UPPCLLKO replied in post' : 'Picked / Awaiting reply'})</small>`;
                       return `<b style="color: #64748b;">NO</b> <small style="color: var(--text-muted);">(UPPCLLKO not replied)</small>`;

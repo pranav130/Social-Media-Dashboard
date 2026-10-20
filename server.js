@@ -2175,11 +2175,9 @@ function handleDashboardTableExcelExport(req, res) {
 
     // Picked: YES only when UPPCLLKO actually replied in that post
     const isUppclReplied = !isAppreciation && (
-      c.uppcl_replied === 1 ||
       c.reply_within_30_min === 'YES' ||
-      c.reply_within_60_min === 'YES' ||
       Boolean(c.published_reply_id) ||
-      (c.picked_status === 'YES' && c.reply_within_30_min !== 'NO' && c.reply_within_30_min !== '' && c.reply_within_30_min !== '-')
+      ((c.uppcl_replied === 1 || c.uppcl_replied === '1') && c.reply_within_30_min !== 'NO')
     );
     const effectivePicked = isAppreciation ? 'APPRECIATION' : (isUppclReplied ? 'YES' : 'NO');
 
@@ -3334,44 +3332,31 @@ if (process.env.NO_SERVER_AUTOSTART !== 'true') {
     }
 
     // Harmonize Picked Status & Operational Status with permanent reply reality
-    // Critical Rule: Permanent Recognition of Any Verified UPPCLLKO Reply
+    // Critical Rule: Picked: YES / UPPCLLKO Replied ONLY when @UPPCLLKO actually replied!
     try {
       db.run(`
         UPDATE complaints
+        SET uppcl_replied = 0,
+            picked_status = CASE WHEN picked_status = 'APPRECIATION' THEN 'APPRECIATION' ELSE 'NO' END,
+            reply_evidence = NULL
+        WHERE (reply_within_30_min = 'NO' OR reply_within_30_min = '' OR reply_within_30_min IS NULL OR reply_within_30_min = '-')
+          AND (published_reply_id IS NULL OR published_reply_id = '')
+          AND (id NOT IN (SELECT DISTINCT complaint_id FROM x_outgoing_replies WHERE status IN ('Published', 'SENT')));
+
+        UPDATE complaints
         SET uppcl_replied = 1,
             picked_status = 'YES',
-            reply_evidence = COALESCE(reply_evidence, 'Verified UPPCLLKO reply on record')
+            reply_evidence = COALESCE(reply_evidence, 'Verified UPPCLLKO reply within 30 mins')
         WHERE (reply_within_30_min = 'YES')
            OR (published_reply_id IS NOT NULL AND published_reply_id != '')
-           OR (id IN (SELECT DISTINCT complaint_id FROM x_outgoing_replies WHERE status IN ('Published', 'SENT')))
-           OR (reply_within_60_min = 'YES');
+           OR (id IN (SELECT DISTINCT complaint_id FROM x_outgoing_replies WHERE status IN ('Published', 'SENT')));
 
         UPDATE complaints
         SET discom_tagged_in_reply = '@' || UPPER(discom_name) || 'HQ'
-        WHERE (uppcl_replied = 1 OR current_status = 'Assigned to DISCOM')
-          AND discom_name IN ('PVVNL', 'PUVVNL', 'MVVNL', 'DVVNL', 'KESCO')
+        WHERE discom_name IN ('PVVNL', 'PUVVNL', 'MVVNL', 'DVVNL', 'KESCO')
           AND (discom_tagged_in_reply IS NULL OR discom_tagged_in_reply = '');
       `);
 
-      const fixedPicked = db.run(`
-        UPDATE complaints 
-        SET picked_status = 'NO' 
-        WHERE (uppcl_replied = 0 OR uppcl_replied IS NULL)
-          AND picked_status = 'YES' 
-          AND (reply_within_30_min = 'NO' OR reply_within_30_min = '' OR reply_within_30_min IS NULL OR reply_within_30_min = '-') 
-          AND (reply_within_60_min IS NULL OR reply_within_60_min = '' OR reply_within_60_min = 'NO') 
-          AND (published_reply_id IS NULL OR published_reply_id = '');
-      `);
-      const fixedStatus = db.run(`
-        UPDATE complaints 
-        SET current_status = 'New' 
-        WHERE current_status = 'Assigned to DISCOM' 
-          AND (uppcl_replied = 0 OR uppcl_replied IS NULL)
-          AND picked_status = 'NO';
-      `);
-      if ((fixedPicked && fixedPicked.changes > 0) || (fixedStatus && fixedStatus.changes > 0)) {
-        console.log(`[Server] Harmonized ${fixedPicked ? fixedPicked.changes : 0} complaints to Picked: NO and ${fixedStatus ? fixedStatus.changes : 0} to Status: New.`);
-      }
       db.saveToDiskSync();
     } catch (hErr) {
       console.warn('[Server] Picked status harmonization warning:', hErr.message);

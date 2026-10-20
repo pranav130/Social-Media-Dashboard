@@ -1020,18 +1020,23 @@ function processSheetMatrix(headers, data, method, startTime = Date.now()) {
     const existingComp = (linkUrl && existingMap.get(linkUrl)) || (rowTid && existingMap.get(rowTid)) || null;
 
     // Historical reply recognition:
+    // UPPCLLKO verified reply is strictly reply30 === 'YES' or explicit UPPCLLKO reply tweet data
+    // reply60 is DISCOM reply within 60 mins and must NEVER be treated as UPPCLLKO reply!
     const hasIncomingVerifiedReply = (reply30 && reply30.toUpperCase() === 'YES') ||
-                                     (reply60 && reply60.toUpperCase() === 'YES') ||
                                      Boolean(getVal('reply_post_id', 27)) ||
                                      Boolean(getVal('reply_post_url', 28)) ||
                                      Boolean(getVal('reply_posted_at', 29));
 
-    // Permanent status retention: once verified, never revoked!
-    const isHistoricallyReplied = Boolean(existingComp && existingComp.uppcl_replied === 1);
+    // Permanent status retention: only trust historical reply if verified by reply30 or published_reply_id
+    const isHistoricallyReplied = Boolean(
+      existingComp && 
+      existingComp.uppcl_replied === 1 && 
+      (existingComp.reply_within_30_min === 'YES' || Boolean(existingComp.published_reply_id))
+    );
     const uppclReplied = (isHistoricallyReplied || hasIncomingVerifiedReply) ? 1 : 0;
 
-    let replyEvidence = (existingComp && existingComp.reply_evidence) ? existingComp.reply_evidence : null;
-    let firstRepliedAt = (existingComp && existingComp.first_replied_at) ? existingComp.first_replied_at : null;
+    let replyEvidence = (uppclReplied && existingComp && existingComp.reply_evidence) ? existingComp.reply_evidence : null;
+    let firstRepliedAt = (uppclReplied && existingComp && existingComp.first_replied_at) ? existingComp.first_replied_at : null;
 
     if (hasIncomingVerifiedReply) {
       firstRepliedAt = firstRepliedAt || nowIst;
@@ -1069,8 +1074,6 @@ function processSheetMatrix(headers, data, method, startTime = Date.now()) {
         normalizedPickedStatus = 'APPRECIATION';
       }
     } else if (uppclReplied === 1) {
-      normalizedPickedStatus = 'YES';
-    } else if (existingComp && existingComp.picked_status === 'YES') {
       normalizedPickedStatus = 'YES';
     } else {
       normalizedPickedStatus = 'NO';
@@ -1172,36 +1175,29 @@ function processSheetMatrix(headers, data, method, startTime = Date.now()) {
   // 2) DISCOM replied before UPPCLLKO (reply_within_60_min is set and reply_within_30_min is not)
   // 3) Marked in frivolous_complaints
   db.run(`
-    -- Critical Rule: Permanent Recognition of Any Verified UPPCLLKO Reply
+    -- Critical Rule: Authoritative UPPCLLKO Reply Recognition
+    -- 1. Reset unreplied complaints FIRST:
+    UPDATE complaints
+    SET uppcl_replied = 0,
+        picked_status = CASE WHEN picked_status = 'APPRECIATION' THEN 'APPRECIATION' ELSE 'NO' END,
+        reply_evidence = NULL
+    WHERE (reply_within_30_min = 'NO' OR reply_within_30_min = '' OR reply_within_30_min IS NULL OR reply_within_30_min = '-')
+      AND (published_reply_id IS NULL OR published_reply_id = '')
+      AND (id NOT IN (SELECT DISTINCT complaint_id FROM x_outgoing_replies WHERE status IN ('Published', 'SENT')));
+
+    -- 2. Authoritative verified reply: ONLY when UPPCLLKO actually replied!
     UPDATE complaints
     SET uppcl_replied = 1,
         picked_status = 'YES',
-        reply_evidence = COALESCE(reply_evidence, 'Verified UPPCLLKO reply on record')
+        reply_evidence = COALESCE(reply_evidence, 'Verified UPPCLLKO reply within 30 mins')
     WHERE (reply_within_30_min = 'YES')
        OR (published_reply_id IS NOT NULL AND published_reply_id != '')
-       OR (id IN (SELECT DISTINCT complaint_id FROM x_outgoing_replies WHERE status IN ('Published', 'SENT')))
-       OR (reply_within_60_min = 'YES');
+       OR (id IN (SELECT DISTINCT complaint_id FROM x_outgoing_replies WHERE status IN ('Published', 'SENT')));
 
     UPDATE complaints
     SET discom_tagged_in_reply = '@' || UPPER(discom_name) || 'HQ'
-    WHERE (uppcl_replied = 1 OR current_status = 'Assigned to DISCOM')
-      AND discom_name IN ('PVVNL', 'PUVVNL', 'MVVNL', 'DVVNL', 'KESCO')
+    WHERE discom_name IN ('PVVNL', 'PUVVNL', 'MVVNL', 'DVVNL', 'KESCO')
       AND (discom_tagged_in_reply IS NULL OR discom_tagged_in_reply = '');
-
-    -- Only reset unverified complaints that have NO verified reply
-    UPDATE complaints 
-    SET picked_status = 'NO' 
-    WHERE (uppcl_replied = 0 OR uppcl_replied IS NULL)
-      AND picked_status = 'YES'
-      AND (reply_within_30_min = 'NO' OR reply_within_30_min = '' OR reply_within_30_min IS NULL OR reply_within_30_min = '-') 
-      AND (reply_within_60_min IS NULL OR reply_within_60_min = '' OR reply_within_60_min = 'NO') 
-      AND (published_reply_id IS NULL OR published_reply_id = '');
-
-    UPDATE complaints 
-    SET current_status = 'New' 
-    WHERE current_status = 'Assigned to DISCOM' 
-      AND (uppcl_replied = 0 OR uppcl_replied IS NULL)
-      AND picked_status = 'NO';
 
     DELETE FROM complaints 
     WHERE (forwarding_remarks IS NOT NULL AND LOWER(forwarding_remarks) LIKE '%delete%')

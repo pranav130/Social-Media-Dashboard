@@ -451,33 +451,36 @@ function createSchema() {
   tryAddColumn('complaints', 'discom_tagged_in_reply TEXT');
 
   try {
-    // Critical Rule: Permanent Recognition of Any Verified UPPCLLKO Reply
+    // Critical Rule: Authoritative UPPCLLKO Reply Recognition
+    // 1. Any complaint where UPPCLLKO never replied MUST be Picked: NO and uppcl_replied = 0.
+    // If reply_within_30_min is NO or empty, and no published reply exists, UPPCLLKO did NOT reply.
+    // (DISCOM reply in reply_within_60_min does NOT constitute a reply by UPPCLLKO).
+    dbInstance.run(`
+      UPDATE complaints
+      SET uppcl_replied = 0,
+          picked_status = CASE WHEN picked_status = 'APPRECIATION' THEN 'APPRECIATION' ELSE 'NO' END,
+          reply_evidence = NULL
+      WHERE (reply_within_30_min = 'NO' OR reply_within_30_min = '' OR reply_within_30_min IS NULL OR reply_within_30_min = '-')
+        AND (published_reply_id IS NULL OR published_reply_id = '')
+        AND (id NOT IN (SELECT DISTINCT complaint_id FROM x_outgoing_replies WHERE status IN ('Published', 'SENT')));
+    `);
+
+    // 2. Authoritative verified reply: ONLY when UPPCLLKO actually replied!
     dbInstance.run(`
       UPDATE complaints
       SET uppcl_replied = 1,
           picked_status = 'YES',
-          reply_evidence = COALESCE(reply_evidence, 'Verified UPPCLLKO reply on record')
+          reply_evidence = COALESCE(reply_evidence, 'Verified UPPCLLKO reply within 30 mins')
       WHERE (reply_within_30_min = 'YES')
          OR (published_reply_id IS NOT NULL AND published_reply_id != '')
-         OR (id IN (SELECT DISTINCT complaint_id FROM x_outgoing_replies WHERE status IN ('Published', 'SENT')))
-         OR (reply_within_60_min = 'YES');
+         OR (id IN (SELECT DISTINCT complaint_id FROM x_outgoing_replies WHERE status IN ('Published', 'SENT')));
     `);
 
     dbInstance.run(`
       UPDATE complaints
       SET discom_tagged_in_reply = '@' || UPPER(discom_name) || 'HQ'
-      WHERE (uppcl_replied = 1 OR current_status = 'Assigned to DISCOM')
-        AND discom_name IN ('PVVNL', 'PUVVNL', 'MVVNL', 'DVVNL', 'KESCO')
+      WHERE discom_name IN ('PVVNL', 'PUVVNL', 'MVVNL', 'DVVNL', 'KESCO')
         AND (discom_tagged_in_reply IS NULL OR discom_tagged_in_reply = '');
-    `);
-
-    dbInstance.run(`
-      UPDATE complaints
-      SET uppcl_replied = 0,
-          picked_status = 'NO'
-      WHERE (uppcl_replied = 0 OR uppcl_replied IS NULL)
-        AND (picked_status IS NULL OR picked_status = '' OR picked_status = 'NO' OR (picked_status = 'YES' AND (reply_within_30_min = 'NO' OR reply_within_30_min = '' OR reply_within_30_min IS NULL) AND (published_reply_id IS NULL OR published_reply_id = '')))
-        AND (picked_status != 'APPRECIATION');
     `);
   } catch (mErr) {
     console.warn('Reply evidence migration warning:', mErr.message);

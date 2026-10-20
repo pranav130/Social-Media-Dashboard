@@ -567,6 +567,50 @@ async function runTests() {
     assert.ok(rows.length > 0);
   });
 
+    console.log('\n[17. Picked Status & UPPCLLKO Reply Integrity]');
+
+  it('Complaints where UPPCLLKO never replied have uppcl_replied = 0 and picked_status = NO', () => {
+    const unreplied = db.get(`
+      SELECT COUNT(*) as cnt 
+      FROM complaints 
+      WHERE (reply_within_30_min = 'NO' OR reply_within_30_min = '' OR reply_within_30_min IS NULL OR reply_within_30_min = '-')
+        AND (published_reply_id IS NULL OR published_reply_id = '')
+        AND uppcl_replied = 1;
+    `);
+    assert.strictEqual(unreplied.cnt, 0, 'No unreplied complaint should have uppcl_replied = 1');
+
+    const falsePicked = db.get(`
+      SELECT COUNT(*) as cnt 
+      FROM complaints 
+      WHERE (reply_within_30_min = 'NO' OR reply_within_30_min = '' OR reply_within_30_min IS NULL OR reply_within_30_min = '-')
+        AND (published_reply_id IS NULL OR published_reply_id = '')
+        AND picked_status = 'YES';
+    `);
+    assert.strictEqual(falsePicked.cnt, 0, 'No unreplied complaint should have picked_status = YES');
+  });
+
+  it('Complaints with reply_within_30_min = YES have uppcl_replied = 1 and picked_status = YES', () => {
+    const replied = db.get(`
+      SELECT COUNT(*) as total_yes,
+             SUM(CASE WHEN uppcl_replied = 1 THEN 1 ELSE 0 END) as uppcl_replied_cnt,
+             SUM(CASE WHEN picked_status = 'YES' THEN 1 ELSE 0 END) as picked_yes_cnt
+      FROM complaints 
+      WHERE reply_within_30_min = 'YES';
+    `);
+    assert.ok(replied.total_yes > 0, 'There should be complaints with reply_within_30_min = YES');
+    assert.strictEqual(replied.uppcl_replied_cnt, replied.total_yes, 'All reply_within_30_min = YES must have uppcl_replied = 1');
+    assert.strictEqual(replied.picked_yes_cnt, replied.total_yes, 'All reply_within_30_min = YES must have picked_status = YES');
+  });
+
+  it('Specific consumer post @qowi23 (UPPCL-SMC-202610-1635) is authoritatively Picked: NO', () => {
+    const qowi = db.get("SELECT * FROM complaints WHERE complaint_no = 'UPPCL-SMC-202610-1635' OR post_url LIKE '%2112543129006170200%';");
+    assert.ok(qowi, 'Complaint for @qowi23 should exist');
+    assert.strictEqual(qowi.reply_within_30_min, 'NO');
+    assert.strictEqual(qowi.uppcl_replied, 0, '@qowi23 complaint must have uppcl_replied = 0');
+    assert.strictEqual(qowi.picked_status, 'NO', '@qowi23 complaint must have picked_status = NO');
+    assert.strictEqual(qowi.reply_evidence, null, '@qowi23 complaint must have null reply_evidence');
+  });
+
   console.log('\n====================================================');
   console.log(` Tests Finished: ${passCount} Passed, ${failCount} Failed`);
   console.log('====================================================\n');
