@@ -1197,16 +1197,33 @@ const App = {
             </div>
           `;
         } else if (c.reply_within_30_min === 'NO') {
-          reply30Cell = `
-            <div style="font-weight: 600; font-size: 11px;">
-              <span class="badge-30m-no" title="Complaints: 30-Min First Reply — Time difference between post time and UPPCLLKO replied time ≥ 30 Mins">
-                NO
-              </span>
-            </div>
-            <div style="font-size: 10px; color: var(--text-muted); margin-top: 2px; font-weight: 500;">
-              &ge; 30 Mins
-            </div>
-          `;
+          // Only show breach if post is actually older than 30 minutes
+          const receivedMs = c.received_at ? new Date(c.received_at).getTime() : 0;
+          const elapsedMins = receivedMs ? (Date.now() - receivedMs) / 60000 : 999;
+          if (elapsedMins < 30) {
+            const minsLeft = Math.max(0, Math.ceil(30 - elapsedMins));
+            reply30Cell = `
+              <div style="font-weight: 700; font-size: 11px;">
+                <span class="badge-30m-pending" title="SLA window still open — ${minsLeft} min(s) remaining">
+                  <i class="fa-solid fa-hourglass-half"></i> In Window
+                </span>
+              </div>
+              <div style="font-size: 10px; color: #d97706; margin-top: 2px; font-weight: 600;">
+                &lt; ${minsLeft}m left
+              </div>
+            `;
+          } else {
+            reply30Cell = `
+              <div style="font-weight: 600; font-size: 11px;">
+                <span class="badge-30m-no" title="Complaints: 30-Min First Reply — Time difference between post time and UPPCLLKO replied time ≥ 30 Mins">
+                  NO
+                </span>
+              </div>
+              <div style="font-size: 10px; color: var(--text-muted); margin-top: 2px; font-weight: 500;">
+                &ge; 30 Mins
+              </div>
+            `;
+          }
         }
 
         let postHref = (c.post_url && c.post_url.startsWith('http'))
@@ -1227,13 +1244,6 @@ const App = {
                   <span class="badge-sheet-row" title="Authoritative Google Sheet Row index">Row #${c.sheet_row_index}</span>
                 </div>
               ` : ''}
-              ${postHref ? `
-                <div style="margin-top: 3px;">
-                  <a href="${postHref}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation();" style="color: #1155cc; font-size: 11px; font-weight: 600; text-decoration: underline;" title="Open source post on X">
-                    <i class="fa-solid fa-arrow-up-right-from-square" style="font-size: 9px;"></i> Post Link
-                  </a>
-                </div>
-              ` : ''}
             </td>
             <td>
               <div style="font-weight: 600;">${c.received_at.substring(0, 10)}</div>
@@ -1242,6 +1252,13 @@ const App = {
             <td>
               <div style="font-weight: 600;">${c.consumer_name || 'Consumer'}</div>
               ${c.consumer_handle ? `<div style="font-size: 11px; color: var(--text-muted);">${c.consumer_handle}</div>` : ''}
+              ${postHref ? `
+                <div style="margin-top: 4px;">
+                  <a href="${postHref}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation();" class="open-post-btn" title="Open source post on X">
+                    <i class="fa-brands fa-x-twitter"></i> Open Post <i class="fa-solid fa-arrow-up-right-from-square" style="font-size: 9px;"></i>
+                  </a>
+                </div>
+              ` : ''}
             </td>
             <td style="max-width: 260px;">
               <div style="font-weight: 600; color: var(--primary); font-size: 12px;">${c.category_name}</div>
@@ -1251,7 +1268,7 @@ const App = {
             </td>
             <td>
               <div style="font-weight: 700;">${c.discom_name}</div>
-              <div style="font-size: 11px; color: var(--text-muted);">${c.district_name || 'HQ'}</div>
+              <div style="font-size: 11px; color: var(--text-muted);">${c.district_name || `${c.discom_name} HQ`}</div>
             </td>
             <td>
               ${pickedCell}
@@ -1945,13 +1962,6 @@ const App = {
                   <span class="badge-sheet-row" title="Authoritative Google Sheet Row index">Row #${c.sheet_row_index}</span>
                 </div>
               ` : ''}
-              ${postHref ? `
-                <div style="margin-top: 4px;">
-                  <a href="${postHref}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation();" class="blue-post-link" style="color: #1155cc; font-size: 11px; font-weight: 600; text-decoration: underline;" title="Open source post on X/web">
-                    <i class="fa-solid fa-arrow-up-right-from-square" style="font-size: 10px;"></i> Post Link
-                  </a>
-                </div>
-              ` : ''}
             </td>
             <td>
               <div style="font-weight: 600;">${c.received_at.substring(0, 10)}</div>
@@ -1972,9 +1982,9 @@ const App = {
               <div style="font-weight: 600;">${c.consumer_name || 'Consumer'}</div>
               ${c.consumer_handle ? `<div style="font-size: 11px; color: var(--text-muted);">${c.consumer_handle}</div>` : ''}
               ${postHref ? `
-                <div style="margin-top: 3px;">
-                  <a href="${postHref}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation();" class="blue-post-link" style="color: #1155cc; font-size: 11px; font-weight: 600; text-decoration: underline;" title="Open source post on X/web">
-                    <i class="fa-solid fa-arrow-up-right-from-square" style="font-size: 10px;"></i> View Post
+                <div style="margin-top: 4px;">
+                  <a href="${postHref}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation();" class="open-post-btn" title="Open source post on X">
+                    <i class="fa-brands fa-x-twitter"></i> Open Post <i class="fa-solid fa-arrow-up-right-from-square" style="font-size: 9px;"></i>
                   </a>
                 </div>
               ` : ''}
@@ -1987,7 +1997,7 @@ const App = {
             </td>
             <td>
               <div style="font-weight: 700;">${c.discom_name}</div>
-              <div style="font-size: 11px; color: var(--text-muted);">${c.district_name || 'HQ'}</div>
+              <div style="font-size: 11px; color: var(--text-muted);">${c.district_name || `${c.discom_name} HQ`}</div>
             </td>
             <td>
               <span class="badge-prio ${prioBadgeClass}">${c.priority}</span>
