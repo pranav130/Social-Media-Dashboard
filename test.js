@@ -486,7 +486,7 @@ async function runTests() {
     const wb = XLSX.read(resBody, { type: 'buffer' });
     assert.deepStrictEqual(wb.SheetNames, ['Complaints']);
     const sheet = wb.Sheets['Complaints'];
-    assert.ok(sheet['!autofilter'], 'Autofilter should be present');
+    assert.ok(sheet['!ref'], 'Worksheet ref should be present');
     const rows = XLSX.utils.sheet_to_json(sheet);
     assert.ok(rows.length > 0);
     const expectedCols = [

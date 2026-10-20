@@ -1958,8 +1958,11 @@ app.get('/api/reports/export', authMiddleware, (req, res) => {
 function sanitizeForExcel(val) {
   if (val === null || val === undefined) return '';
   const str = String(val);
-  // Protect against spreadsheet formula injection (=, +, -, @, tabs, carriage returns)
-  if (/^[=\+\-@\t\r]/.test(str)) {
+  // Protect against spreadsheet formula injection (=, +, @, and leading - if not just a dash/number)
+  if (/^[=\+@]/.test(str)) {
+    return "'" + str;
+  }
+  if (str.startsWith('-') && str !== '-' && str !== '--' && !/^-\d+$/.test(str)) {
     return "'" + str;
   }
   return str;
@@ -2199,7 +2202,7 @@ function handleDashboardTableExcelExport(req, res) {
         const minsLeft = Math.max(0, Math.ceil(30 - elapsedMins));
         reply30Text = `In Window (< ${minsLeft}m left)`;
       } else {
-        reply30Text = 'NO (≥ 30 Mins)';
+        reply30Text = 'NO (>= 30 Mins)';
       }
     }
 
@@ -2247,7 +2250,6 @@ function handleDashboardTableExcelExport(req, res) {
   });
 
   const ws = XLSX.utils.json_to_sheet(exportRows);
-  ws['!autofilter'] = { ref: ws['!ref'] };
   ws['!cols'] = [
     { wch: 28 }, // Complaint #
     { wch: 14 }, // Sheet Row #
@@ -2263,20 +2265,6 @@ function handleDashboardTableExcelExport(req, res) {
     { wch: 34 }, // Status
     { wch: 45 }  // Original Post URL
   ];
-
-  // Set explicit string cell types and styling
-  const range = XLSX.utils.decode_range(ws['!ref']);
-  for (let R = range.s.r; R <= range.e.r; ++R) {
-    for (let C = range.s.c; C <= range.e.c; ++C) {
-      const cellRef = XLSX.utils.encode_cell({ c: C, r: R });
-      if (!ws[cellRef]) continue;
-      if (R === 0) {
-        ws[cellRef].s = { font: { bold: true } };
-      } else {
-        ws[cellRef].t = 's';
-      }
-    }
-  }
 
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Complaints');
