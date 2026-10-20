@@ -847,7 +847,7 @@ const App = {
 
         <div class="chart-card">
           <div class="chart-header">
-            <div class="chart-title"><i class="fa-solid fa-map-location-dot"></i> Top 10 High Grievance Districts</div>
+            <div class="chart-title"><i class="fa-solid fa-map-location-dot"></i> Top 10 High Grievance</div>
           </div>
           <div class="chart-body"><canvas id="chart-districts"></canvas></div>
         </div>
@@ -1378,12 +1378,43 @@ const App = {
       });
     }
 
-    // Chart 5: Districts Top 10
+    // Chart 5: Top 10 High Grievance (6 Apex/DISCOMs + Top 4 Districts)
     const ctxDist = document.getElementById('chart-districts');
     if (ctxDist) {
       if (this.charts.districts) this.charts.districts.destroy();
-      const labels = c.districts.map(d => `${d.district_name} (${d.discom_name})`);
-      const counts = c.districts.map(d => d.count);
+      
+      let items = c.districts || [];
+      // Dynamic fallback assembler in case of legacy API payload
+      const apexNames = ['UPPCL', 'MVVNL', 'DVVNL', 'PVVNL', 'PUVVNL', 'KESCO'];
+      const hasApex = items.some(d => apexNames.includes((d.label || d.discom_name || '').toUpperCase()) && d.is_discom);
+      if (!hasApex && c.discoms) {
+        const discomMap = {};
+        (c.discoms || []).forEach(d => {
+          if (d.discom_name) discomMap[d.discom_name.toUpperCase()] = d.total || d.count || 0;
+        });
+        const apexList = [
+          { label: 'UPPCL', discom_name: 'UPPCL', count: discomMap['UPPCL'] || 0, is_discom: true },
+          { label: 'MVVNL', discom_name: 'MVVNL', count: discomMap['MVVNL'] || 0, is_discom: true },
+          { label: 'DVVNL', discom_name: 'DVVNL', count: discomMap['DVVNL'] || 0, is_discom: true },
+          { label: 'PVVNL', discom_name: 'PVVNL', count: discomMap['PVVNL'] || 0, is_discom: true },
+          { label: 'PuVVNL', discom_name: 'PuVVNL', count: discomMap['PUVVNL'] || 0, is_discom: true },
+          { label: 'KESCO', discom_name: 'KESCo', count: (discomMap['KESCO'] || 0), is_discom: true }
+        ];
+        const validDists = items
+          .filter(d => d.district_name && d.district_name.trim() !== '' && !['none', 'null', 'unknown', 'n/a', 'other', 'unassigned'].includes(d.district_name.trim().toLowerCase()))
+          .slice(0, 4)
+          .map(d => ({
+            label: `${d.district_name} (${d.discom_name || ''})`.replace(' ()', ''),
+            discom_name: d.discom_name,
+            district_name: d.district_name,
+            count: d.count,
+            is_discom: false
+          }));
+        items = apexList.concat(validDists);
+      }
+
+      const labels = items.map(d => d.label || (d.is_discom ? d.discom_name : `${d.district_name} (${d.discom_name})`));
+      const counts = items.map(d => d.count);
 
       this.charts.districts = new Chart(ctxDist, {
         type: 'bar',
@@ -1403,8 +1434,14 @@ const App = {
           onClick: (e, els, chart) => {
             if (els && els.length > 0) {
               const raw = chart.data.labels[els[0].index];
-              const dist = raw.split(' (')[0].trim();
-              if (dist && dist !== 'None') App.navigate('register', { district: dist });
+              const apexMatch = ['UPPCL', 'MVVNL', 'DVVNL', 'PVVNL', 'PUVVNL', 'KESCO'];
+              if (apexMatch.includes(raw.toUpperCase())) {
+                const targetDiscom = raw.toUpperCase() === 'KESCO' ? 'KESCo' : (raw.toUpperCase() === 'PUVVNL' ? 'PuVVNL' : raw);
+                App.navigate('register', { discom: targetDiscom });
+              } else {
+                const dist = raw.split(' (')[0].trim();
+                if (dist && dist !== 'None') App.navigate('register', { district: dist });
+              }
             }
           }
         }

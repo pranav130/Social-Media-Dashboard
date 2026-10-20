@@ -1560,15 +1560,48 @@ app.get('/api/dashboard/charts', authMiddleware, (req, res) => {
     ORDER BY count DESC;
   `, params);
 
-  // 6. District Top 10
-  const districtRows = db.query(`
+  // 6. Top 10 High Grievance: 6 Apex entities/DISCOMs (UPPCL, MVVNL, DVVNL, PVVNL, PuVVNL, KESCO) + Top 4 Districts
+  const discomCountMap = {};
+  discomRows.forEach(r => {
+    if (r.discom_name) {
+      discomCountMap[r.discom_name.toUpperCase()] = r.total;
+    }
+  });
+
+  const apexEntities = [
+    { label: 'UPPCL', discom_name: 'UPPCL', district_name: '', count: discomCountMap['UPPCL'] || 0, is_discom: true },
+    { label: 'MVVNL', discom_name: 'MVVNL', district_name: '', count: discomCountMap['MVVNL'] || 0, is_discom: true },
+    { label: 'DVVNL', discom_name: 'DVVNL', district_name: '', count: discomCountMap['DVVNL'] || 0, is_discom: true },
+    { label: 'PVVNL', discom_name: 'PVVNL', district_name: '', count: discomCountMap['PVVNL'] || 0, is_discom: true },
+    { label: 'PuVVNL', discom_name: 'PuVVNL', district_name: '', count: discomCountMap['PUVVNL'] || 0, is_discom: true },
+    { label: 'KESCO', discom_name: 'KESCo', district_name: '', count: (discomCountMap['KESCO'] || 0), is_discom: true }
+  ];
+
+  const districtWhere = whereClauses.concat([
+    "district_name IS NOT NULL",
+    "TRIM(district_name) != ''",
+    "LOWER(TRIM(district_name)) NOT IN ('none', 'null', 'unknown', 'n/a', 'other', 'unassigned')"
+  ]);
+  const districtWhereSql = `WHERE ${districtWhere.join(' AND ')}`;
+
+  const topDistrictRows = db.query(`
     SELECT district_name, discom_name, COUNT(*) as count
     FROM complaints
-    ${whereSql}
+    ${districtWhereSql}
     GROUP BY district_name, discom_name
     ORDER BY count DESC
-    LIMIT 10;
+    LIMIT 4;
   `, params);
+
+  const topDistrictsFormatted = topDistrictRows.map(d => ({
+    label: `${d.district_name} (${d.discom_name || ''})`.replace(' ()', ''),
+    discom_name: d.discom_name || '',
+    district_name: d.district_name,
+    count: d.count,
+    is_discom: false
+  }));
+
+  const districtRows = apexEntities.concat(topDistrictsFormatted);
 
   // 7. Operational Status Distribution
   const statusRows = db.query(`
