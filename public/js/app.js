@@ -399,7 +399,7 @@ const App = {
     // Update all theme buttons in the UI
     document.querySelectorAll('.theme-toggle-btn').forEach(btn => {
       let icon = 'fa-cloud';
-      let color = '#38bdf8';
+      let color = '#94a3b8';
       let label = 'Midnight';
       let title = 'Theme: Midnight (Click for Light Mode)';
 
@@ -415,7 +415,7 @@ const App = {
         title = 'Theme: Dark Mode (Click for Midnight Theme)';
       } else {
         icon = 'fa-cloud';
-        color = '#38bdf8';
+        color = '#94a3b8';
         label = 'Midnight';
         title = 'Theme: Midnight (Click for Light Mode)';
       }
@@ -705,7 +705,7 @@ const App = {
 
               <!-- Theme Toggle Button -->
               <button class="theme-toggle-btn" onclick="App.toggleTheme()" title="${this.theme === 'midnight' ? 'Theme: Midnight (Click for Light Mode)' : (this.theme === 'light' ? 'Theme: Light Mode (Click for Dark Mode)' : 'Theme: Dark Mode (Click for Midnight Theme'))}" aria-label="Toggle Theme">
-                <i class="fa-solid ${this.theme === 'midnight' ? 'fa-cloud' : (this.theme === 'light' ? 'fa-sun' : 'fa-moon')}" style="${this.theme === 'midnight' ? 'color: #38bdf8;' : (this.theme === 'light' ? 'color: #f59e0b;' : 'color: #6366f1;')}"></i>
+                <i class="fa-solid ${this.theme === 'midnight' ? 'fa-cloud' : (this.theme === 'light' ? 'fa-sun' : 'fa-moon')}" style="${this.theme === 'midnight' ? 'color: #94a3b8;' : (this.theme === 'light' ? 'color: #f59e0b;' : 'color: #6366f1;')}"></i>
                 <span class="theme-label">${this.theme === 'midnight' ? 'Midnight' : (this.theme === 'light' ? 'Light Mode' : 'Dark Mode')}</span>
               </button>
 
@@ -4425,7 +4425,7 @@ const App = {
             <i class="fa-solid fa-sun" style="color: #f59e0b;"></i> Light Mode (Default)
           </button>
           <button type="button" class="btn ${this.theme === 'midnight' ? 'btn-primary' : 'btn-secondary'}" onclick="App.setTheme('midnight', true); App.renderSettings(document.getElementById('page-content'))">
-            <i class="fa-solid fa-cloud" style="color: #38bdf8;"></i> Midnight Theme
+            <i class="fa-solid fa-cloud" style="color: #94a3b8;"></i> Midnight Theme
           </button>
           <button type="button" class="btn ${this.theme === 'dark' ? 'btn-primary' : 'btn-secondary'}" onclick="App.setTheme('dark', true); App.renderSettings(document.getElementById('page-content'))">
             <i class="fa-solid fa-moon" style="color: #6366f1;"></i> Dark Mode
@@ -5249,7 +5249,7 @@ const App = {
       <div class="login-wrapper">
         <div class="login-theme-bar">
           <button class="theme-toggle-btn" onclick="App.toggleTheme()" title="${this.theme === 'midnight' ? 'Theme: Midnight (Click for Light Mode)' : (this.theme === 'light' ? 'Theme: Light Mode (Click for Dark Mode)' : 'Theme: Dark Mode (Click for Midnight Theme'))}" aria-label="Toggle Theme">
-            <i class="fa-solid ${this.theme === 'midnight' ? 'fa-cloud' : (this.theme === 'light' ? 'fa-sun' : 'fa-moon')}" style="${this.theme === 'midnight' ? 'color: #38bdf8;' : (this.theme === 'light' ? 'color: #f59e0b;' : 'color: #6366f1;')}"></i>
+            <i class="fa-solid ${this.theme === 'midnight' ? 'fa-cloud' : (this.theme === 'light' ? 'fa-sun' : 'fa-moon')}" style="${this.theme === 'midnight' ? 'color: #94a3b8;' : (this.theme === 'light' ? 'color: #f59e0b;' : 'color: #6366f1;')}"></i>
             <span class="theme-label">${this.theme === 'midnight' ? 'Midnight' : (this.theme === 'light' ? 'Light Mode' : 'Dark Mode')}</span>
           </button>
         </div>
