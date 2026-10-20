@@ -490,8 +490,24 @@ app.get('/api/complaints', authMiddleware, (req, res) => {
   // Google Sheets Specific Filters
   const picked_status = req.query.picked_status;
   if (picked_status && picked_status !== 'All') {
-    whereClauses.push('picked_status = ?');
-    params.push(picked_status.toUpperCase());
+    const ps = picked_status.toUpperCase();
+    if (ps === 'YES') {
+      whereClauses.push("(picked_status = 'YES' OR uppcl_replied = 1)");
+    } else if (ps === 'NO') {
+      whereClauses.push("(picked_status = 'NO' AND (uppcl_replied = 0 OR uppcl_replied IS NULL))");
+    } else {
+      whereClauses.push('picked_status = ?');
+      params.push(ps);
+    }
+  }
+
+  const uppcl_replied = req.query.uppcl_replied;
+  if (uppcl_replied !== undefined && uppcl_replied !== 'All' && uppcl_replied !== '') {
+    if (uppcl_replied === '1' || uppcl_replied === 'true' || uppcl_replied.toString().toUpperCase() === 'YES') {
+      whereClauses.push('uppcl_replied = 1');
+    } else if (uppcl_replied === '0' || uppcl_replied === 'false' || uppcl_replied.toString().toUpperCase() === 'NO') {
+      whereClauses.push('(uppcl_replied = 0 OR uppcl_replied IS NULL)');
+    }
   }
 
   const reply_within_30_min = req.query.reply_within_30_min;
@@ -1426,13 +1442,27 @@ app.get('/api/dashboard/kpis', authMiddleware, (req, res) => {
   const resolvedRate = total > 0 ? (((closedCount + resolvedPendingVerification) / total) * 100).toFixed(1) : 0;
 
   // Google Sheets Specific KPI aggregations
-  const pickedRows = db.query(`SELECT picked_status, COUNT(*) as c FROM complaints ${whereSql} GROUP BY picked_status;`, params);
+  // Authoritative logic: Picked = Existing_Valid_Pickup_Event OR UPPCLLKO_Replied
+  const pickedRows = db.query(`
+    SELECT 
+      CASE 
+        WHEN picked_status = 'APPRECIATION' THEN 'APPRECIATION'
+        WHEN picked_status = 'YES' OR uppcl_replied = 1 THEN 'YES'
+        ELSE 'NO'
+      END as effective_picked,
+      COUNT(*) as c 
+    FROM complaints ${whereSql} 
+    GROUP BY effective_picked;
+  `, params);
   let pickedYes = 0, pickedNo = 0, pickedAppreciation = 0;
   for (const r of pickedRows) {
-    if (r.picked_status === 'YES') pickedYes = r.c;
-    else if (r.picked_status === 'NO') pickedNo = r.c;
-    else if (r.picked_status === 'APPRECIATION') pickedAppreciation = r.c;
+    if (r.effective_picked === 'YES') pickedYes = r.c;
+    else if (r.effective_picked === 'NO') pickedNo = r.c;
+    else if (r.effective_picked === 'APPRECIATION') pickedAppreciation = r.c;
   }
+
+  const uppclRepliedRow = db.get(`SELECT COUNT(*) as c FROM complaints ${whereSql ? (whereSql + " AND uppcl_replied = 1") : "WHERE uppcl_replied = 1"}`, params);
+  const uppclRepliedCount = uppclRepliedRow ? uppclRepliedRow.c : 0;
 
   const reply30Row = db.get(`SELECT COUNT(*) as c FROM complaints ${whereSql ? (whereSql + " AND reply_within_30_min = 'YES'") : "WHERE reply_within_30_min = 'YES'"}`, params);
   const replyWithin30MinCount = reply30Row ? reply30Row.c : 0;
@@ -1460,6 +1490,7 @@ app.get('/api/dashboard/kpis', authMiddleware, (req, res) => {
     pickedYes,
     pickedNo,
     pickedAppreciation,
+    uppclRepliedCount,
     replyWithin30MinCount,
     replyWithin30MinRate,
     dataQualityIssues,
@@ -1623,7 +1654,13 @@ app.get('/api/dashboard/charts', authMiddleware, (req, res) => {
 
   // 9. Picked Status Distribution (YES, NO, APPRECIATION)
   const pickedRows = db.query(`
-    SELECT COALESCE(NULLIF(picked_status, ''), 'YES') as status, COUNT(*) as count
+    SELECT 
+      CASE 
+        WHEN picked_status = 'APPRECIATION' THEN 'APPRECIATION'
+        WHEN picked_status = 'YES' OR uppcl_replied = 1 THEN 'YES'
+        ELSE 'NO'
+      END as status,
+      COUNT(*) as count
     FROM complaints
     ${whereSql}
     GROUP BY status
@@ -2018,8 +2055,9 @@ app.get('/api/reports/analytics', authMiddleware, (req, res) => {
         SUM(CASE WHEN current_status = 'Closed' THEN 1 ELSE 0 END) as closed,
         SUM(CASE WHEN current_status IN ('Forwarded', 'Assigned to DISCOM', 'DISCOM Follow Up', 'Escalated') THEN 1 ELSE 0 END) as pending,
         SUM(CASE WHEN current_status = 'Resolved — Verification Pending' THEN 1 ELSE 0 END) as verification_pending,
-        SUM(CASE WHEN picked_status = 'YES' THEN 1 ELSE 0 END) as picked_yes,
+        SUM(CASE WHEN (picked_status = 'YES' OR uppcl_replied = 1) AND picked_status != 'APPRECIATION' THEN 1 ELSE 0 END) as picked_yes,
         SUM(CASE WHEN picked_status = 'APPRECIATION' THEN 1 ELSE 0 END) as appreciation,
+        SUM(CASE WHEN uppcl_replied = 1 THEN 1 ELSE 0 END) as uppcl_replied,
         ROUND((SUM(CASE WHEN current_status = 'Closed' THEN 1 ELSE 0 END) * 100.0 / MAX(COUNT(*), 1)), 1) as resolution_pct
       FROM complaints ${whereSql}
       GROUP BY discom_name ORDER BY total DESC;
@@ -2959,12 +2997,31 @@ if (process.env.NO_SERVER_AUTOSTART !== 'true') {
       console.warn('[Server] Phantom purge warning:', phErr.message);
     }
 
-    // Harmonize Picked Status & Operational Status with reply reality
+    // Harmonize Picked Status & Operational Status with permanent reply reality
+    // Critical Rule: Permanent Recognition of Any Verified UPPCLLKO Reply
     try {
+      db.run(`
+        UPDATE complaints
+        SET uppcl_replied = 1,
+            picked_status = 'YES',
+            reply_evidence = COALESCE(reply_evidence, 'Verified UPPCLLKO reply on record')
+        WHERE (reply_within_30_min = 'YES')
+           OR (published_reply_id IS NOT NULL AND published_reply_id != '')
+           OR (id IN (SELECT DISTINCT complaint_id FROM x_outgoing_replies WHERE status IN ('Published', 'SENT')))
+           OR (reply_within_60_min = 'YES');
+
+        UPDATE complaints
+        SET discom_tagged_in_reply = '@' || UPPER(discom_name) || 'HQ'
+        WHERE (uppcl_replied = 1 OR current_status = 'Assigned to DISCOM')
+          AND discom_name IN ('PVVNL', 'PUVVNL', 'MVVNL', 'DVVNL', 'KESCO')
+          AND (discom_tagged_in_reply IS NULL OR discom_tagged_in_reply = '');
+      `);
+
       const fixedPicked = db.run(`
         UPDATE complaints 
         SET picked_status = 'NO' 
-        WHERE picked_status = 'YES' 
+        WHERE (uppcl_replied = 0 OR uppcl_replied IS NULL)
+          AND picked_status = 'YES' 
           AND (reply_within_30_min = 'NO' OR reply_within_30_min = '' OR reply_within_30_min IS NULL OR reply_within_30_min = '-') 
           AND (reply_within_60_min IS NULL OR reply_within_60_min = '' OR reply_within_60_min = 'NO') 
           AND (published_reply_id IS NULL OR published_reply_id = '');
@@ -2973,12 +3030,13 @@ if (process.env.NO_SERVER_AUTOSTART !== 'true') {
         UPDATE complaints 
         SET current_status = 'New' 
         WHERE current_status = 'Assigned to DISCOM' 
+          AND (uppcl_replied = 0 OR uppcl_replied IS NULL)
           AND picked_status = 'NO';
       `);
       if ((fixedPicked && fixedPicked.changes > 0) || (fixedStatus && fixedStatus.changes > 0)) {
         console.log(`[Server] Harmonized ${fixedPicked ? fixedPicked.changes : 0} complaints to Picked: NO and ${fixedStatus ? fixedStatus.changes : 0} to Status: New.`);
-        db.saveToDiskSync();
       }
+      db.saveToDiskSync();
     } catch (hErr) {
       console.warn('[Server] Picked status harmonization warning:', hErr.message);
     }

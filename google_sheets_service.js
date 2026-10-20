@@ -829,7 +829,8 @@ function processSheetMatrix(headers, data, method, startTime = Date.now()) {
       is_overdue, escalation_level, closure_date, created_at, updated_at,
       sheet_row_index, link_shift, reply_shift, c_f, head, untagged_complaint,
       picked_status, complaint_type, reply_within_30_min, reply_within_60_min,
-      draft_reply, approval_status, data_quality_flags
+      draft_reply, approval_status, data_quality_flags,
+      uppcl_replied, reply_evidence, first_replied_at, discom_tagged_in_reply
     ) VALUES (
       ?, ?, ?, ?, ?,
       ?, ?, ?, ?, ?,
@@ -838,7 +839,8 @@ function processSheetMatrix(headers, data, method, startTime = Date.now()) {
       ?, ?, ?, ?, ?,
       ?, ?, ?, ?, ?, ?,
       ?, ?, ?, ?,
-      ?, ?, ?
+      ?, ?, ?,
+      ?, ?, ?, ?
     );
   `;
 
@@ -1003,14 +1005,51 @@ function processSheetMatrix(headers, data, method, startTime = Date.now()) {
       continue;
     }
 
-    // Determine Picked Status (YES, NO, APPRECIATION)
-    // Rule: Picked: YES only when UPPCLLKO actually replied in that post
-    // Picked: NO if UPPCLLKO has not replied
-    const hasUppclReplied = (reply30 && reply30.toUpperCase() === 'YES') ||
-                            (reply60 && reply60.toUpperCase() === 'YES') ||
-                            Boolean(getVal('reply_post_id', 27)) ||
-                            Boolean(getVal('reply_post_url', 28));
+    // Permanent Recognition of Any Verified UPPCLLKO Reply
+    // Check if this complaint post already has verified historical UPPCLLKO reply on record
+    let existingComp = null;
+    if (linkUrl) {
+      existingComp = db.get('SELECT id, uppcl_replied, reply_evidence, first_replied_at, discom_tagged_in_reply, current_status, picked_status FROM complaints WHERE post_url = ? LIMIT 1;', [linkUrl]);
+    }
+    if (!existingComp && rowTid) {
+      existingComp = db.get('SELECT id, uppcl_replied, reply_evidence, first_replied_at, discom_tagged_in_reply, current_status, picked_status FROM complaints WHERE original_post_id = ? OR post_url LIKE ? LIMIT 1;', [rowTid, '%status/' + rowTid + '%']);
+    }
 
+    // Historical reply recognition:
+    const hasIncomingVerifiedReply = (reply30 && reply30.toUpperCase() === 'YES') ||
+                                     (reply60 && reply60.toUpperCase() === 'YES') ||
+                                     Boolean(getVal('reply_post_id', 27)) ||
+                                     Boolean(getVal('reply_post_url', 28)) ||
+                                     Boolean(getVal('reply_posted_at', 29));
+
+    // Permanent status retention: once verified, never revoked!
+    const isHistoricallyReplied = Boolean(existingComp && existingComp.uppcl_replied === 1);
+    const uppclReplied = (isHistoricallyReplied || hasIncomingVerifiedReply) ? 1 : 0;
+
+    let replyEvidence = (existingComp && existingComp.reply_evidence) ? existingComp.reply_evidence : null;
+    let firstRepliedAt = (existingComp && existingComp.first_replied_at) ? existingComp.first_replied_at : null;
+
+    if (hasIncomingVerifiedReply) {
+      firstRepliedAt = firstRepliedAt || nowIst;
+      if (!replyEvidence) {
+        if (reply30 && reply30.toUpperCase() === 'YES') {
+          replyEvidence = 'Verified UPPCLLKO reply within 30 mins (Laqshya SLA confirmed)';
+        } else if (getVal('reply_post_url', 28)) {
+          replyEvidence = 'Verified reply URL: ' + getVal('reply_post_url', 28);
+        } else {
+          replyEvidence = 'Verified UPPCLLKO reply on record';
+        }
+      }
+    }
+
+    // Independent concept: DISCOM / division tagging
+    let discomTaggedInReply = (existingComp && existingComp.discom_tagged_in_reply) ? existingComp.discom_tagged_in_reply : null;
+    if (uppclReplied && isDiscomTagged && !discomTaggedInReply) {
+      discomTaggedInReply = '@' + discom + 'HQ';
+    }
+
+    // Authoritative Picked logic:
+    // Picked = Existing_Valid_Pickup_Event OR UPPCLLKO_Replied
     let normalizedPickedStatus = 'NO';
     const isApprec = (rawPickedStatus && rawPickedStatus.toUpperCase() === 'APPRECIATION') ||
                      (rawCategory && rawCategory.toUpperCase() === 'APPRECIATION') ||
@@ -1020,11 +1059,13 @@ function processSheetMatrix(headers, data, method, startTime = Date.now()) {
 
     if (isApprec) {
       if (endsWithOfficialHandle(rawPostText) || /update\s*you|work\s*is\s*going|प्रिय\s*उपभोक्ता|पूर्व\s*में\s*दर्ज|शिकायत\s*संख्या/i.test(rawPostText)) {
-        normalizedPickedStatus = hasUppclReplied ? 'YES' : 'NO';
+        normalizedPickedStatus = (uppclReplied === 1) ? 'YES' : 'NO';
       } else {
         normalizedPickedStatus = 'APPRECIATION';
       }
-    } else if (hasUppclReplied) {
+    } else if (uppclReplied === 1) {
+      normalizedPickedStatus = 'YES';
+    } else if (existingComp && existingComp.picked_status === 'YES') {
       normalizedPickedStatus = 'YES';
     } else {
       normalizedPickedStatus = 'NO';
@@ -1064,7 +1105,7 @@ function processSheetMatrix(headers, data, method, startTime = Date.now()) {
     let status = 'New';
     if (/follow/i.test(rawStatus) || /discom.*reply/i.test(rawStatus) || (reply60 && reply60.toUpperCase() === 'YES')) {
       status = 'DISCOM Follow Up';
-    } else if (normalizedPickedStatus === 'YES' && /forwarded/i.test(rawStatus) && isDiscomTagged) {
+    } else if ((uppclReplied === 1 || Boolean(existingComp && existingComp.current_status === 'Assigned to DISCOM')) && isDiscomTagged) {
       status = 'Assigned to DISCOM';
     } else if (/resolved|समाधान/i.test(rawStatus)) {
       status = 'Resolved — Verification Pending';
@@ -1113,7 +1154,11 @@ function processSheetMatrix(headers, data, method, startTime = Date.now()) {
       reply60,
       draftReply,
       approvalStatus,
-      JSON.stringify(qualityFlags)
+      JSON.stringify(qualityFlags),
+      uppclReplied,
+      replyEvidence,
+      firstRepliedAt,
+      discomTaggedInReply
     ]);
 
   }
@@ -1123,10 +1168,27 @@ function processSheetMatrix(headers, data, method, startTime = Date.now()) {
   // 2) DISCOM replied before UPPCLLKO (reply_within_60_min is set and reply_within_30_min is not)
   // 3) Marked in frivolous_complaints
   db.run(`
-    -- Harmonize Picked Status & Operational Status with reply reality
+    -- Critical Rule: Permanent Recognition of Any Verified UPPCLLKO Reply
+    UPDATE complaints
+    SET uppcl_replied = 1,
+        picked_status = 'YES',
+        reply_evidence = COALESCE(reply_evidence, 'Verified UPPCLLKO reply on record')
+    WHERE (reply_within_30_min = 'YES')
+       OR (published_reply_id IS NOT NULL AND published_reply_id != '')
+       OR (id IN (SELECT DISTINCT complaint_id FROM x_outgoing_replies WHERE status IN ('Published', 'SENT')))
+       OR (reply_within_60_min = 'YES');
+
+    UPDATE complaints
+    SET discom_tagged_in_reply = '@' || UPPER(discom_name) || 'HQ'
+    WHERE (uppcl_replied = 1 OR current_status = 'Assigned to DISCOM')
+      AND discom_name IN ('PVVNL', 'PUVVNL', 'MVVNL', 'DVVNL', 'KESCO')
+      AND (discom_tagged_in_reply IS NULL OR discom_tagged_in_reply = '');
+
+    -- Only reset unverified complaints that have NO verified reply
     UPDATE complaints 
     SET picked_status = 'NO' 
-    WHERE picked_status = 'YES' 
+    WHERE (uppcl_replied = 0 OR uppcl_replied IS NULL)
+      AND picked_status = 'YES'
       AND (reply_within_30_min = 'NO' OR reply_within_30_min = '' OR reply_within_30_min IS NULL OR reply_within_30_min = '-') 
       AND (reply_within_60_min IS NULL OR reply_within_60_min = '' OR reply_within_60_min = 'NO') 
       AND (published_reply_id IS NULL OR published_reply_id = '');
@@ -1134,6 +1196,7 @@ function processSheetMatrix(headers, data, method, startTime = Date.now()) {
     UPDATE complaints 
     SET current_status = 'New' 
     WHERE current_status = 'Assigned to DISCOM' 
+      AND (uppcl_replied = 0 OR uppcl_replied IS NULL)
       AND picked_status = 'NO';
 
     DELETE FROM complaints 

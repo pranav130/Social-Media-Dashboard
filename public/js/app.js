@@ -1128,60 +1128,40 @@ const App = {
       tbody.innerHTML = data.map(c => {
         const isDiscomTagged = c.discom_name && ['PVVNL', 'PUVVNL', 'MVVNL', 'DVVNL', 'KESCO'].includes(c.discom_name.toUpperCase());
         const isAppreciation = c.picked_status === 'APPRECIATION' || c.current_status === 'Appreciation' || c.category_name === 'APPRECIATION';
-        // Picked: YES only when UPPCLLKO actually replied in that post
-        const isUppclReplied = !isAppreciation && (
+        // Permanent recognition of verified UPPCLLKO reply
+        const hasUppclReplied = Boolean(
+          c.uppcl_replied === 1 ||
+          c.uppcl_replied === '1' ||
           c.reply_within_30_min === 'YES' ||
-          c.reply_within_60_min === 'YES' ||
           Boolean(c.published_reply_id) ||
-          (c.picked_status === 'YES' && c.reply_within_30_min !== 'NO' && c.reply_within_30_min !== '' && c.reply_within_30_min !== '-')
+          (c.reply_evidence && c.reply_evidence.length > 0)
         );
-        const effectivePicked = isAppreciation ? 'APPRECIATION' : (isUppclReplied ? 'YES' : 'NO');
+        // Picked = Existing_Valid_Pickup_Event OR UPPCLLKO_Replied
+        const isPicked = !isAppreciation && (hasUppclReplied || c.picked_status === 'YES');
 
         let displayStatus = c.current_status;
         let statusSub = '';
 
+        const taggedHandle = c.discom_tagged_in_reply || (isDiscomTagged ? ('@' + c.discom_name.toUpperCase() + 'HQ') : null);
+
         if (displayStatus === 'Assigned to DISCOM') {
-          if (isUppclReplied && isDiscomTagged) {
-            statusSub = `<div style="font-size: 10px; color: var(--primary); font-weight: 600; margin-top: 2px;" title="Assigned to DISCOM — Tagged by UPPCLLKO to @${c.discom_name}HQ"><i class="fa-brands fa-x-twitter"></i> Tagged @${c.discom_name}HQ</div>`;
+          if (taggedHandle) {
+            statusSub = `<div style="font-size: 10px; color: var(--primary); font-weight: 600; margin-top: 2px;" title="Assigned to DISCOM — Tagged to ${taggedHandle}"><i class="fa-brands fa-x-twitter"></i> Tagged ${taggedHandle}</div>`;
           } else {
-            // Rule: Assigned to DISCOM only when Any discom got tagged by UPPCLLKO on reply
-            displayStatus = 'New';
-            statusSub = `<div style="font-size: 10px; color: var(--text-muted); font-weight: 500; margin-top: 2px;">Awaiting UPPCLLKO Reply</div>`;
+            statusSub = `<div style="font-size: 10px; color: var(--primary); font-weight: 600; margin-top: 2px;" title="Assigned to DISCOM"><i class="fa-solid fa-share-nodes"></i> Assigned</div>`;
           }
         } else if (displayStatus === 'DISCOM Follow Up') {
-          statusSub = `<div style="font-size: 10px; color: #4338ca; font-weight: 500; margin-top: 2px;" title="If Discom/division replies after getting Tagged on reply from UPPCLLKO"><i class="fa-solid fa-reply"></i> DISCOM Replied</div>`;
+          statusSub = `<div style="font-size: 10px; color: #4338ca; font-weight: 500; margin-top: 2px;" title="DISCOM or Division responded to complaint"><i class="fa-solid fa-reply"></i> DISCOM Replied</div>`;
         } else if (displayStatus === 'Appreciation') {
           statusSub = `<div style="font-size: 10px; color: #d97706; font-weight: 500; margin-top: 2px;" title="Consumer appreciation & gratitude posts"><i class="fa-solid fa-heart"></i> Gratitude</div>`;
         } else if (displayStatus === 'New') {
-          statusSub = `<div style="font-size: 10px; color: var(--text-muted); font-weight: 500; margin-top: 2px;">${!isUppclReplied ? 'Awaiting UPPCLLKO Reply' : 'Pending Assignment'}</div>`;
+          statusSub = `<div style="font-size: 10px; color: var(--text-muted); font-weight: 500; margin-top: 2px;">${!hasUppclReplied ? 'Awaiting UPPCLLKO Reply' : 'Pending Assignment'}</div>`;
         }
 
         const statusBadgeClass = `badge-${(displayStatus || '').replace(/[\s—/]+/g, '-')}`;
 
         let pickedCell = '<span style="color: var(--text-light); font-size: 11px;">-</span>';
-        if (effectivePicked === 'YES') {
-          pickedCell = `
-            <div style="font-weight: 700; font-size: 11px;">
-              <span class="badge-picked yes" title="Complaints: Picked: YES — If UPPCLLKO replied in that post">
-                <i class="fa-solid fa-circle-check" style="font-size: 10px;"></i> Picked: YES
-              </span>
-            </div>
-            <div style="font-size: 10px; color: #059669; margin-top: 2px; font-weight: 600;" title="Complaints: Picked: YES — If UPPCLLKO replied in that post">
-              UPPCLLKO Replied
-            </div>
-          `;
-        } else if (effectivePicked === 'NO') {
-          pickedCell = `
-            <div style="font-weight: 700; font-size: 11px;">
-              <span class="badge-picked no" title="Complaints: Picked: NO — If UPPCLLKO not replied in that post">
-                <i class="fa-solid fa-circle-xmark" style="font-size: 10px;"></i> Picked: NO
-              </span>
-            </div>
-            <div style="font-size: 10px; color: #64748b; margin-top: 2px; font-weight: 600;" title="Complaints: Picked: NO — If UPPCLLKO not replied in that post">
-              UPPCLLKO Not Replied
-            </div>
-          `;
-        } else if (effectivePicked === 'APPRECIATION') {
+        if (isAppreciation) {
           pickedCell = `
             <div style="font-weight: 700; font-size: 11px;">
               <span class="badge-picked appreciation" title="Consumer appreciation & gratitude posts">
@@ -1190,6 +1170,39 @@ const App = {
             </div>
             <div style="font-size: 10px; color: #d97706; margin-top: 2px; font-weight: 600;">
               Gratitude Post
+            </div>
+          `;
+        } else if (hasUppclReplied) {
+          pickedCell = `
+            <div style="font-weight: 700; font-size: 11px;">
+              <span class="badge-picked yes" title="Verified UPPCLLKO Reply on record: Picked: YES">
+                <i class="fa-solid fa-circle-check" style="font-size: 10px;"></i> Picked: YES
+              </span>
+            </div>
+            <div style="font-size: 10px; color: #059669; margin-top: 2px; font-weight: 600;" title="Verified genuine reply authored by UPPCLLKO">
+              <i class="fa-solid fa-reply"></i> UPPCLLKO Replied
+            </div>
+          `;
+        } else if (isPicked) {
+          pickedCell = `
+            <div style="font-weight: 700; font-size: 11px;">
+              <span class="badge-picked yes" style="background: rgba(3, 105, 161, 0.12); color: #0284c7; border: 1px solid rgba(3, 105, 161, 0.25);" title="Picked by cell / operator, awaiting reply">
+                <i class="fa-solid fa-circle-check" style="font-size: 10px;"></i> Picked: YES
+              </span>
+            </div>
+            <div style="font-size: 10px; color: #0284c7; margin-top: 2px; font-weight: 600;" title="Awaiting UPPCLLKO reply">
+              <i class="fa-solid fa-clock"></i> Awaiting Reply
+            </div>
+          `;
+        } else {
+          pickedCell = `
+            <div style="font-weight: 700; font-size: 11px;">
+              <span class="badge-picked no" title="Complaints: Picked: NO — UPPCLLKO not replied in that post">
+                <i class="fa-solid fa-circle-xmark" style="font-size: 10px;"></i> Picked: NO
+              </span>
+            </div>
+            <div style="font-size: 10px; color: #64748b; margin-top: 2px; font-weight: 600;" title="UPPCLLKO not replied in that post">
+              UPPCLLKO Not Replied
             </div>
           `;
         }
@@ -2016,34 +2029,57 @@ const App = {
               ${(() => {
                 const isDiscomTagged = c.discom_name && ['PVVNL', 'PUVVNL', 'MVVNL', 'DVVNL', 'KESCO'].includes(c.discom_name.toUpperCase());
                 const isAppreciation = c.picked_status === 'APPRECIATION' || c.current_status === 'Appreciation' || c.category_name === 'APPRECIATION';
-                // Picked: YES only when UPPCLLKO actually replied in that post
-                const isUppclReplied = !isAppreciation && (
+                // Permanent recognition of verified UPPCLLKO reply
+                const hasUppclReplied = Boolean(
+                  c.uppcl_replied === 1 ||
+                  c.uppcl_replied === '1' ||
                   c.reply_within_30_min === 'YES' ||
-                  c.reply_within_60_min === 'YES' ||
                   Boolean(c.published_reply_id) ||
-                  (c.picked_status === 'YES' && c.reply_within_30_min !== 'NO' && c.reply_within_30_min !== '' && c.reply_within_30_min !== '-')
+                  (c.reply_evidence && c.reply_evidence.length > 0)
                 );
-                const effectivePicked = isAppreciation ? 'APPRECIATION' : (isUppclReplied ? 'YES' : 'NO');
+                // Picked = Existing_Valid_Pickup_Event OR UPPCLLKO_Replied
+                const isPicked = !isAppreciation && (hasUppclReplied || c.picked_status === 'YES');
 
                 let displayStatus = c.current_status;
                 let statusSub = '';
 
+                const taggedHandle = c.discom_tagged_in_reply || (isDiscomTagged ? ('@' + c.discom_name.toUpperCase() + 'HQ') : null);
+
                 if (displayStatus === 'Assigned to DISCOM') {
-                  if (isUppclReplied && isDiscomTagged) {
-                    statusSub = `<div style="font-size: 10px; color: var(--primary); font-weight: 600; margin-top: 2px;" title="Assigned to DISCOM — Tagged by UPPCLLKO to @${c.discom_name}HQ"><i class="fa-brands fa-x-twitter"></i> Tagged @${c.discom_name}HQ</div>`;
+                  if (taggedHandle) {
+                    statusSub = `<div style="font-size: 10px; color: var(--primary); font-weight: 600; margin-top: 2px;" title="Assigned to DISCOM — Tagged to ${taggedHandle}"><i class="fa-brands fa-x-twitter"></i> Tagged ${taggedHandle}</div>`;
                   } else {
-                    displayStatus = 'New';
-                    statusSub = `<div style="font-size: 10px; color: var(--text-muted); font-weight: 500; margin-top: 2px;">Awaiting UPPCLLKO Reply</div>`;
+                    statusSub = `<div style="font-size: 10px; color: var(--primary); font-weight: 600; margin-top: 2px;" title="Assigned to DISCOM"><i class="fa-solid fa-share-nodes"></i> Assigned</div>`;
                   }
                 } else if (displayStatus === 'DISCOM Follow Up') {
-                  statusSub = `<div style="font-size: 10px; color: #4338ca; font-weight: 500; margin-top: 2px;" title="If Discom/division replies after getting Tagged on reply from UPPCLLKO"><i class="fa-solid fa-reply"></i> DISCOM Replied</div>`;
+                  statusSub = `<div style="font-size: 10px; color: #4338ca; font-weight: 500; margin-top: 2px;" title="DISCOM or Division responded to complaint"><i class="fa-solid fa-reply"></i> DISCOM Replied</div>`;
                 } else if (displayStatus === 'Appreciation') {
                   statusSub = `<div style="font-size: 10px; color: #d97706; font-weight: 500; margin-top: 2px;" title="Consumer appreciation & gratitude posts"><i class="fa-solid fa-heart"></i> Gratitude</div>`;
                 } else if (displayStatus === 'New') {
-                  statusSub = `<div style="font-size: 10px; color: var(--text-muted); font-weight: 500; margin-top: 2px;">${!isUppclReplied ? 'Awaiting UPPCLLKO Reply' : 'Pending Assignment'}</div>`;
+                  statusSub = `<div style="font-size: 10px; color: var(--text-muted); font-weight: 500; margin-top: 2px;">${!hasUppclReplied ? 'Awaiting UPPCLLKO Reply' : 'Pending Assignment'}</div>`;
                 }
 
                 const sBadge = `badge-${(displayStatus || '').replace(/[\s—/]+/g, '-')}`;
+
+                let pickedMarkup = '';
+                if (isAppreciation) {
+                  pickedMarkup = `<span class="badge-picked appreciation" title="Consumer appreciation & gratitude post">Appreciation</span>`;
+                } else if (hasUppclReplied) {
+                  pickedMarkup = `
+                    <span class="badge-picked yes" title="Verified UPPCLLKO reply on record: Picked: YES">Picked: YES</span>
+                    <div style="font-size: 9.5px; color: #059669; font-weight: 600; margin-top: 1px;"><i class="fa-solid fa-reply"></i> UPPCLLKO Replied</div>
+                  `;
+                } else if (isPicked) {
+                  pickedMarkup = `
+                    <span class="badge-picked yes" style="background: rgba(3, 105, 161, 0.12); color: #0284c7; border: 1px solid rgba(3, 105, 161, 0.25);" title="Picked by cell / operator, awaiting reply">Picked: YES</span>
+                    <div style="font-size: 9.5px; color: #0284c7; font-weight: 600; margin-top: 1px;"><i class="fa-solid fa-clock"></i> Awaiting Reply</div>
+                  `;
+                } else {
+                  pickedMarkup = `
+                    <span class="badge-picked no" title="Complaints: Picked: NO — UPPCLLKO not replied in that post">Picked: NO</span>
+                    <div style="font-size: 9.5px; color: #64748b; font-weight: 600; margin-top: 1px;">UPPCLLKO Not Replied</div>
+                  `;
+                }
 
                 return `
                   <div style="margin-bottom: 2px;">
@@ -2051,14 +2087,12 @@ const App = {
                   </div>
                   ${statusSub}
                   <div style="margin-top: 3px;">
-                    <span class="badge-picked ${effectivePicked.toLowerCase()}" title="${effectivePicked === 'YES' ? 'Complaints: Picked: YES — If UPPCLLKO replied in that post' : (effectivePicked === 'NO' ? 'Complaints: Picked: NO — If UPPCLLKO not replied in that post' : 'Consumer appreciation & gratitude post')}">
-                      ${effectivePicked === 'YES' ? 'Picked: YES' : (effectivePicked === 'NO' ? 'Picked: NO' : 'Appreciation')}
-                    </span>
+                    ${pickedMarkup}
                   </div>
                   ${c.reply_within_30_min ? `
                     <div style="margin-top: 2px;">
                       <span class="${c.reply_within_30_min === 'YES' ? 'badge-30m-yes' : 'badge-30m-no'}" title="Complaints: 30-Min First Reply — Time difference between post time and UPPCLLKO replied time <30Mins: ${c.reply_within_30_min}">
-                        ${c.reply_within_30_min === 'YES' ? '<i class=\"fa-solid fa-stopwatch\"></i> 30m: YES' : '30m: NO'}
+                        ${c.reply_within_30_min === 'YES' ? '<i class="fa-solid fa-stopwatch"></i> 30m: YES' : '30m: NO'}
                       </span>
                     </div>
                   ` : ''}
@@ -2729,13 +2763,23 @@ const App = {
                     <div class="info-row"><span class="info-label">Zone:</span><span class="info-value">${c.zone_name || '-'}</span></div>
                     <div class="info-row"><span class="info-label">Official Handle:</span><span class="info-value"><b>${c.assigned_nodal_officer_name ? (c.assigned_nodal_officer_name.startsWith('@') ? `<a href="https://x.com/${c.assigned_nodal_officer_name.replace('@', '')}" target="_blank" rel="noopener noreferrer" style="color: var(--primary); font-weight: 700;"><i class="fa-brands fa-x-twitter"></i> ${c.assigned_nodal_officer_name}</a>` : c.assigned_nodal_officer_name) : (c.discom_name ? '@' + c.discom_name + 'HQ' : '@UPPCLLKO')}</b></span></div>
                     <div class="info-row"><span class="info-label">Monitored Account:</span><span class="info-value">${c.monitored_account || '@UPPCLLKO'}</span></div>
-                    <div class="info-row"><span class="info-label">Google Sheet Status:</span><span class="info-value"><span class="badge-status badge-${(c.current_status || '').replace(/[\s—/]+/g, '-')}">${c.current_status}</span></span></div>
+                    <div class="info-row"><span class="info-label">Current Status:</span><span class="info-value"><span class="badge-status badge-${(c.current_status || '').replace(/[\s—/]+/g, '-')}">${c.current_status}</span></span></div>
+                    <div class="info-row"><span class="info-label">UPPCLLKO Replied:</span><span class="info-value">${(() => {
+                      const hasReplied = Boolean(c.uppcl_replied === 1 || c.uppcl_replied === '1' || c.reply_within_30_min === 'YES' || Boolean(c.published_reply_id) || (c.reply_evidence && c.reply_evidence.length > 0));
+                      return hasReplied 
+                        ? `<b style="color: #059669;"><i class="fa-solid fa-circle-check"></i> YES</b> <small style="color: var(--text-muted);">(Verified historical reply on record${c.first_replied_at ? ` at ${c.first_replied_at}` : ''})</small>`
+                        : `<b style="color: #64748b;"><i class="fa-solid fa-circle-xmark"></i> NO</b> <small style="color: var(--text-muted);">(No UPPCLLKO reply on record)</small>`;
+                    })()}</span></div>
+                    ${c.reply_evidence ? `<div class="info-row"><span class="info-label">Reply Evidence:</span><span class="info-value" style="font-size: 11px; color: #0284c7;"><i class="fa-solid fa-shield-halved"></i> ${c.reply_evidence}</span></div>` : ''}
                     <div class="info-row"><span class="info-label">Picked Status:</span><span class="info-value">${(() => {
                       const isApprec = c.picked_status === 'APPRECIATION' || c.current_status === 'Appreciation' || c.category_name === 'APPRECIATION';
-                      const isReplied = !isApprec && (c.reply_within_30_min === 'YES' || c.reply_within_60_min === 'YES' || Boolean(c.published_reply_id) || (c.picked_status === 'YES' && c.reply_within_30_min !== 'NO' && c.reply_within_30_min !== '' && c.reply_within_30_min !== '-'));
-                      const eff = isApprec ? 'APPRECIATION' : (isReplied ? 'YES' : 'NO');
-                      return `<b>${eff}</b> <small style="color: var(--text-muted);">(${eff === 'YES' ? 'UPPCLLKO replied in post' : (eff === 'NO' ? 'UPPCLLKO not replied in post' : 'Consumer appreciation')})</small>`;
+                      const hasReplied = Boolean(c.uppcl_replied === 1 || c.uppcl_replied === '1' || c.reply_within_30_min === 'YES' || Boolean(c.published_reply_id) || (c.reply_evidence && c.reply_evidence.length > 0));
+                      const isPicked = !isApprec && (hasReplied || c.picked_status === 'YES');
+                      if (isApprec) return `<b>APPRECIATION</b> <small style="color: var(--text-muted);">(Consumer gratitude post)</small>`;
+                      if (isPicked) return `<b style="color: #059669;">YES</b> <small style="color: var(--text-muted);">(${hasReplied ? 'UPPCLLKO replied in post' : 'Picked / Awaiting reply'})</small>`;
+                      return `<b style="color: #64748b;">NO</b> <small style="color: var(--text-muted);">(UPPCLLKO not replied)</small>`;
                     })()}</span></div>
+                    ${c.discom_tagged_in_reply ? `<div class="info-row"><span class="info-label">Tagged DISCOM Handle:</span><span class="info-value" style="color: var(--primary); font-weight: 700;"><i class="fa-brands fa-x-twitter"></i> ${c.discom_tagged_in_reply}</span></div>` : ''}
                     <div class="info-row"><span class="info-label">Shift:</span><span class="info-value">${c.link_shift || '-'}</span></div>
                     ${c.sheet_row_index ? `<div class="info-row"><span class="info-label">Sheet Row:</span><span class="info-value"><span class="badge-sheet-row">Row #${c.sheet_row_index}</span></span></div>` : ''}
                     <div class="info-row"><span class="info-label">30-Min First Reply:</span><span class="info-value"><b>${c.reply_within_30_min || '-'}</b> <small style="color: var(--text-muted);">(Time diff &lt; 30 mins)</small></span></div>
