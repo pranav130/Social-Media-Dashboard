@@ -861,7 +861,7 @@ const App = {
 
         <div class="chart-card">
           <div class="chart-header">
-            <div class="chart-title"><i class="fa-solid fa-filter"></i> Ingestion Picked Status (Actionable vs Filtered)</div>
+            <div class="chart-title"><i class="fa-solid fa-filter"></i> Complaints Picked Status (Actionable vs Filtered)</div>
           </div>
           <div class="chart-body"><canvas id="chart-picked"></canvas></div>
         </div>
