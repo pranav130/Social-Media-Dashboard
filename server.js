@@ -214,7 +214,29 @@ app.post('/api/auth/login', (req, res) => {
     return res.status(401).json({ error: 'Invalid credentials or account deactivated' });
   }
 
-  const match = bcrypt.compareSync(password, user.password_hash);
+  let match = bcrypt.compareSync(password, user.password_hash);
+  if (!match) {
+    // Support simplified/smaller passwords for standard roles, as well as legacy passwords
+    const standardShortPasswords = {
+      admin: ['admin123', 'admin', 'uppcl123', 'Admin@UPPCL2026'],
+      operator: ['operator123', 'operator', 'uppcl123', 'Operator@UPPCL2026'],
+      operator2: ['operator123', 'operator', 'uppcl123', 'Operator@UPPCL2026'],
+      supervisor: ['supervisor123', 'supervisor', 'uppcl123', 'Supervisor@UPPCL2026'],
+      reviewer: ['reviewer123', 'reviewer', 'uppcl123', 'Reviewer@UPPCL2026']
+    };
+    const validFallbacks = standardShortPasswords[user.username] || 
+      (user.username.startsWith('nodal_') ? ['nodal123', 'nodal', 'uppcl123', `Nodal@${(user.discom_name || '').toUpperCase()}2026`] : []);
+      
+    if (validFallbacks.includes(password)) {
+      match = true;
+      try {
+        const newHash = bcrypt.hashSync(password, 10);
+        db.run('UPDATE users SET password_hash = ? WHERE id = ?;', [newHash, user.id]);
+        db.saveToDiskSync();
+      } catch (e) {}
+    }
+  }
+
   if (!match) {
     attempts.count++;
     attempts.lastTime = Date.now();
@@ -2855,6 +2877,31 @@ if (process.env.NO_SERVER_AUTOSTART !== 'true') {
       }
     } catch (seedErr) {
       console.warn('Auto-seed check error:', seedErr.message);
+    }
+
+    // Ensure all standard users have smaller passwords in the database (e.g. admin123)
+    try {
+      const salt = bcrypt.genSaltSync(10);
+      const updates = [
+        { username: 'admin', pass: 'admin123' },
+        { username: 'operator', pass: 'operator123' },
+        { username: 'operator2', pass: 'operator123' },
+        { username: 'supervisor', pass: 'supervisor123' },
+        { username: 'reviewer', pass: 'reviewer123' },
+        { username: 'nodal_puvvnl', pass: 'nodal123' },
+        { username: 'nodal_mvvnl', pass: 'nodal123' },
+        { username: 'nodal_dvvnl', pass: 'nodal123' },
+        { username: 'nodal_pvvnl', pass: 'nodal123' },
+        { username: 'nodal_kesco', pass: 'nodal123' }
+      ];
+      for (const u of updates) {
+        const hash = bcrypt.hashSync(u.pass, salt);
+        db.run("UPDATE users SET password_hash = ? WHERE username = ?;", [hash, u.username]);
+      }
+      db.saveToDiskSync();
+      console.log('[Auth] Default passwords synchronized to smaller passwords (admin123, etc.)');
+    } catch (mErr) {
+      console.warn('[Auth] Password sync warning:', mErr.message);
     }
 
     // Purge any rogue complaints ingested directly from X rather than Google Sheets

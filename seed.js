@@ -378,7 +378,7 @@ async function runSeed() {
   const defaultUsers = [
     {
       username: 'admin',
-      password: 'Admin@UPPCL2026',
+      password: 'admin123',
       full_name: 'Administrator',
       email: 'admin.smc@uppcl.org',
       role: 'Administrator',
@@ -388,7 +388,7 @@ async function runSeed() {
     },
     {
       username: 'operator',
-      password: 'Operator@UPPCL2026',
+      password: 'operator123',
       full_name: 'Rajesh Verma (SMC Operator)',
       email: 'rajesh.operator@uppcl.org',
       role: 'Social Media Cell Operator',
@@ -398,7 +398,7 @@ async function runSeed() {
     },
     {
       username: 'operator2',
-      password: 'Operator@UPPCL2026',
+      password: 'operator123',
       full_name: 'Pooja Tiwari (SMC Operator)',
       email: 'pooja.operator@uppcl.org',
       role: 'Social Media Cell Operator',
@@ -408,7 +408,7 @@ async function runSeed() {
     },
     {
       username: 'supervisor',
-      password: 'Supervisor@UPPCL2026',
+      password: 'supervisor123',
       full_name: 'Er. Sadanand (Superintending Engineer)',
       email: 'socialmediacellhq@uppcl.org',
       role: 'Supervisor / Management',
@@ -418,7 +418,7 @@ async function runSeed() {
     },
     {
       username: 'nodal_puvvnl',
-      password: 'Nodal@PUVVNL2026',
+      password: 'nodal123',
       full_name: 'Er. Ashutosh Srivastava (Nodal Officer)',
       email: 'nodal.puvvnl@uppcl.org',
       role: 'DISCOM Nodal Officer',
@@ -428,7 +428,7 @@ async function runSeed() {
     },
     {
       username: 'nodal_mvvnl',
-      password: 'Nodal@MVVNL2026',
+      password: 'nodal123',
       full_name: 'Er. Suneel Kapoor (Nodal Officer)',
       email: 'nodal.mvvnl@uppcl.org',
       role: 'DISCOM Nodal Officer',
@@ -438,7 +438,7 @@ async function runSeed() {
     },
     {
       username: 'nodal_dvvnl',
-      password: 'Nodal@DVVNL2026',
+      password: 'nodal123',
       full_name: 'Er. Praduman Tripathi (Nodal Officer)',
       email: 'nodal.dvvnl@uppcl.org',
       role: 'DISCOM Nodal Officer',
@@ -448,7 +448,7 @@ async function runSeed() {
     },
     {
       username: 'nodal_pvvnl',
-      password: 'Nodal@PVVNL2026',
+      password: 'nodal123',
       full_name: 'Er. Pawan Kumar Agarwal (Nodal Officer)',
       email: 'nodal.pvvnl@uppcl.org',
       role: 'DISCOM Nodal Officer',
@@ -458,7 +458,7 @@ async function runSeed() {
     },
     {
       username: 'nodal_kesco',
-      password: 'Nodal@KESCo2026',
+      password: 'nodal123',
       full_name: 'Er. Sanjay Agarwal (Nodal Officer)',
       email: 'nodal.kesco@uppcl.org',
       role: 'DISCOM Nodal Officer',
@@ -468,7 +468,7 @@ async function runSeed() {
     },
     {
       username: 'reviewer',
-      password: 'Reviewer@UPPCL2026',
+      password: 'reviewer123',
       full_name: 'Director (Commercial & Operations)',
       email: 'director.operations@uppcl.org',
       role: 'Read-Only Reviewer',

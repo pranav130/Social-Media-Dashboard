@@ -94,18 +94,18 @@ npm test
 
 | Role | Username | Password | Assigned DISCOM Scope |
 | :--- | :--- | :--- | :--- |
-| **Super Administrator** | `admin` | `Admin@UPPCL2026` | All DISCOMs (Full Access) |
-| **SMC Operator** | `operator` | `Operator@UPPCL2026` | All DISCOMs (Grievance Processing) |
-| **SMC Operator 2** | `operator2` | `Operator@UPPCL2026` | All DISCOMs (Grievance Processing) |
-| **Supervisor / Management** | `supervisor` | `Supervisor@UPPCL2026` | All DISCOMs (Monitoring & Verification) |
-| **PuVVNL Nodal Officer** | `nodal_puvvnl` | `Nodal@PUVVNL2026` | PuVVNL Only |
-| **MVVNL Nodal Officer** | `nodal_mvvnl` | `Nodal@MVVNL2026` | MVVNL Only |
-| **DVVNL Nodal Officer** | `nodal_dvvnl` | `Nodal@DVVNL2026` | DVVNL Only |
-| **PVVNL Nodal Officer** | `nodal_pvvnl` | `Nodal@PVVNL2026` | PVVNL Only |
-| **KESCo Nodal Officer** | `nodal_kesco` | `Nodal@KESCo2026` | KESCo Only |
-| **Read-Only Reviewer** | `reviewer` | `Reviewer@UPPCL2026` | All DISCOMs (Read-Only) |
+| **Super Administrator** | `admin` | `admin123` | All DISCOMs (Full Access) |
+| **SMC Operator** | `operator` | `operator123` | All DISCOMs (Grievance Processing) |
+| **SMC Operator 2** | `operator2` | `operator123` | All DISCOMs (Grievance Processing) |
+| **Supervisor / Management** | `supervisor` | `supervisor123` | All DISCOMs (Monitoring & Verification) |
+| **PuVVNL Nodal Officer** | `nodal_puvvnl` | `nodal123` | PuVVNL Only |
+| **MVVNL Nodal Officer** | `nodal_mvvnl` | `nodal123` | MVVNL Only |
+| **DVVNL Nodal Officer** | `nodal_dvvnl` | `nodal123` | DVVNL Only |
+| **PVVNL Nodal Officer** | `nodal_pvvnl` | `nodal123` | PVVNL Only |
+| **KESCo Nodal Officer** | `nodal_kesco` | `nodal123` | KESCo Only |
+| **Read-Only Reviewer** | `reviewer` | `reviewer123` | All DISCOMs (Read-Only) |
 
-*Note: The login page includes 1-click credential fill buttons for fast testing across roles.*
+*Note: For backward compatibility, legacy passwords (e.g. `Admin@UPPCL2026`) and simple passwords (`admin`) are also accepted.*
 
 ---
 

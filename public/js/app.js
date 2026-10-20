@@ -191,8 +191,10 @@ const App = {
     }
 
     this.startClock();
-    this.startNotificationPoller();
-    this.startSyncPoller();
+    if (this.token) {
+      this.startNotificationPoller();
+      this.startSyncPoller();
+    }
 
     if (this.token && this.user) {
       this.loadMasterData().then(() => {
@@ -229,8 +231,9 @@ const App = {
   },
 
   startNotificationPoller() {
-    this.pollNotifications();
-    setInterval(() => {
+    if (this._notifPollerTimer) clearInterval(this._notifPollerTimer);
+    if (this.token) this.pollNotifications();
+    this._notifPollerTimer = setInterval(() => {
       if (this.token) this.pollNotifications();
     }, 30000);
   },
@@ -254,13 +257,15 @@ const App = {
   },
 
   startSyncPoller() {
-    this.pollSyncStatus();
-    setInterval(() => {
-      this.pollSyncStatus();
+    if (this._syncPollerTimer) clearInterval(this._syncPollerTimer);
+    if (this.token) this.pollSyncStatus();
+    this._syncPollerTimer = setInterval(() => {
+      if (this.token) this.pollSyncStatus();
     }, 20000);
   },
 
   async pollSyncStatus() {
+    if (!this.token) return;
     try {
       const res = await this.api('/api/sync/status');
       this.updateSyncUI(res);
@@ -451,7 +456,9 @@ const App = {
     });
 
     if (response.status === 401) {
-      this.logout();
+      if (this.token) {
+        this.logout();
+      }
       throw new Error('Session expired. Please log in again.');
     }
 
@@ -495,17 +502,31 @@ const App = {
     this.user = user;
     localStorage.setItem('uppcl_smc_token', token);
     localStorage.setItem('uppcl_smc_user', JSON.stringify(user));
+    this.startNotificationPoller();
+    this.startSyncPoller();
     this.loadMasterData().then(() => {
       this.renderApp();
     });
   },
 
   logout() {
+    const wasLoggedIn = !!this.token;
     this.token = null;
     this.user = null;
     localStorage.removeItem('uppcl_smc_token');
     localStorage.removeItem('uppcl_smc_user');
-    this.renderLogin();
+    if (this._syncPollerTimer) {
+      clearInterval(this._syncPollerTimer);
+      this._syncPollerTimer = null;
+    }
+    if (this._notifPollerTimer) {
+      clearInterval(this._notifPollerTimer);
+      this._notifPollerTimer = null;
+    }
+    if (this.currentPage !== 'login' || wasLoggedIn) {
+      this.currentPage = 'login';
+      this.renderLogin();
+    }
   },
 
   navigate(page, params = {}) {
@@ -5215,6 +5236,12 @@ const App = {
   // LOGIN SCREEN
   // -----------------------------------------------------------
   renderLogin() {
+    this.currentPage = 'login';
+    // Guard: do not wipe DOM or lose user keystrokes if login form is already mounted
+    if (document.getElementById('login-username') && document.getElementById('login-password')) {
+      return;
+    }
+
     const root = document.getElementById('app');
     root.innerHTML = `
       <div class="login-wrapper">
@@ -5236,12 +5263,21 @@ const App = {
           <form onsubmit="App.handleLogin(event)">
             <div class="filter-group" style="margin-bottom: 14px;">
               <label>Username</label>
-              <input type="text" id="login-username" class="form-control" placeholder="Enter username..." required autocomplete="username">
+              <input type="text" id="login-username" class="form-control" placeholder="Enter username (e.g. admin)" required autocomplete="username">
             </div>
 
-            <div class="filter-group" style="margin-bottom: 20px;">
+            <div class="filter-group" style="margin-bottom: 18px;">
               <label>Password</label>
-              <input type="password" id="login-password" class="form-control" placeholder="Enter password..." required autocomplete="current-password">
+              <div style="position: relative; display: flex; align-items: center;">
+                <input type="password" id="login-password" class="form-control" placeholder="Enter password (e.g. admin123)" required autocomplete="current-password" style="padding-right: 38px; width: 100%;">
+                <button type="button" onclick="App.togglePasswordVisibility()" title="Show/Hide Password" style="position: absolute; right: 10px; background: none; border: none; color: var(--text-muted); cursor: pointer; padding: 4px; font-size: 14px;">
+                  <i id="password-toggle-icon" class="fa-solid fa-eye"></i>
+                </button>
+              </div>
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 6px; font-size: 11px; color: var(--text-muted);">
+                <span>Default password: <strong style="color: var(--primary);">admin123</strong></span>
+                <span style="opacity: 0.8;">(or role123)</span>
+              </div>
             </div>
 
             <button type="submit" class="btn btn-primary" style="width: 100%; justify-content: center; padding: 10px;">
@@ -5251,6 +5287,25 @@ const App = {
         </div>
       </div>
     `;
+  },
+
+  togglePasswordVisibility() {
+    const pwdInput = document.getElementById('login-password');
+    const icon = document.getElementById('password-toggle-icon');
+    if (!pwdInput) return;
+    if (pwdInput.type === 'password') {
+      pwdInput.type = 'text';
+      if (icon) {
+        icon.classList.remove('fa-eye');
+        icon.classList.add('fa-eye-slash');
+      }
+    } else {
+      pwdInput.type = 'password';
+      if (icon) {
+        icon.classList.remove('fa-eye-slash');
+        icon.classList.add('fa-eye');
+      }
+    }
   },
 
   quickFill(u, p) {
