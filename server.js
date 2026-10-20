@@ -2959,6 +2959,30 @@ if (process.env.NO_SERVER_AUTOSTART !== 'true') {
       console.warn('[Server] Phantom purge warning:', phErr.message);
     }
 
+    // Harmonize Picked Status & Operational Status with reply reality
+    try {
+      const fixedPicked = db.run(`
+        UPDATE complaints 
+        SET picked_status = 'NO' 
+        WHERE picked_status = 'YES' 
+          AND (reply_within_30_min = 'NO' OR reply_within_30_min = '' OR reply_within_30_min IS NULL OR reply_within_30_min = '-') 
+          AND (reply_within_60_min IS NULL OR reply_within_60_min = '' OR reply_within_60_min = 'NO') 
+          AND (published_reply_id IS NULL OR published_reply_id = '');
+      `);
+      const fixedStatus = db.run(`
+        UPDATE complaints 
+        SET current_status = 'New' 
+        WHERE current_status = 'Assigned to DISCOM' 
+          AND picked_status = 'NO';
+      `);
+      if ((fixedPicked && fixedPicked.changes > 0) || (fixedStatus && fixedStatus.changes > 0)) {
+        console.log(`[Server] Harmonized ${fixedPicked ? fixedPicked.changes : 0} complaints to Picked: NO and ${fixedStatus ? fixedStatus.changes : 0} to Status: New.`);
+        db.saveToDiskSync();
+      }
+    } catch (hErr) {
+      console.warn('[Server] Picked status harmonization warning:', hErr.message);
+    }
+
     app.listen(PORT, '0.0.0.0', () => {
       console.log(`===========================================================`);
       console.log(` UPPCL Social Media Cell Complaint Management System`);

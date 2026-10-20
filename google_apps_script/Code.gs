@@ -1082,7 +1082,7 @@ function runCloudSyncCycle() {
       row[11] = c.zone;
       row[12] = c.district;
       row[13] = ''; // Remark
-      row[14] = (c.pickedStatus === 'APPRECIATION') ? 'Appreciation' : 'Forwarded to Discom';
+      row[14] = (c.pickedStatus === 'APPRECIATION') ? 'Appreciation' : (c.pickedStatus === 'YES' ? 'Forwarded to Discom' : 'Pending Review');
       row[15] = c.replyWithin30Min;
       row[16] = '';
       row[17] = tweetId;
@@ -1212,7 +1212,8 @@ function classifyTweetInScript(text, username) {
   }
 
   // Determine Picked Status (YES, NO, APPRECIATION)
-  let pickedStatus = 'YES';
+  // Rule: Picked: YES only when UPPCLLKO replied; initially NO for incoming consumer complaints
+  let pickedStatus = isOfficial ? 'YES' : 'NO';
   const hasPureAppreciation = /बहुत\s*बहुत\s*धन्यवाद|उत्कृष्ट\s*कार्य|सराहनीय|great\s*job|thank\s*you\s*so\s*much|thanks\s*for\s*quick/i.test(lowerText) &&
                               !/समस्या|शिकायत|बिजली|outage|complaint|अधिकारी|प्रिय\s*उपभोक्ता/i.test(lowerText);
 

@@ -871,7 +871,7 @@ function processSheetMatrix(headers, data, method, startTime = Date.now()) {
     let twitterId = getVal('twitter_id', 5);
     const head = getVal('head', 6);
     const untagged = getVal('untagged_complaint', 7);
-    const pickedStatus = getVal('picked_status', 8) || 'YES';
+    const rawPickedStatus = getVal('picked_status', 8);
     const rawCategory = getVal('complaint_type', 9) || 'DISSATISFIED_CONSUMER';
     const rawDiscom = getVal('discom', 10);
     const rawZone = getVal('zone', 11);
@@ -1003,12 +1003,31 @@ function processSheetMatrix(headers, data, method, startTime = Date.now()) {
       continue;
     }
 
-    // Any post/reply that ends with official handles or is an official response is NOT Appreciation
-    let normalizedPickedStatus = pickedStatus.toUpperCase();
-    if (normalizedPickedStatus === 'APPRECIATION') {
+    // Determine Picked Status (YES, NO, APPRECIATION)
+    // Rule: Picked: YES only when UPPCLLKO actually replied in that post
+    // Picked: NO if UPPCLLKO has not replied
+    const hasUppclReplied = (reply30 && reply30.toUpperCase() === 'YES') ||
+                            (reply60 && reply60.toUpperCase() === 'YES') ||
+                            Boolean(getVal('reply_post_id', 27)) ||
+                            Boolean(getVal('reply_post_url', 28));
+
+    let normalizedPickedStatus = 'NO';
+    const isApprec = (rawPickedStatus && rawPickedStatus.toUpperCase() === 'APPRECIATION') ||
+                     (rawCategory && rawCategory.toUpperCase() === 'APPRECIATION') ||
+                     /appreciation/i.test(rawStatus) ||
+                     (/बहुत\s*बहुत\s*धन्यवाद|उत्कृष्ट\s*कार्य|सराहनीय|great\s*job|thank\s*you\s*so\s*much/i.test(rawPostText) &&
+                      !/समस्या|शिकायत|बिजली|outage|complaint|अधिकारी|प्रिय\s*उपभोक्ता/i.test(rawPostText));
+
+    if (isApprec) {
       if (endsWithOfficialHandle(rawPostText) || /update\s*you|work\s*is\s*going|प्रिय\s*उपभोक्ता|पूर्व\s*में\s*दर्ज|शिकायत\s*संख्या/i.test(rawPostText)) {
-        normalizedPickedStatus = 'YES';
+        normalizedPickedStatus = hasUppclReplied ? 'YES' : 'NO';
+      } else {
+        normalizedPickedStatus = 'APPRECIATION';
       }
+    } else if (hasUppclReplied) {
+      normalizedPickedStatus = 'YES';
+    } else {
+      normalizedPickedStatus = 'NO';
     }
 
     // Determine sequential Complaint Number strictly matching UPPCL-SMC-YYYYMM-XXXX
@@ -1045,7 +1064,7 @@ function processSheetMatrix(headers, data, method, startTime = Date.now()) {
     let status = 'New';
     if (/follow/i.test(rawStatus) || /discom.*reply/i.test(rawStatus) || (reply60 && reply60.toUpperCase() === 'YES')) {
       status = 'DISCOM Follow Up';
-    } else if (/forwarded/i.test(rawStatus) && isDiscomTagged) {
+    } else if (normalizedPickedStatus === 'YES' && /forwarded/i.test(rawStatus) && isDiscomTagged) {
       status = 'Assigned to DISCOM';
     } else if (/resolved|समाधान/i.test(rawStatus)) {
       status = 'Resolved — Verification Pending';
@@ -1104,6 +1123,19 @@ function processSheetMatrix(headers, data, method, startTime = Date.now()) {
   // 2) DISCOM replied before UPPCLLKO (reply_within_60_min is set and reply_within_30_min is not)
   // 3) Marked in frivolous_complaints
   db.run(`
+    -- Harmonize Picked Status & Operational Status with reply reality
+    UPDATE complaints 
+    SET picked_status = 'NO' 
+    WHERE picked_status = 'YES' 
+      AND (reply_within_30_min = 'NO' OR reply_within_30_min = '' OR reply_within_30_min IS NULL OR reply_within_30_min = '-') 
+      AND (reply_within_60_min IS NULL OR reply_within_60_min = '' OR reply_within_60_min = 'NO') 
+      AND (published_reply_id IS NULL OR published_reply_id = '');
+
+    UPDATE complaints 
+    SET current_status = 'New' 
+    WHERE current_status = 'Assigned to DISCOM' 
+      AND picked_status = 'NO';
+
     DELETE FROM complaints 
     WHERE (forwarding_remarks IS NOT NULL AND LOWER(forwarding_remarks) LIKE '%delete%')
        OR (current_status IS NOT NULL AND LOWER(current_status) LIKE '%delete%')
