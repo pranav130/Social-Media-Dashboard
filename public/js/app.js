@@ -704,7 +704,7 @@ const App = {
               </button>
 
               <!-- Theme Toggle Button -->
-              <button class="theme-toggle-btn" onclick="App.toggleTheme()" title="${this.theme === 'midnight' ? 'Theme: Midnight (Click for Light Mode)' : (this.theme === 'light' ? 'Theme: Light Mode (Click for Dark Mode)' : 'Theme: Dark Mode (Click for Midnight Theme'))}" aria-label="Toggle Theme">
+              <button class="theme-toggle-btn" onclick="App.toggleTheme()" title="${this.theme === 'midnight' ? 'Theme: Midnight (Click for Light Mode)' : (this.theme === 'light' ? 'Theme: Light Mode (Click for Dark Mode)' : 'Theme: Dark Mode (Click for Midnight Theme')}" aria-label="Toggle Theme">
                 <i class="fa-solid ${this.theme === 'midnight' ? 'fa-cloud' : (this.theme === 'light' ? 'fa-sun' : 'fa-moon')}" style="${this.theme === 'midnight' ? 'color: #94a3b8;' : (this.theme === 'light' ? 'color: #f59e0b;' : 'color: #6366f1;')}"></i>
                 <span class="theme-label">${this.theme === 'midnight' ? 'Midnight' : (this.theme === 'light' ? 'Light Mode' : 'Dark Mode')}</span>
               </button>
@@ -5248,7 +5248,7 @@ const App = {
     root.innerHTML = `
       <div class="login-wrapper">
         <div class="login-theme-bar">
-          <button class="theme-toggle-btn" onclick="App.toggleTheme()" title="${this.theme === 'midnight' ? 'Theme: Midnight (Click for Light Mode)' : (this.theme === 'light' ? 'Theme: Light Mode (Click for Dark Mode)' : 'Theme: Dark Mode (Click for Midnight Theme'))}" aria-label="Toggle Theme">
+          <button class="theme-toggle-btn" onclick="App.toggleTheme()" title="${this.theme === 'midnight' ? 'Theme: Midnight (Click for Light Mode)' : (this.theme === 'light' ? 'Theme: Light Mode (Click for Dark Mode)' : 'Theme: Dark Mode (Click for Midnight Theme')}" aria-label="Toggle Theme">
             <i class="fa-solid ${this.theme === 'midnight' ? 'fa-cloud' : (this.theme === 'light' ? 'fa-sun' : 'fa-moon')}" style="${this.theme === 'midnight' ? 'color: #94a3b8;' : (this.theme === 'light' ? 'color: #f59e0b;' : 'color: #6366f1;')}"></i>
             <span class="theme-label">${this.theme === 'midnight' ? 'Midnight' : (this.theme === 'light' ? 'Light Mode' : 'Dark Mode')}</span>
           </button>
@@ -5332,6 +5332,10 @@ const App = {
   }
 };
 
-window.addEventListener('DOMContentLoaded', () => {
+if (document.readyState === 'loading') {
+  window.addEventListener('DOMContentLoaded', () => {
+    App.init();
+  });
+} else {
   App.init();
-});
+}
