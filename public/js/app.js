@@ -1220,14 +1220,14 @@ const App = {
       tbody.innerHTML = data.map(c => {
         const isDiscomTagged = c.discom_name && ['PVVNL', 'PUVVNL', 'MVVNL', 'DVVNL', 'KESCO'].includes(c.discom_name.toUpperCase());
         const isAppreciation = c.picked_status === 'APPRECIATION' || c.current_status === 'Appreciation' || c.category_name === 'APPRECIATION';
-        // Strict recognition of genuine UPPCLLKO reply
-        const hasUppclReplied = !isAppreciation && (
+        const hasUppclReplied = !isAppreciation && Boolean(
+          c.uppcl_replied === 1 ||
+          c.uppcl_replied === '1' ||
+          c.has_historical_reply === 1 ||
           c.reply_within_30_min === 'YES' ||
-          Boolean(c.published_reply_id) ||
-          ((c.uppcl_replied === 1 || c.uppcl_replied === '1') && c.reply_within_30_min !== 'NO')
+          Boolean(c.published_reply_id)
         );
-        // Picked = Existing_Valid_Pickup_Event OR UPPCLLKO_Replied
-        const isPicked = !isAppreciation && (hasUppclReplied || (c.picked_status === 'YES' && c.reply_within_30_min !== 'NO'));
+        const isPicked = !isAppreciation && (hasUppclReplied || c.picked_status === 'YES');
 
         let displayStatus = c.current_status;
         let statusSub = '';
@@ -2119,14 +2119,14 @@ const App = {
               ${(() => {
                 const isDiscomTagged = c.discom_name && ['PVVNL', 'PUVVNL', 'MVVNL', 'DVVNL', 'KESCO'].includes(c.discom_name.toUpperCase());
                 const isAppreciation = c.picked_status === 'APPRECIATION' || c.current_status === 'Appreciation' || c.category_name === 'APPRECIATION';
-                // Strict recognition of genuine UPPCLLKO reply
-                const hasUppclReplied = !isAppreciation && (
+                const hasUppclReplied = !isAppreciation && Boolean(
+                  c.uppcl_replied === 1 ||
+                  c.uppcl_replied === '1' ||
+                  c.has_historical_reply === 1 ||
                   c.reply_within_30_min === 'YES' ||
-                  Boolean(c.published_reply_id) ||
-                  ((c.uppcl_replied === 1 || c.uppcl_replied === '1') && c.reply_within_30_min !== 'NO')
+                  Boolean(c.published_reply_id)
                 );
-                // Picked = Existing_Valid_Pickup_Event OR UPPCLLKO_Replied
-                const isPicked = !isAppreciation && (hasUppclReplied || (c.picked_status === 'YES' && c.reply_within_30_min !== 'NO'));
+                const isPicked = !isAppreciation && (hasUppclReplied || c.picked_status === 'YES');
 
                 let displayStatus = c.current_status;
                 let statusSub = '';
