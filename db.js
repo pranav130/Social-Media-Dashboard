@@ -408,6 +408,27 @@ function createSchema() {
       metadata_json TEXT
     );
 
+        CREATE TABLE IF NOT EXISTS complaint_replies (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      complaint_id INTEGER NOT NULL,
+      conversation_id TEXT,
+      reply_tweet_id TEXT UNIQUE,
+      author_handle TEXT NOT NULL,
+      author_name TEXT,
+      author_id TEXT,
+      reply_text TEXT,
+      is_uppcl_reply INTEGER DEFAULT 0,
+      is_discom_reply INTEGER DEFAULT 0,
+      replied_at TEXT,
+      verified_source TEXT,
+      created_at TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_cr_comp_id ON complaint_replies(complaint_id);
+    CREATE INDEX IF NOT EXISTS idx_cr_author ON complaint_replies(author_handle);
+    CREATE INDEX IF NOT EXISTS idx_cr_is_uppcl ON complaint_replies(complaint_id, is_uppcl_reply);
+    CREATE INDEX IF NOT EXISTS idx_cr_tweet_id ON complaint_replies(reply_tweet_id);
+
     CREATE TABLE IF NOT EXISTS frivolous_complaints (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       post_url TEXT UNIQUE,
@@ -449,31 +470,64 @@ function createSchema() {
   tryAddColumn('complaints', 'reply_evidence TEXT');
   tryAddColumn('complaints', 'first_replied_at TEXT');
   tryAddColumn('complaints', 'discom_tagged_in_reply TEXT');
+  tryAddColumn('complaints', 'has_historical_reply INTEGER DEFAULT 0');
+  tryAddColumn('complaints', 'discom_replied INTEGER DEFAULT 0');
+  tryAddColumn('complaints', 'discom_reply_evidence TEXT');
+  tryAddColumn('complaints', 'last_reply_author TEXT');
 
   try {
-    // Critical Rule: Authoritative UPPCLLKO Reply Recognition
-    // 1. Any complaint where UPPCLLKO never replied MUST be Picked: NO and uppcl_replied = 0.
-    // If reply_within_30_min is NO or empty, and no published reply exists, UPPCLLKO did NOT reply.
-    // (DISCOM reply in reply_within_60_min does NOT constitute a reply by UPPCLLKO).
+    // Critical Rule: Authoritative Historical UPPCLLKO Reply & Pickup Event Reconciliation
+    // 1. Group C: UPPCLLKO replied at least once in conversation history (regardless of latest reply)
     dbInstance.run(`
       UPDATE complaints
-      SET uppcl_replied = 0,
-          picked_status = CASE WHEN picked_status = 'APPRECIATION' THEN 'APPRECIATION' ELSE 'NO' END,
-          reply_evidence = NULL
-      WHERE (reply_within_30_min = 'NO' OR reply_within_30_min = '' OR reply_within_30_min IS NULL OR reply_within_30_min = '-')
-        AND (published_reply_id IS NULL OR published_reply_id = '')
-        AND (id NOT IN (SELECT DISTINCT complaint_id FROM x_outgoing_replies WHERE status IN ('Published', 'SENT')));
-    `);
-
-    // 2. Authoritative verified reply: ONLY when UPPCLLKO actually replied!
-    dbInstance.run(`
-      UPDATE complaints
-      SET uppcl_replied = 1,
+      SET has_historical_reply = 1,
+          uppcl_replied = 1,
           picked_status = 'YES',
-          reply_evidence = COALESCE(reply_evidence, 'Verified UPPCLLKO reply within 30 mins')
+          reply_evidence = COALESCE(
+            (SELECT 'Verified historical @UPPCLLKO reply in thread (Tweet ID: ' || reply_tweet_id || ')' FROM complaint_replies WHERE complaint_id = complaints.id AND is_uppcl_reply = 1 LIMIT 1),
+            reply_evidence,
+            'Verified historical @UPPCLLKO reply on record'
+          )
       WHERE (reply_within_30_min = 'YES')
          OR (published_reply_id IS NOT NULL AND published_reply_id != '')
-         OR (id IN (SELECT DISTINCT complaint_id FROM x_outgoing_replies WHERE status IN ('Published', 'SENT')));
+         OR (id IN (SELECT DISTINCT complaint_id FROM x_outgoing_replies WHERE status IN ('Published', 'SENT')))
+         OR (id IN (SELECT DISTINCT complaint_id FROM complaint_replies WHERE is_uppcl_reply = 1));
+    `);
+
+    // 2. Group B: UPPCLLKO never replied, but valid pickup event exists (Assigned to DISCOM, Forwarded, etc.)
+    dbInstance.run(`
+      UPDATE complaints
+      SET has_historical_reply = 0,
+          uppcl_replied = 0,
+          reply_evidence = NULL,
+          picked_status = 'YES'
+      WHERE (has_historical_reply = 0 OR has_historical_reply IS NULL)
+        AND (reply_within_30_min != 'YES' OR reply_within_30_min IS NULL)
+        AND (published_reply_id IS NULL OR published_reply_id = '')
+        AND (id NOT IN (SELECT DISTINCT complaint_id FROM x_outgoing_replies WHERE status IN ('Published', 'SENT')))
+        AND (id NOT IN (SELECT DISTINCT complaint_id FROM complaint_replies WHERE is_uppcl_reply = 1))
+        AND (picked_status != 'APPRECIATION')
+        AND (
+          (current_status IN ('Assigned to DISCOM', 'Forwarded', 'DISCOM Follow Up', 'Escalated', 'Under Investigation', 'Resolved — Verification Pending', 'Closed'))
+          OR (forwarding_ref_no IS NOT NULL AND forwarding_ref_no != '')
+          OR (assigned_operator_id IS NOT NULL)
+        );
+    `);
+
+    // 3. Group A: UPPCLLKO never replied AND no valid pickup event exists (New / Unpicked)
+    dbInstance.run(`
+      UPDATE complaints
+      SET has_historical_reply = 0,
+          uppcl_replied = 0,
+          reply_evidence = NULL,
+          picked_status = 'NO'
+      WHERE (has_historical_reply = 0 OR has_historical_reply IS NULL)
+        AND (reply_within_30_min != 'YES' OR reply_within_30_min IS NULL)
+        AND (published_reply_id IS NULL OR published_reply_id = '')
+        AND (id NOT IN (SELECT DISTINCT complaint_id FROM x_outgoing_replies WHERE status IN ('Published', 'SENT')))
+        AND (id NOT IN (SELECT DISTINCT complaint_id FROM complaint_replies WHERE is_uppcl_reply = 1))
+        AND (picked_status != 'APPRECIATION')
+        AND (current_status = 'New' OR current_status IS NULL OR current_status = '');
     `);
 
     dbInstance.run(`

@@ -1020,18 +1020,21 @@ function processSheetMatrix(headers, data, method, startTime = Date.now()) {
     const existingComp = (linkUrl && existingMap.get(linkUrl)) || (rowTid && existingMap.get(rowTid)) || null;
 
     // Historical reply recognition:
-    // UPPCLLKO verified reply is strictly reply30 === 'YES' or explicit UPPCLLKO reply tweet data
-    // reply60 is DISCOM reply within 60 mins and must NEVER be treated as UPPCLLKO reply!
+    // UPPCLLKO verified reply is strictly reply30 === 'YES', explicit UPPCLLKO reply tweet data,
+    // or verified historical reply in thread from complaint_replies / cache.
     const hasIncomingVerifiedReply = (reply30 && reply30.toUpperCase() === 'YES') ||
                                      Boolean(getVal('reply_post_id', 27)) ||
                                      Boolean(getVal('reply_post_url', 28)) ||
                                      Boolean(getVal('reply_posted_at', 29));
 
-    // Permanent status retention: only trust historical reply if verified by reply30 or published_reply_id
+    // Permanent status retention: once verified in history, never revoked even if DISCOM or consumer replies later!
     const isHistoricallyReplied = Boolean(
-      existingComp && 
-      existingComp.uppcl_replied === 1 && 
-      (existingComp.reply_within_30_min === 'YES' || Boolean(existingComp.published_reply_id))
+      existingComp && (
+        existingComp.has_historical_reply === 1 ||
+        existingComp.uppcl_replied === 1 ||
+        existingComp.reply_within_30_min === 'YES' ||
+        Boolean(existingComp.published_reply_id)
+      )
     );
     const uppclReplied = (isHistoricallyReplied || hasIncomingVerifiedReply) ? 1 : 0;
 
@@ -1059,7 +1062,7 @@ function processSheetMatrix(headers, data, method, startTime = Date.now()) {
     }
 
     // Authoritative Picked logic:
-    // Picked = Existing_Valid_Pickup_Event OR UPPCLLKO_Replied
+    // Picked = Valid_Existing_Pickup_Event OR Historical_UPPCLLKO_Replied
     let normalizedPickedStatus = 'NO';
     const isApprec = (rawPickedStatus && rawPickedStatus.toUpperCase() === 'APPRECIATION') ||
                      (rawCategory && rawCategory.toUpperCase() === 'APPRECIATION') ||
@@ -1067,13 +1070,20 @@ function processSheetMatrix(headers, data, method, startTime = Date.now()) {
                      (/बहुत\s*बहुत\s*धन्यवाद|उत्कृष्ट\s*कार्य|सराहनीय|great\s*job|thank\s*you\s*so\s*much/i.test(rawPostText) &&
                       !/समस्या|शिकायत|बिजली|outage|complaint|अधिकारी|प्रिय\s*उपभोक्ता/i.test(rawPostText));
 
+    // Valid pickup event: assigned to DISCOM, forwarded, or marked YES in sheet
+    const hasValidPickupEvent = Boolean(
+      (rawPickedStatus && rawPickedStatus.toUpperCase() === 'YES') ||
+      (rawStatus && /forward|assigned|follow|closed|resolved|progress/i.test(rawStatus)) ||
+      (existingComp && existingComp.picked_status === 'YES')
+    );
+
     if (isApprec) {
       if (endsWithOfficialHandle(rawPostText) || /update\s*you|work\s*is\s*going|प्रिय\s*उपभोक्ता|पूर्व\s*में\s*दर्ज|शिकायत\s*संख्या/i.test(rawPostText)) {
-        normalizedPickedStatus = (uppclReplied === 1) ? 'YES' : 'NO';
+        normalizedPickedStatus = (uppclReplied === 1 || hasValidPickupEvent) ? 'YES' : 'NO';
       } else {
         normalizedPickedStatus = 'APPRECIATION';
       }
-    } else if (uppclReplied === 1) {
+    } else if (uppclReplied === 1 || hasValidPickupEvent) {
       normalizedPickedStatus = 'YES';
     } else {
       normalizedPickedStatus = 'NO';
@@ -1175,24 +1185,53 @@ function processSheetMatrix(headers, data, method, startTime = Date.now()) {
   // 2) DISCOM replied before UPPCLLKO (reply_within_60_min is set and reply_within_30_min is not)
   // 3) Marked in frivolous_complaints
   db.run(`
-    -- Critical Rule: Authoritative UPPCLLKO Reply Recognition
-    -- 1. Reset unreplied complaints FIRST:
+    -- Critical Rule: Authoritative Historical UPPCLLKO Reply & Pickup Event Reconciliation
+    -- 1. Group C: UPPCLLKO replied at least once in conversation history
     UPDATE complaints
-    SET uppcl_replied = 0,
-        picked_status = CASE WHEN picked_status = 'APPRECIATION' THEN 'APPRECIATION' ELSE 'NO' END,
-        reply_evidence = NULL
-    WHERE (reply_within_30_min = 'NO' OR reply_within_30_min = '' OR reply_within_30_min IS NULL OR reply_within_30_min = '-')
-      AND (published_reply_id IS NULL OR published_reply_id = '')
-      AND (id NOT IN (SELECT DISTINCT complaint_id FROM x_outgoing_replies WHERE status IN ('Published', 'SENT')));
-
-    -- 2. Authoritative verified reply: ONLY when UPPCLLKO actually replied!
-    UPDATE complaints
-    SET uppcl_replied = 1,
+    SET has_historical_reply = 1,
+        uppcl_replied = 1,
         picked_status = 'YES',
-        reply_evidence = COALESCE(reply_evidence, 'Verified UPPCLLKO reply within 30 mins')
+        reply_evidence = COALESCE(
+          (SELECT 'Verified historical @UPPCLLKO reply in thread (Tweet ID: ' || reply_tweet_id || ')' FROM complaint_replies WHERE complaint_id = complaints.id AND is_uppcl_reply = 1 LIMIT 1),
+          reply_evidence,
+          'Verified historical @UPPCLLKO reply on record'
+        )
     WHERE (reply_within_30_min = 'YES')
        OR (published_reply_id IS NOT NULL AND published_reply_id != '')
-       OR (id IN (SELECT DISTINCT complaint_id FROM x_outgoing_replies WHERE status IN ('Published', 'SENT')));
+       OR (id IN (SELECT DISTINCT complaint_id FROM x_outgoing_replies WHERE status IN ('Published', 'SENT')))
+       OR (id IN (SELECT DISTINCT complaint_id FROM complaint_replies WHERE is_uppcl_reply = 1));
+
+    -- 2. Group B: UPPCLLKO never replied, but valid pickup event exists (Assigned to DISCOM, Forwarded, etc.)
+    UPDATE complaints
+    SET has_historical_reply = 0,
+        uppcl_replied = 0,
+        reply_evidence = NULL,
+        picked_status = 'YES'
+    WHERE (has_historical_reply = 0 OR has_historical_reply IS NULL)
+      AND (reply_within_30_min != 'YES' OR reply_within_30_min IS NULL)
+      AND (published_reply_id IS NULL OR published_reply_id = '')
+      AND (id NOT IN (SELECT DISTINCT complaint_id FROM x_outgoing_replies WHERE status IN ('Published', 'SENT')))
+      AND (id NOT IN (SELECT DISTINCT complaint_id FROM complaint_replies WHERE is_uppcl_reply = 1))
+      AND (picked_status != 'APPRECIATION')
+      AND (
+        (current_status IN ('Assigned to DISCOM', 'Forwarded', 'DISCOM Follow Up', 'Escalated', 'Under Investigation', 'Resolved — Verification Pending', 'Closed'))
+        OR (forwarding_ref_no IS NOT NULL AND forwarding_ref_no != '')
+        OR (assigned_operator_id IS NOT NULL)
+      );
+
+    -- 3. Group A: UPPCLLKO never replied AND no valid pickup event exists (New / Unpicked)
+    UPDATE complaints
+    SET has_historical_reply = 0,
+        uppcl_replied = 0,
+        reply_evidence = NULL,
+        picked_status = 'NO'
+    WHERE (has_historical_reply = 0 OR has_historical_reply IS NULL)
+      AND (reply_within_30_min != 'YES' OR reply_within_30_min IS NULL)
+      AND (published_reply_id IS NULL OR published_reply_id = '')
+      AND (id NOT IN (SELECT DISTINCT complaint_id FROM x_outgoing_replies WHERE status IN ('Published', 'SENT')))
+      AND (id NOT IN (SELECT DISTINCT complaint_id FROM complaint_replies WHERE is_uppcl_reply = 1))
+      AND (picked_status != 'APPRECIATION')
+      AND (current_status = 'New' OR current_status IS NULL OR current_status = '');
 
     UPDATE complaints
     SET discom_tagged_in_reply = '@' || UPPER(discom_name) || 'HQ'

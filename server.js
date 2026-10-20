@@ -2173,21 +2173,31 @@ function handleDashboardTableExcelExport(req, res) {
     const isDiscomTagged = c.discom_name && ['PVVNL', 'PUVVNL', 'MVVNL', 'DVVNL', 'KESCO'].includes(c.discom_name.toUpperCase());
     const isAppreciation = c.picked_status === 'APPRECIATION' || c.current_status === 'Appreciation' || c.category_name === 'APPRECIATION';
 
-    // Picked: YES only when UPPCLLKO actually replied in that post
-    const isUppclReplied = !isAppreciation && (
+    // 1. Authoritative UPPCLLKO Replied (Group C): At least one verified UPPCLLKO reply in history
+    const isUppclReplied = !isAppreciation && Boolean(
+      c.uppcl_replied === 1 ||
+      c.has_historical_reply === 1 ||
       c.reply_within_30_min === 'YES' ||
-      Boolean(c.published_reply_id) ||
-      ((c.uppcl_replied === 1 || c.uppcl_replied === '1') && c.reply_within_30_min !== 'NO')
+      Boolean(c.published_reply_id)
     );
-    const effectivePicked = isAppreciation ? 'APPRECIATION' : (isUppclReplied ? 'YES' : 'NO');
+
+    // 2. Authoritative Picked: Valid Pickup Event OR UPPCLLKO Replied
+    const isPicked = !isAppreciation && (
+      isUppclReplied ||
+      c.picked_status === 'YES' ||
+      (c.current_status && !['New', 'Pending Review', 'Unassigned'].includes(c.current_status)) ||
+      Boolean(c.forwarding_ref_no)
+    );
 
     let pickedText = '-';
-    if (effectivePicked === 'YES') {
-      pickedText = 'Picked: YES (UPPCLLKO Replied)';
-    } else if (effectivePicked === 'NO') {
-      pickedText = 'Picked: NO (UPPCLLKO Not Replied)';
-    } else if (effectivePicked === 'APPRECIATION') {
+    if (isAppreciation) {
       pickedText = 'Appreciation (Gratitude Post)';
+    } else if (isPicked && isUppclReplied) {
+      pickedText = 'Picked: YES (UPPCLLKO Replied)';
+    } else if (isPicked && !isUppclReplied) {
+      pickedText = 'Picked: YES (Awaiting UPPCLLKO Reply)';
+    } else {
+      pickedText = 'Picked: NO (UPPCLLKO Not Replied)';
     }
 
     let reply30Text = '-';
@@ -3332,24 +3342,52 @@ if (process.env.NO_SERVER_AUTOSTART !== 'true') {
     }
 
     // Harmonize Picked Status & Operational Status with permanent reply reality
-    // Critical Rule: Picked: YES / UPPCLLKO Replied ONLY when @UPPCLLKO actually replied!
+    // Critical Rule: Authoritative Historical UPPCLLKO Reply & Pickup Event Reconciliation
     try {
       db.run(`
         UPDATE complaints
-        SET uppcl_replied = 0,
-            picked_status = CASE WHEN picked_status = 'APPRECIATION' THEN 'APPRECIATION' ELSE 'NO' END,
-            reply_evidence = NULL
-        WHERE (reply_within_30_min = 'NO' OR reply_within_30_min = '' OR reply_within_30_min IS NULL OR reply_within_30_min = '-')
-          AND (published_reply_id IS NULL OR published_reply_id = '')
-          AND (id NOT IN (SELECT DISTINCT complaint_id FROM x_outgoing_replies WHERE status IN ('Published', 'SENT')));
-
-        UPDATE complaints
-        SET uppcl_replied = 1,
+        SET has_historical_reply = 1,
+            uppcl_replied = 1,
             picked_status = 'YES',
-            reply_evidence = COALESCE(reply_evidence, 'Verified UPPCLLKO reply within 30 mins')
+            reply_evidence = COALESCE(
+              (SELECT 'Verified historical @UPPCLLKO reply in thread (Tweet ID: ' || reply_tweet_id || ')' FROM complaint_replies WHERE complaint_id = complaints.id AND is_uppcl_reply = 1 LIMIT 1),
+              reply_evidence,
+              'Verified historical @UPPCLLKO reply on record'
+            )
         WHERE (reply_within_30_min = 'YES')
            OR (published_reply_id IS NOT NULL AND published_reply_id != '')
-           OR (id IN (SELECT DISTINCT complaint_id FROM x_outgoing_replies WHERE status IN ('Published', 'SENT')));
+           OR (id IN (SELECT DISTINCT complaint_id FROM x_outgoing_replies WHERE status IN ('Published', 'SENT')))
+           OR (id IN (SELECT DISTINCT complaint_id FROM complaint_replies WHERE is_uppcl_reply = 1));
+
+        UPDATE complaints
+        SET has_historical_reply = 0,
+            uppcl_replied = 0,
+            reply_evidence = NULL,
+            picked_status = 'YES'
+        WHERE (has_historical_reply = 0 OR has_historical_reply IS NULL)
+          AND (reply_within_30_min != 'YES' OR reply_within_30_min IS NULL)
+          AND (published_reply_id IS NULL OR published_reply_id = '')
+          AND (id NOT IN (SELECT DISTINCT complaint_id FROM x_outgoing_replies WHERE status IN ('Published', 'SENT')))
+          AND (id NOT IN (SELECT DISTINCT complaint_id FROM complaint_replies WHERE is_uppcl_reply = 1))
+          AND (picked_status != 'APPRECIATION')
+          AND (
+            (current_status IN ('Assigned to DISCOM', 'Forwarded', 'DISCOM Follow Up', 'Escalated', 'Under Investigation', 'Resolved — Verification Pending', 'Closed'))
+            OR (forwarding_ref_no IS NOT NULL AND forwarding_ref_no != '')
+            OR (assigned_operator_id IS NOT NULL)
+          );
+
+        UPDATE complaints
+        SET has_historical_reply = 0,
+            uppcl_replied = 0,
+            reply_evidence = NULL,
+            picked_status = 'NO'
+        WHERE (has_historical_reply = 0 OR has_historical_reply IS NULL)
+          AND (reply_within_30_min != 'YES' OR reply_within_30_min IS NULL)
+          AND (published_reply_id IS NULL OR published_reply_id = '')
+          AND (id NOT IN (SELECT DISTINCT complaint_id FROM x_outgoing_replies WHERE status IN ('Published', 'SENT')))
+          AND (id NOT IN (SELECT DISTINCT complaint_id FROM complaint_replies WHERE is_uppcl_reply = 1))
+          AND (picked_status != 'APPRECIATION')
+          AND (current_status = 'New' OR current_status IS NULL OR current_status = '');
 
         UPDATE complaints
         SET discom_tagged_in_reply = '@' || UPPER(discom_name) || 'HQ'

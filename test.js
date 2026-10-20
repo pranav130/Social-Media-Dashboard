@@ -567,48 +567,105 @@ async function runTests() {
     assert.ok(rows.length > 0);
   });
 
-    console.log('\n[17. Picked Status & UPPCLLKO Reply Integrity]');
+    console.log('\n[17. Picked Status & Authoritative UPPCLLKO Reply Integrity]');
 
-  it('Complaints where UPPCLLKO never replied have uppcl_replied = 0 and picked_status = NO', () => {
-    const unreplied = db.get(`
-      SELECT COUNT(*) as cnt 
-      FROM complaints 
-      WHERE (reply_within_30_min = 'NO' OR reply_within_30_min = '' OR reply_within_30_min IS NULL OR reply_within_30_min = '-')
-        AND (published_reply_id IS NULL OR published_reply_id = '')
-        AND uppcl_replied = 1;
-    `);
-    assert.strictEqual(unreplied.cnt, 0, 'No unreplied complaint should have uppcl_replied = 1');
-
-    const falsePicked = db.get(`
-      SELECT COUNT(*) as cnt 
-      FROM complaints 
-      WHERE (reply_within_30_min = 'NO' OR reply_within_30_min = '' OR reply_within_30_min IS NULL OR reply_within_30_min = '-')
-        AND (published_reply_id IS NULL OR published_reply_id = '')
-        AND picked_status = 'YES';
-    `);
-    assert.strictEqual(falsePicked.cnt, 0, 'No unreplied complaint should have picked_status = YES');
-  });
-
-  it('Complaints with reply_within_30_min = YES have uppcl_replied = 1 and picked_status = YES', () => {
+  it('Rule 1: All complaints with verified UPPCLLKO reply have uppcl_replied = 1 and picked_status = YES', () => {
     const replied = db.get(`
       SELECT COUNT(*) as total_yes,
              SUM(CASE WHEN uppcl_replied = 1 THEN 1 ELSE 0 END) as uppcl_replied_cnt,
              SUM(CASE WHEN picked_status = 'YES' THEN 1 ELSE 0 END) as picked_yes_cnt
       FROM complaints 
-      WHERE reply_within_30_min = 'YES';
+      WHERE has_historical_reply = 1 OR reply_within_30_min = 'YES' OR (published_reply_id IS NOT NULL AND published_reply_id != '');
     `);
-    assert.ok(replied.total_yes > 0, 'There should be complaints with reply_within_30_min = YES');
-    assert.strictEqual(replied.uppcl_replied_cnt, replied.total_yes, 'All reply_within_30_min = YES must have uppcl_replied = 1');
-    assert.strictEqual(replied.picked_yes_cnt, replied.total_yes, 'All reply_within_30_min = YES must have picked_status = YES');
+    assert.ok(replied.total_yes > 0, 'There should be complaints with verified UPPCLLKO replies');
+    assert.strictEqual(replied.uppcl_replied_cnt, replied.total_yes, 'All verified UPPCLLKO replied complaints must have uppcl_replied = 1');
+    assert.strictEqual(replied.picked_yes_cnt, replied.total_yes, 'All verified UPPCLLKO replied complaints must have picked_status = YES');
   });
 
-  it('Specific consumer post @qowi23 (UPPCL-SMC-202610-1635) is authoritatively Picked: NO', () => {
+  it('Rule 2: Separation of Picked vs Replied (Group A, B, C, D partition integrity)', () => {
+    const totalRow = db.get('SELECT COUNT(*) as cnt FROM complaints;');
+    const total = totalRow.cnt;
+
+    // Group A: Unpicked, unreplied
+    const groupA = db.get("SELECT COUNT(*) as cnt FROM complaints WHERE picked_status = 'NO' AND (uppcl_replied = 0 OR uppcl_replied IS NULL);").cnt;
+    // Group B: Picked by operational event / Assigned to DISCOM, but no UPPCLLKO reply
+    const groupB = db.get("SELECT COUNT(*) as cnt FROM complaints WHERE picked_status = 'YES' AND (uppcl_replied = 0 OR uppcl_replied IS NULL);").cnt;
+    // Group C: Historical or SLA UPPCLLKO reply exists
+    const groupC = db.get("SELECT COUNT(*) as cnt FROM complaints WHERE uppcl_replied = 1 AND picked_status = 'YES';").cnt;
+    // Group D: Appreciation
+    const groupD = db.get("SELECT COUNT(*) as cnt FROM complaints WHERE picked_status = 'APPRECIATION';").cnt;
+
+    assert.strictEqual(groupA + groupB + groupC + groupD, total, `Partitions A(${groupA}) + B(${groupB}) + C(${groupC}) + D(${groupD}) must equal total (${total})`);
+    assert.ok(groupA > 0, 'Group A (unpicked, unreplied) must have records');
+    assert.ok(groupB > 0, 'Group B (picked without reply) must have records');
+    assert.ok(groupC > 0, 'Group C (historically replied) must have records');
+  });
+
+  it('Rule 3: Specific consumer post @qowi23 (UPPCL-SMC-202610-1635) is authoritatively Picked: YES with verified historical reply', () => {
     const qowi = db.get("SELECT * FROM complaints WHERE complaint_no = 'UPPCL-SMC-202610-1635' OR post_url LIKE '%2112543129006170200%';");
     assert.ok(qowi, 'Complaint for @qowi23 should exist');
-    assert.strictEqual(qowi.reply_within_30_min, 'NO');
-    assert.strictEqual(qowi.uppcl_replied, 0, '@qowi23 complaint must have uppcl_replied = 0');
-    assert.strictEqual(qowi.picked_status, 'NO', '@qowi23 complaint must have picked_status = NO');
-    assert.strictEqual(qowi.reply_evidence, null, '@qowi23 complaint must have null reply_evidence');
+    assert.strictEqual(qowi.has_historical_reply, 1, '@qowi23 must have has_historical_reply = 1');
+    assert.strictEqual(qowi.uppcl_replied, 1, '@qowi23 must have uppcl_replied = 1');
+    assert.strictEqual(qowi.picked_status, 'YES', '@qowi23 must have picked_status = YES');
+    assert.ok(qowi.reply_evidence && qowi.reply_evidence.includes('2112607433881428114'), '@qowi23 reply_evidence must reference verified Tweet ID 2112607433881428114');
+
+    const replyRecord = db.get("SELECT * FROM complaint_replies WHERE conversation_id = '2112543129006170200' AND reply_tweet_id = '2112607433881428114';");
+    assert.ok(replyRecord, 'complaint_replies must have verified reply record for @qowi23 conversation');
+    assert.strictEqual(replyRecord.is_uppcl_reply, 1);
+    assert.strictEqual(replyRecord.author_handle.toLowerCase(), 'uppcllko');
+  });
+
+  it('Rule 4: Historical reply table complaint_replies maintains referential integrity', () => {
+    const replyCount = db.get('SELECT COUNT(*) as cnt FROM complaint_replies WHERE is_uppcl_reply = 1;').cnt;
+    assert.ok(replyCount > 0, 'complaint_replies should contain verified UPPCLLKO replies');
+    const invalidReplies = db.get("SELECT COUNT(*) as cnt FROM complaint_replies WHERE author_handle IS NULL OR reply_tweet_id IS NULL;").cnt;
+    assert.strictEqual(invalidReplies, 0, 'No malformed reply records allowed');
+  });
+
+  it('Rule 5: Excel export correctly exports Group A, B, C, D status labels and sanitizes formulas', () => {
+    const { handleDashboardTableExcelExport } = require('./server');
+    const XLSX = require('xlsx');
+
+    let sentBuffer = null;
+    let sentHeaders = {};
+    const mockRes = {
+      setHeader: (k, v) => { sentHeaders[k] = v; },
+      send: (buf) => { sentBuffer = buf; }
+    };
+
+    const mockReq = {
+      query: { limit: '100' },
+      user: { id: 1, username: 'admin', role: 'Super Administrator' },
+      headers: { 'x-forwarded-for': '127.0.0.1' },
+      socket: { remoteAddress: '127.0.0.1' }
+    };
+
+    handleDashboardTableExcelExport(mockReq, mockRes);
+    assert.ok(sentBuffer, 'Excel export should return a buffer');
+    assert.ok(sentHeaders['Content-Type'].includes('spreadsheetml'), 'Content-Type must be .xlsx');
+
+    const wb = XLSX.read(sentBuffer, { type: 'buffer' });
+    assert.ok(wb.SheetNames.includes('Complaints'), 'Workbook should have Complaints sheet');
+    const ws = wb.Sheets['Complaints'];
+    const data = XLSX.utils.sheet_to_json(ws);
+
+    assert.ok(data.length > 0, 'Excel sheet should contain rows');
+
+    const pickedStatuses = new Set(data.map(r => r['Picked Status']));
+    assert.ok(
+      pickedStatuses.has('Picked: YES (UPPCLLKO Replied)') ||
+      pickedStatuses.has('Picked: YES (Awaiting UPPCLLKO Reply)') ||
+      pickedStatuses.has('Picked: NO (UPPCLLKO Not Replied)'),
+      'Excel must output readable status labels'
+    );
+
+    for (const r of data) {
+      for (const [k, v] of Object.entries(r)) {
+        if (typeof v === 'string') {
+          assert.ok(!v.startsWith('=') && !v.startsWith('+'), `Formula injection risk in ${k}: ${v}`);
+        }
+      }
+    }
   });
 
   console.log('\n====================================================');
