@@ -804,6 +804,16 @@ function processSheetMatrix(headers, data, method, startTime = Date.now()) {
   let validCount = 0;
   let qualityIssuesCount = 0;
 
+  // 1. Snapshot existing verified reply status & DISCOM assignment before refresh
+  const existingMap = new Map();
+  try {
+    const existingReplied = db.query("SELECT post_url, original_post_id, uppcl_replied, reply_evidence, first_replied_at, discom_tagged_in_reply, current_status, picked_status FROM complaints;");
+    for (const er of existingReplied) {
+      if (er.post_url) existingMap.set(er.post_url, er);
+      if (er.original_post_id) existingMap.set(er.original_post_id, er);
+    }
+  } catch (e) {}
+
   // Clean out previous Twitter/X cache and remove all legacy demo seed records
   // to ensure 100% exact 1-to-1 parity with authoritative sheet
   db.run("DELETE FROM complaints WHERE platform = 'Twitter/X' OR created_by = 'SMC System Seed' OR complaint_no LIKE 'UPPCL-SMC-%';");
@@ -1007,13 +1017,7 @@ function processSheetMatrix(headers, data, method, startTime = Date.now()) {
 
     // Permanent Recognition of Any Verified UPPCLLKO Reply
     // Check if this complaint post already has verified historical UPPCLLKO reply on record
-    let existingComp = null;
-    if (linkUrl) {
-      existingComp = db.get('SELECT id, uppcl_replied, reply_evidence, first_replied_at, discom_tagged_in_reply, current_status, picked_status FROM complaints WHERE post_url = ? LIMIT 1;', [linkUrl]);
-    }
-    if (!existingComp && rowTid) {
-      existingComp = db.get('SELECT id, uppcl_replied, reply_evidence, first_replied_at, discom_tagged_in_reply, current_status, picked_status FROM complaints WHERE original_post_id = ? OR post_url LIKE ? LIMIT 1;', [rowTid, '%status/' + rowTid + '%']);
-    }
+    const existingComp = (linkUrl && existingMap.get(linkUrl)) || (rowTid && existingMap.get(rowTid)) || null;
 
     // Historical reply recognition:
     const hasIncomingVerifiedReply = (reply30 && reply30.toUpperCase() === 'YES') ||
@@ -1043,6 +1047,7 @@ function processSheetMatrix(headers, data, method, startTime = Date.now()) {
     }
 
     // Independent concept: DISCOM / division tagging
+    const isDiscomTagged = discom && ['PVVNL', 'PUVVNL', 'MVVNL', 'DVVNL', 'KESCO'].includes(discom.toUpperCase());
     let discomTaggedInReply = (existingComp && existingComp.discom_tagged_in_reply) ? existingComp.discom_tagged_in_reply : null;
     if (uppclReplied && isDiscomTagged && !discomTaggedInReply) {
       discomTaggedInReply = '@' + discom + 'HQ';
@@ -1101,7 +1106,6 @@ function processSheetMatrix(headers, data, method, startTime = Date.now()) {
 
     // Operational Status Mapping
     // Business Rule: Assigned to DISCOM only when Any discom got tagged by UPPCLLKO
-    const isDiscomTagged = discom && ['PVVNL', 'PUVVNL', 'MVVNL', 'DVVNL', 'KESCO'].includes(discom.toUpperCase());
     let status = 'New';
     if (/follow/i.test(rawStatus) || /discom.*reply/i.test(rawStatus) || (reply60 && reply60.toUpperCase() === 'YES')) {
       status = 'DISCOM Follow Up';

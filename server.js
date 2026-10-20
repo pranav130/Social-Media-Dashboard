@@ -410,8 +410,8 @@ app.get('/api/complaints', authMiddleware, (req, res) => {
       params.push(...districts);
     }
   } else if (discom && discom !== 'All') {
-    whereClauses.push('discom_name = ?');
-    params.push(discom);
+    whereClauses.push('(discom_name = ? OR UPPER(discom_name) = UPPER(?))');
+    params.push(discom, discom);
   }
 
   if (district && district !== 'All') {
@@ -1701,6 +1701,10 @@ app.get('/api/reports/list', authMiddleware, (req, res) => {
 });
 
 app.get('/api/reports/export', authMiddleware, (req, res) => {
+  if (req.query.type === 'dashboard_table') {
+    return handleDashboardTableExcelExport(req, res);
+  }
+
   const {
     type = 'daily_ops',
     format = 'csv',
@@ -1740,8 +1744,8 @@ app.get('/api/reports/export', authMiddleware, (req, res) => {
     whereClauses.push('(discom_name = ? OR discom_name = ?)');
     params.push(req.user.discom_name, req.user.discom_name.toUpperCase());
   } else if (discom && discom !== 'All') {
-    whereClauses.push('discom_name = ?');
-    params.push(discom);
+    whereClauses.push('(discom_name = ? OR UPPER(discom_name) = UPPER(?))');
+    params.push(discom, discom);
   }
 
   if (district && district !== 'All') {
@@ -1946,6 +1950,350 @@ app.get('/api/reports/export', authMiddleware, (req, res) => {
     return res.send(csv);
   }
 });
+
+// -------------------------------------------------------------
+// DASHBOARD TABLE EXCEL EXPORT (.XLSX)
+// -------------------------------------------------------------
+
+function sanitizeForExcel(val) {
+  if (val === null || val === undefined) return '';
+  const str = String(val);
+  // Protect against spreadsheet formula injection (=, +, -, @, tabs, carriage returns)
+  if (/^[=\+\-@\t\r]/.test(str)) {
+    return "'" + str;
+  }
+  return str;
+}
+
+function handleDashboardTableExcelExport(req, res) {
+  const {
+    search,
+    status,
+    discom,
+    district,
+    platform,
+    x_handle,
+    category,
+    priority,
+    overdue,
+    reply_status,
+    from_date,
+    to_date,
+    picked_status,
+    uppcl_replied,
+    reply_within_30_min,
+    shift,
+    data_quality,
+    assigned_handle,
+    sort_by = 'received_at',
+    sort_order = 'DESC'
+  } = req.query;
+
+  let whereClauses = [];
+  let params = [];
+
+  // Strictly exclude posts authored by official hierarchy handles (only outside consumer complaints)
+  whereClauses.push(`(
+    consumer_handle IS NULL OR 
+    REPLACE(LOWER(consumer_handle), '@', '') NOT IN (
+      SELECT REPLACE(LOWER(handle_name), '@', '') FROM x_hierarchy WHERE handle_name IS NOT NULL AND handle_name != ''
+    )
+  )`);
+
+  // Assigned X-Handle filter
+  if (assigned_handle && assigned_handle !== 'All') {
+    if (assigned_handle === 'Unassigned') {
+      whereClauses.push('(assigned_nodal_officer_name IS NULL OR assigned_nodal_officer_name = "")');
+    } else {
+      whereClauses.push('(assigned_nodal_officer_name = ? OR assigned_nodal_officer_name LIKE ?)');
+      params.push(assigned_handle, `%${assigned_handle}%`);
+    }
+  }
+
+  // Scoping: DISCOM Nodal Officer can only see complaints for their assigned DISCOM
+  if (req.user && req.user.role === 'DISCOM Nodal Officer') {
+    whereClauses.push('(discom_name = ? OR discom_name = ?)');
+    params.push(req.user.discom_name, req.user.discom_name.toUpperCase());
+  } else if (req.user && (req.user.role === 'Complaint Handler' || req.user.role === 'Social Media Cell Operator') && req.user.assigned_districts && req.user.assigned_districts.trim() && req.user.assigned_districts !== 'All') {
+    const districts = req.user.assigned_districts.split(',').map(d => d.trim()).filter(Boolean);
+    if (districts.length > 0) {
+      const placeholders = districts.map(() => '?').join(',');
+      whereClauses.push(`district_name IN (${placeholders})`);
+      params.push(...districts);
+    }
+  } else if (discom && discom !== 'All') {
+    whereClauses.push('(discom_name = ? OR UPPER(discom_name) = UPPER(?))');
+    params.push(discom, discom);
+  }
+
+  if (district && district !== 'All') {
+    whereClauses.push('district_name = ?');
+    params.push(district);
+  }
+
+  if (platform && platform !== 'All') {
+    whereClauses.push('platform = ?');
+    params.push(platform);
+  }
+
+  if (x_handle && x_handle !== 'All') {
+    whereClauses.push('(monitored_account = ? OR hierarchy_handle_name = ?)');
+    params.push(x_handle, x_handle);
+  }
+
+  if (category && category !== 'All') {
+    whereClauses.push('category_name = ?');
+    params.push(category);
+  }
+
+  if (priority && priority !== 'All') {
+    whereClauses.push('priority = ?');
+    params.push(priority);
+  }
+
+  if (reply_status && reply_status !== 'All') {
+    whereClauses.push('reply_status = ?');
+    params.push(reply_status);
+  }
+
+  if (from_date) {
+    whereClauses.push('received_at >= ?');
+    params.push(from_date + ' 00:00:00');
+  }
+
+  if (to_date) {
+    whereClauses.push('received_at <= ?');
+    params.push(to_date + ' 23:59:59');
+  }
+
+  // Quick filters & Status
+  if (status && status !== 'All') {
+    if (status === 'my_assigned') {
+      whereClauses.push('assigned_operator_id = ?');
+      params.push(req.user ? req.user.id : 0);
+    } else if (status === 'awaiting_forwarding') {
+      whereClauses.push("current_status = 'New'");
+    } else if (status === 'awaiting_discom') {
+      whereClauses.push("current_status IN ('Forwarded', 'DISCOM Follow Up')");
+    } else if (status === 'followup_due') {
+      whereClauses.push("current_status = 'DISCOM Follow Up'");
+    } else if (status === 'overdue') {
+      whereClauses.push("is_overdue = 1");
+    } else if (status === 'escalated') {
+      whereClauses.push("current_status = 'Escalated'");
+    } else if (status === 'draft_review') {
+      whereClauses.push("reply_status = 'DRAFT_GENERATED'");
+    } else if (status === 'needs_review' || status === 'unassigned') {
+      whereClauses.push("district_name = 'Unassigned'");
+    } else if (status === 'verification_pending') {
+      whereClauses.push("current_status = 'Resolved — Verification Pending'");
+    } else if (status === 'closed') {
+      whereClauses.push("current_status = 'Closed'");
+    } else {
+      whereClauses.push('current_status = ?');
+      params.push(status);
+    }
+  }
+
+  if (overdue === '1') {
+    whereClauses.push('is_overdue = 1');
+  }
+
+  // Google Sheets Specific Filters (Picked Status & Reply SLA)
+  if (picked_status && picked_status !== 'All') {
+    const ps = picked_status.toUpperCase();
+    if (ps === 'YES') {
+      whereClauses.push("(picked_status = 'YES' OR uppcl_replied = 1)");
+    } else if (ps === 'NO') {
+      whereClauses.push("(picked_status = 'NO' AND (uppcl_replied = 0 OR uppcl_replied IS NULL))");
+    } else {
+      whereClauses.push('picked_status = ?');
+      params.push(ps);
+    }
+  }
+
+  if (uppcl_replied !== undefined && uppcl_replied !== 'All' && uppcl_replied !== '') {
+    if (uppcl_replied === '1' || uppcl_replied === 'true' || uppcl_replied.toString().toUpperCase() === 'YES') {
+      whereClauses.push('uppcl_replied = 1');
+    } else if (uppcl_replied === '0' || uppcl_replied === 'false' || uppcl_replied.toString().toUpperCase() === 'NO') {
+      whereClauses.push('(uppcl_replied = 0 OR uppcl_replied IS NULL)');
+    }
+  }
+
+  if (reply_within_30_min && reply_within_30_min !== 'All') {
+    whereClauses.push('reply_within_30_min = ?');
+    params.push(reply_within_30_min.toUpperCase());
+  }
+
+  if (shift && shift !== 'All') {
+    whereClauses.push('(link_shift = ? OR reply_shift = ?)');
+    params.push(shift, shift);
+  }
+
+  if (data_quality === 'issues_only') {
+    whereClauses.push("data_quality_flags IS NOT NULL AND data_quality_flags != '[]'");
+  }
+
+  // Search across multiple fields
+  if (search && search.trim()) {
+    const term = `%${search.trim()}%`;
+    whereClauses.push(`(
+      complaint_no LIKE ? OR
+      consumer_name LIKE ? OR
+      consumer_handle LIKE ? OR
+      complaint_text LIKE ? OR
+      district_name LIKE ? OR
+      division_name LIKE ? OR
+      consumer_account_no LIKE ? OR
+      assigned_nodal_officer_name LIKE ? OR
+      forwarding_ref_no LIKE ?
+    )`);
+    params.push(term, term, term, term, term, term, term, term, term);
+  }
+
+  const whereSql = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
+  const orderClause = buildComplaintOrderClause(sort_by, sort_order);
+
+  // Fetch all matching records across all pages (no LIMIT / OFFSET)
+  const rows = db.query(`
+    SELECT * FROM complaints
+    ${whereSql}
+    ORDER BY ${orderClause};
+  `, params);
+
+  if (!rows || rows.length === 0) {
+    return res.status(404).json({ error: 'No matching complaints found to export for the current filters.' });
+  }
+
+  // Format data for Excel export matching dashboard table columns & status badges
+  const exportRows = rows.map(c => {
+    const isDiscomTagged = c.discom_name && ['PVVNL', 'PUVVNL', 'MVVNL', 'DVVNL', 'KESCO'].includes(c.discom_name.toUpperCase());
+    const isAppreciation = c.picked_status === 'APPRECIATION' || c.current_status === 'Appreciation' || c.category_name === 'APPRECIATION';
+
+    // Picked: YES only when UPPCLLKO actually replied in that post
+    const isUppclReplied = !isAppreciation && (
+      c.uppcl_replied === 1 ||
+      c.reply_within_30_min === 'YES' ||
+      c.reply_within_60_min === 'YES' ||
+      Boolean(c.published_reply_id) ||
+      (c.picked_status === 'YES' && c.reply_within_30_min !== 'NO' && c.reply_within_30_min !== '' && c.reply_within_30_min !== '-')
+    );
+    const effectivePicked = isAppreciation ? 'APPRECIATION' : (isUppclReplied ? 'YES' : 'NO');
+
+    let pickedText = '-';
+    if (effectivePicked === 'YES') {
+      pickedText = 'Picked: YES (UPPCLLKO Replied)';
+    } else if (effectivePicked === 'NO') {
+      pickedText = 'Picked: NO (UPPCLLKO Not Replied)';
+    } else if (effectivePicked === 'APPRECIATION') {
+      pickedText = 'Appreciation (Gratitude Post)';
+    }
+
+    let reply30Text = '-';
+    if (c.reply_within_30_min === 'YES') {
+      reply30Text = 'YES (< 30 Mins)';
+    } else if (c.reply_within_30_min === 'NO') {
+      const receivedMs = c.received_at ? new Date(c.received_at).getTime() : 0;
+      const elapsedMins = receivedMs ? (Date.now() - receivedMs) / 60000 : 999;
+      if (elapsedMins < 30) {
+        const minsLeft = Math.max(0, Math.ceil(30 - elapsedMins));
+        reply30Text = `In Window (< ${minsLeft}m left)`;
+      } else {
+        reply30Text = 'NO (≥ 30 Mins)';
+      }
+    }
+
+    let displayStatus = c.current_status || 'New';
+    let statusText = displayStatus;
+    if (displayStatus === 'Assigned to DISCOM') {
+      if (isUppclReplied && isDiscomTagged) {
+        statusText = `Assigned to DISCOM (Tagged @${c.discom_name}HQ)`;
+      } else {
+        statusText = 'New (Awaiting UPPCLLKO Reply)';
+      }
+    } else if (displayStatus === 'DISCOM Follow Up') {
+      statusText = 'DISCOM Follow Up (DISCOM Replied)';
+    } else if (displayStatus === 'Appreciation') {
+      statusText = 'Appreciation (Gratitude)';
+    } else if (displayStatus === 'New') {
+      statusText = !isUppclReplied ? 'New (Awaiting UPPCLLKO Reply)' : 'New (Pending Assignment)';
+    }
+
+    let postHref = (c.post_url && c.post_url.startsWith('http'))
+      ? c.post_url
+      : (/^\d{15,25}$/.test(String(c.post_url || '').trim()) ? `https://x.com/i/status/${c.post_url.trim()}` : (c.post_url || ''));
+    if (!postHref && (c.complaint_no === 'UPPCL-SMC-202610-0120' || c.sheet_row_index === 122)) {
+      postHref = 'https://x.com/Hindustan0112/status/2112123946334335270';
+    }
+
+    const receivedIst = c.received_at ? (c.received_at.length >= 16 ? `${c.received_at.substring(0, 16)} IST` : c.received_at) : '';
+    const districtDiv = c.district_name || (c.discom_name ? `${c.discom_name} HQ` : '');
+
+    return {
+      'Complaint #': sanitizeForExcel(c.complaint_no || ''),
+      'Sheet Row #': c.sheet_row_index ? sanitizeForExcel(String(c.sheet_row_index)) : '',
+      'Received At (IST)': sanitizeForExcel(receivedIst),
+      'Consumer Name': sanitizeForExcel(c.consumer_name || 'Consumer'),
+      'Consumer Handle': sanitizeForExcel(c.consumer_handle || ''),
+      'Grievance Category': sanitizeForExcel(c.category_name || ''),
+      'Grievance Summary': sanitizeForExcel(c.complaint_text || ''),
+      'DISCOM': sanitizeForExcel(c.discom_name || ''),
+      'District / Division': sanitizeForExcel(districtDiv),
+      'Picked Status': sanitizeForExcel(pickedText),
+      '30-Min First Reply': sanitizeForExcel(reply30Text),
+      'Status': sanitizeForExcel(statusText),
+      'Original Post URL': sanitizeForExcel(postHref)
+    };
+  });
+
+  const ws = XLSX.utils.json_to_sheet(exportRows);
+  ws['!autofilter'] = { ref: ws['!ref'] };
+  ws['!cols'] = [
+    { wch: 28 }, // Complaint #
+    { wch: 14 }, // Sheet Row #
+    { wch: 22 }, // Received At (IST)
+    { wch: 22 }, // Consumer Name
+    { wch: 20 }, // Consumer Handle
+    { wch: 24 }, // Grievance Category
+    { wch: 50 }, // Grievance Summary
+    { wch: 12 }, // DISCOM
+    { wch: 22 }, // District / Division
+    { wch: 32 }, // Picked Status
+    { wch: 22 }, // 30-Min First Reply
+    { wch: 34 }, // Status
+    { wch: 45 }  // Original Post URL
+  ];
+
+  // Set explicit string cell types and styling
+  const range = XLSX.utils.decode_range(ws['!ref']);
+  for (let R = range.s.r; R <= range.e.r; ++R) {
+    for (let C = range.s.c; C <= range.e.c; ++C) {
+      const cellRef = XLSX.utils.encode_cell({ c: C, r: R });
+      if (!ws[cellRef]) continue;
+      if (R === 0) {
+        ws[cellRef].s = { font: { bold: true } };
+      } else {
+        ws[cellRef].t = 's';
+      }
+    }
+  }
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Complaints');
+  const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+
+  const istNow = getIstTimestamp(); // 'YYYY-MM-DD HH:MM:SS'
+  const timeFormatted = istNow.substring(0, 10) + '_' + istNow.substring(11, 16).replace(':', '-');
+  const fileName = `complaints_export_${timeFormatted}.xlsx`;
+
+  logAudit(req, req.user, 'REPORT_EXPORTED', 'DASHBOARD_TABLE', 'excel', `Exported ${exportRows.length} dashboard table records to Excel`);
+
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+  return res.send(buf);
+}
+
+app.get('/api/dashboard/export-excel', authMiddleware, handleDashboardTableExcelExport);
 
 // -------------------------------------------------------------
 // GOOGLE SHEETS LIVE SYNCHRONIZATION & DEEP ANALYTICS
@@ -3075,4 +3423,4 @@ if (process.env.NO_SERVER_AUTOSTART !== 'true') {
   });
 }
 
-module.exports = { app, buildComplaintOrderClause };
+module.exports = { app, buildComplaintOrderClause, handleDashboardTableExcelExport };

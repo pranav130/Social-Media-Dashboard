@@ -789,6 +789,9 @@ const App = {
               <i class="fa-solid fa-magnifying-glass" style="position: absolute; left: 9px; top: 9px; color: var(--text-light); font-size: 11px;"></i>
               <input type="text" id="dash-table-search" class="form-control" placeholder="Quick search..." style="width: 200px; padding-left: 26px; height: 32px; font-size: 12px;" oninput="App.debounceDashTableSearch()">
             </div>
+            <button id="btn-dash-export-excel" class="btn btn-secondary btn-sm" onclick="App.exportDashboardTableExcel()" title="Export all matching records to Excel (.xlsx)" style="height: 32px; display: inline-flex; align-items: center; gap: 6px;">
+              <i class="fa-solid fa-file-excel" style="color: #10b981;"></i> Download Excel
+            </button>
             <button class="btn btn-secondary btn-sm" onclick="App.openActiveCardInRegister()" title="Open filtered list in full Complaint Register view" style="height: 32px;">
               <i class="fa-solid fa-arrow-up-right-from-square"></i> Full Register
             </button>
@@ -1040,6 +1043,95 @@ const App = {
     }
 
     this.navigate('register', params);
+  },
+
+  async exportDashboardTableExcel() {
+    const btn = document.getElementById('btn-dash-export-excel');
+    if (btn && btn.disabled) return;
+
+    const originalBtnHtml = btn ? btn.innerHTML : '<i class="fa-solid fa-file-excel" style="color: #10b981;"></i> Download Excel';
+    if (btn) {
+      btn.disabled = true;
+      btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Exporting...';
+    }
+
+    const kpi = this.dashFilter.kpi || 'total';
+    const discomVal = document.getElementById('dash-filter-discom') ? document.getElementById('dash-filter-discom').value : 'All';
+    const todayDate = this.getIstDateStr ? this.getIstDateStr() : new Date().toISOString().substring(0, 10);
+
+    const q = new URLSearchParams();
+    q.append('sort_by', 'received_at');
+    q.append('sort_order', 'DESC');
+
+    if (discomVal && discomVal !== 'All') {
+      q.append('discom', discomVal);
+    }
+    if (this.dashFilter.search && this.dashFilter.search.trim()) {
+      q.append('search', this.dashFilter.search.trim());
+    }
+
+    if (kpi === 'today') {
+      q.append('from_date', todayDate);
+      q.append('to_date', todayDate);
+    } else if (kpi === 'picked_yes') {
+      q.append('picked_status', 'YES');
+    } else if (kpi === 'picked_no') {
+      q.append('picked_status', 'NO');
+    } else if (kpi === 'appreciation') {
+      q.append('picked_status', 'APPRECIATION');
+    } else if (kpi === 'reply_30') {
+      q.append('reply_within_30_min', 'YES');
+    } else if (kpi === 'followup') {
+      q.append('status', 'DISCOM Follow Up');
+    }
+
+    if (this.token) {
+      q.append('token', this.token);
+    }
+
+    try {
+      const res = await fetch(`/api/dashboard/export-excel?${q.toString()}`, {
+        headers: this.token ? { 'Authorization': `Bearer ${this.token}` } : {}
+      });
+
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.error || `Export failed with status ${res.status}`);
+      }
+
+      const contentType = res.headers.get('content-type') || '';
+      if (contentType.includes('application/json')) {
+        const json = await res.json();
+        if (json.error) throw new Error(json.error);
+      }
+
+      let filename = `complaints_export_${todayDate}.xlsx`;
+      const disposition = res.headers.get('content-disposition');
+      if (disposition && disposition.indexOf('filename=') !== -1) {
+        const matches = /filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/.exec(disposition);
+        if (matches != null && matches[1]) {
+          filename = matches[1].replace(/['"]/g, '').trim();
+        }
+      }
+
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('Dashboard Excel export error:', err);
+      alert(err.message || 'Failed to export dashboard table to Excel.');
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = originalBtnHtml;
+      }
+    }
   },
 
   async loadDashboardComplaints() {
