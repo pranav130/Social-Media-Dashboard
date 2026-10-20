@@ -807,7 +807,7 @@ const App = {
                 <th>Consumer</th>
                 <th>Grievance Summary</th>
                 <th>DISCOM / Dist.</th>
-                <th title="Picked: YES — If UPPCLLKO replied in that post | Picked: NO — If UPPCLLKO not replied in that post">Picked Status</th>
+                <th title="UPPCLLKO Reply Status — Authoritatively checked across full conversation history">Reply Status</th>
                 <th title="Complaints: 30-Min First Reply — Time difference between post time and UPPCLLKO replied time <30Mins">30-Min First Reply</th>
                 <th title="Status — Assigned to DISCOM only when Any discom got tagged by UPPCLLKO">Status</th>
                 <th>Actions</th>
@@ -864,7 +864,7 @@ const App = {
 
         <div class="chart-card">
           <div class="chart-header">
-            <div class="chart-title"><i class="fa-solid fa-filter"></i> Complaints Picked Status (Actionable vs Filtered)</div>
+            <div class="chart-title"><i class="fa-solid fa-chart-pie"></i> UPPCLLKO Reply Status Distribution</div>
           </div>
           <div class="chart-body"><canvas id="chart-picked"></canvas></div>
         </div>
@@ -1612,10 +1612,10 @@ const App = {
     const ctxPicked = document.getElementById('chart-picked');
     if (ctxPicked) {
       if (this.charts.picked) this.charts.picked.destroy();
-      const pickedData = c.pickedStatuses || [];
+      const pickedData = c.replyStatuses || c.pickedStatuses || [];
       const labels = pickedData.map(p => p.status);
       const counts = pickedData.map(p => p.count);
-      const colorMap = { 'YES': '#10b981', 'NO': '#94a3b8', 'APPRECIATION': '#f59e0b' };
+      const colorMap = { 'UPPCLLKO Replied': '#10b981', 'UPPCLLKO Not Replied': '#94a3b8', 'DISCOM Replied': '#6366f1', 'Appreciation': '#f59e0b', 'YES': '#10b981', 'NO': '#94a3b8' };
 
       this.charts.picked = new Chart(ctxPicked, {
         type: 'pie',
@@ -2175,7 +2175,7 @@ const App = {
                   </div>
                   ${statusSub}
                   <div style="margin-top: 3px;">
-                    ${pickedMarkup}
+                    ${replyMarkup}
                   </div>
                   ${c.reply_within_30_min ? `
                     <div style="margin-top: 2px;">
@@ -3989,7 +3989,7 @@ const App = {
                   <tr>
                     <th>DISCOM</th>
                     <th>Total Inflow</th>
-                    <th>Picked (YES)</th>
+                    <th>UPPCLLKO Replied</th>
                     <th>Appreciation</th>
                     <th>Verified Closed</th>
                     <th>Resolution Rate</th>
@@ -4003,7 +4003,7 @@ const App = {
                     <tr>
                       <td><b style="font-size: 14px; color: var(--primary);">${d.discom_name}</b></td>
                       <td><b>${d.total}</b></td>
-                      <td><span class="badge-picked yes">${d.picked_yes}</span></td>
+                      <td><span class="badge-reply yes">${d.uppcl_replied || d.picked_yes || 0}</span></td>
                       <td><span class="badge-picked appreciation">${d.appreciation}</span></td>
                       <td><b style="color: #059669;">${d.closed}</b></td>
                       <td>

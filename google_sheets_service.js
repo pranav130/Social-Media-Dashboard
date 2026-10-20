@@ -1061,33 +1061,13 @@ function processSheetMatrix(headers, data, method, startTime = Date.now()) {
       discomTaggedInReply = '@' + discom + 'HQ';
     }
 
-    // Authoritative Picked logic:
-    // Picked = Valid_Existing_Pickup_Event OR Historical_UPPCLLKO_Replied
-    let normalizedPickedStatus = 'NO';
+    // Authoritative UPPCLLKO Reply Rule (Picked status retired completely):
     const isApprec = (rawPickedStatus && rawPickedStatus.toUpperCase() === 'APPRECIATION') ||
                      (rawCategory && rawCategory.toUpperCase() === 'APPRECIATION') ||
                      /appreciation/i.test(rawStatus) ||
                      (/बहुत\s*बहुत\s*धन्यवाद|उत्कृष्ट\s*कार्य|सराहनीय|great\s*job|thank\s*you\s*so\s*much/i.test(rawPostText) &&
                       !/समस्या|शिकायत|बिजली|outage|complaint|अधिकारी|प्रिय\s*उपभोक्ता/i.test(rawPostText));
-
-    // Valid pickup event: assigned to DISCOM, forwarded, or marked YES in sheet
-    const hasValidPickupEvent = Boolean(
-      (rawPickedStatus && rawPickedStatus.toUpperCase() === 'YES') ||
-      (rawStatus && /forward|assigned|follow|closed|resolved|progress/i.test(rawStatus)) ||
-      (existingComp && existingComp.picked_status === 'YES')
-    );
-
-    if (isApprec) {
-      if (endsWithOfficialHandle(rawPostText) || /update\s*you|work\s*is\s*going|प्रिय\s*उपभोक्ता|पूर्व\s*में\s*दर्ज|शिकायत\s*संख्या/i.test(rawPostText)) {
-        normalizedPickedStatus = (uppclReplied === 1 || hasValidPickupEvent) ? 'YES' : 'NO';
-      } else {
-        normalizedPickedStatus = 'APPRECIATION';
-      }
-    } else if (uppclReplied === 1 || hasValidPickupEvent) {
-      normalizedPickedStatus = 'YES';
-    } else {
-      normalizedPickedStatus = 'NO';
-    }
+    const normalizedPickedStatus = isApprec ? 'APPRECIATION' : null;
 
     // Determine sequential Complaint Number strictly matching UPPCL-SMC-YYYYMM-XXXX
     // Starting from UPPCL-SMC-YYYYMM-0001 sequentially
@@ -1185,12 +1165,12 @@ function processSheetMatrix(headers, data, method, startTime = Date.now()) {
   // 2) DISCOM replied before UPPCLLKO (reply_within_60_min is set and reply_within_30_min is not)
   // 3) Marked in frivolous_complaints
   db.run(`
-    -- Critical Rule: Authoritative Historical UPPCLLKO Reply & Pickup Event Reconciliation
-    -- 1. Group C: UPPCLLKO replied at least once in conversation history
+    -- Authoritative Historical UPPCLLKO Reply Rule (Picked status retired):
+    -- 1. All complaints with verified UPPCLLKO reply (historical, 30m, published, or complaint_replies)
     UPDATE complaints
     SET has_historical_reply = 1,
         uppcl_replied = 1,
-        picked_status = 'YES',
+        picked_status = NULL,
         reply_evidence = COALESCE(
           (SELECT 'Verified historical @UPPCLLKO reply in thread (Tweet ID: ' || reply_tweet_id || ')' FROM complaint_replies WHERE complaint_id = complaints.id AND is_uppcl_reply = 1 LIMIT 1),
           reply_evidence,
@@ -1201,37 +1181,27 @@ function processSheetMatrix(headers, data, method, startTime = Date.now()) {
        OR (id IN (SELECT DISTINCT complaint_id FROM x_outgoing_replies WHERE status IN ('Published', 'SENT')))
        OR (id IN (SELECT DISTINCT complaint_id FROM complaint_replies WHERE is_uppcl_reply = 1));
 
-    -- 2. Group B: UPPCLLKO never replied, but valid pickup event exists (Assigned to DISCOM, Forwarded, etc.)
+    -- 2. Complaints where UPPCLLKO has not replied
     UPDATE complaints
     SET has_historical_reply = 0,
         uppcl_replied = 0,
-        reply_evidence = NULL,
-        picked_status = 'YES'
+        picked_status = NULL,
+        reply_evidence = NULL
     WHERE (has_historical_reply = 0 OR has_historical_reply IS NULL)
       AND (reply_within_30_min != 'YES' OR reply_within_30_min IS NULL)
       AND (published_reply_id IS NULL OR published_reply_id = '')
       AND (id NOT IN (SELECT DISTINCT complaint_id FROM x_outgoing_replies WHERE status IN ('Published', 'SENT')))
-      AND (id NOT IN (SELECT DISTINCT complaint_id FROM complaint_replies WHERE is_uppcl_reply = 1))
-      AND (picked_status != 'APPRECIATION')
-      AND (
-        (current_status IN ('Assigned to DISCOM', 'Forwarded', 'DISCOM Follow Up', 'Escalated', 'Under Investigation', 'Resolved — Verification Pending', 'Closed'))
-        OR (forwarding_ref_no IS NOT NULL AND forwarding_ref_no != '')
-        OR (assigned_operator_id IS NOT NULL)
-      );
+      AND (id NOT IN (SELECT DISTINCT complaint_id FROM complaint_replies WHERE is_uppcl_reply = 1));
 
-    -- 3. Group A: UPPCLLKO never replied AND no valid pickup event exists (New / Unpicked)
+    -- 3. Scenario A: Registered DISCOM replied (Preserve DISCOM Redressal Tracking)
     UPDATE complaints
-    SET has_historical_reply = 0,
-        uppcl_replied = 0,
-        reply_evidence = NULL,
-        picked_status = 'NO'
-    WHERE (has_historical_reply = 0 OR has_historical_reply IS NULL)
-      AND (reply_within_30_min != 'YES' OR reply_within_30_min IS NULL)
-      AND (published_reply_id IS NULL OR published_reply_id = '')
-      AND (id NOT IN (SELECT DISTINCT complaint_id FROM x_outgoing_replies WHERE status IN ('Published', 'SENT')))
-      AND (id NOT IN (SELECT DISTINCT complaint_id FROM complaint_replies WHERE is_uppcl_reply = 1))
-      AND (picked_status != 'APPRECIATION')
-      AND (current_status = 'New' OR current_status IS NULL OR current_status = '');
+    SET discom_replied = 1,
+        discom_reply_evidence = COALESCE(
+          (SELECT 'Verified registered DISCOM reply in thread (Tweet ID: ' || reply_tweet_id || ')' FROM complaint_replies WHERE complaint_id = complaints.id AND is_discom_reply = 1 LIMIT 1),
+          'Verified registered DISCOM reply on record'
+        )
+    WHERE (reply_within_60_min IS NOT NULL AND reply_within_60_min != '' AND reply_within_60_min != 'NO' AND reply_within_60_min != '-')
+       OR (id IN (SELECT DISTINCT complaint_id FROM complaint_replies WHERE is_discom_reply = 1));
 
     UPDATE complaints
     SET discom_tagged_in_reply = '@' || UPPER(discom_name) || 'HQ'
@@ -1241,8 +1211,6 @@ function processSheetMatrix(headers, data, method, startTime = Date.now()) {
     DELETE FROM complaints 
     WHERE (forwarding_remarks IS NOT NULL AND LOWER(forwarding_remarks) LIKE '%delete%')
        OR (current_status IS NOT NULL AND LOWER(current_status) LIKE '%delete%')
-       OR (reply_within_60_min IS NOT NULL AND reply_within_60_min != '' AND reply_within_60_min != 'NO' AND reply_within_60_min != '-'
-           AND (reply_within_30_min IS NULL OR reply_within_30_min = '' OR reply_within_30_min = 'NO' OR reply_within_30_min = '-'))
        OR (post_url IN (SELECT post_url FROM frivolous_complaints WHERE post_url IS NOT NULL));
   `);
   db.run("DELETE FROM complaint_timeline WHERE complaint_id NOT IN (SELECT id FROM complaints);");

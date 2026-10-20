@@ -476,13 +476,13 @@ function createSchema() {
   tryAddColumn('complaints', 'last_reply_author TEXT');
 
   try {
-    // Critical Rule: Authoritative Historical UPPCLLKO Reply & Pickup Event Reconciliation
-    // 1. Group C: UPPCLLKO replied at least once in conversation history (regardless of latest reply)
+    // Authoritative Historical UPPCLLKO Reply Rule:
+    // If UPPCLLKO replied even once anywhere in conversation history -> uppcl_replied = 1, has_historical_reply = 1
     dbInstance.run(`
       UPDATE complaints
       SET has_historical_reply = 1,
           uppcl_replied = 1,
-          picked_status = 'YES',
+          picked_status = NULL,
           reply_evidence = COALESCE(
             (SELECT 'Verified historical @UPPCLLKO reply in thread (Tweet ID: ' || reply_tweet_id || ')' FROM complaint_replies WHERE complaint_id = complaints.id AND is_uppcl_reply = 1 LIMIT 1),
             reply_evidence,
@@ -492,45 +492,29 @@ function createSchema() {
          OR (published_reply_id IS NOT NULL AND published_reply_id != '')
          OR (id IN (SELECT DISTINCT complaint_id FROM x_outgoing_replies WHERE status IN ('Published', 'SENT')))
          OR (id IN (SELECT DISTINCT complaint_id FROM complaint_replies WHERE is_uppcl_reply = 1));
-    `);
 
-    // 2. Group B: UPPCLLKO never replied, but valid pickup event exists (Assigned to DISCOM, Forwarded, etc.)
-    dbInstance.run(`
+      -- Unreplied complaints
       UPDATE complaints
       SET has_historical_reply = 0,
           uppcl_replied = 0,
-          reply_evidence = NULL,
-          picked_status = 'YES'
+          picked_status = NULL,
+          reply_evidence = NULL
       WHERE (has_historical_reply = 0 OR has_historical_reply IS NULL)
         AND (reply_within_30_min != 'YES' OR reply_within_30_min IS NULL)
         AND (published_reply_id IS NULL OR published_reply_id = '')
         AND (id NOT IN (SELECT DISTINCT complaint_id FROM x_outgoing_replies WHERE status IN ('Published', 'SENT')))
-        AND (id NOT IN (SELECT DISTINCT complaint_id FROM complaint_replies WHERE is_uppcl_reply = 1))
-        AND (picked_status != 'APPRECIATION')
-        AND (
-          (current_status IN ('Assigned to DISCOM', 'Forwarded', 'DISCOM Follow Up', 'Escalated', 'Under Investigation', 'Resolved — Verification Pending', 'Closed'))
-          OR (forwarding_ref_no IS NOT NULL AND forwarding_ref_no != '')
-          OR (assigned_operator_id IS NOT NULL)
-        );
-    `);
+        AND (id NOT IN (SELECT DISTINCT complaint_id FROM complaint_replies WHERE is_uppcl_reply = 1));
 
-    // 3. Group A: UPPCLLKO never replied AND no valid pickup event exists (New / Unpicked)
-    dbInstance.run(`
+      -- Registered DISCOM reply tracking (Scenario A exception)
       UPDATE complaints
-      SET has_historical_reply = 0,
-          uppcl_replied = 0,
-          reply_evidence = NULL,
-          picked_status = 'NO'
-      WHERE (has_historical_reply = 0 OR has_historical_reply IS NULL)
-        AND (reply_within_30_min != 'YES' OR reply_within_30_min IS NULL)
-        AND (published_reply_id IS NULL OR published_reply_id = '')
-        AND (id NOT IN (SELECT DISTINCT complaint_id FROM x_outgoing_replies WHERE status IN ('Published', 'SENT')))
-        AND (id NOT IN (SELECT DISTINCT complaint_id FROM complaint_replies WHERE is_uppcl_reply = 1))
-        AND (picked_status != 'APPRECIATION')
-        AND (current_status = 'New' OR current_status IS NULL OR current_status = '');
-    `);
+      SET discom_replied = 1,
+          discom_reply_evidence = COALESCE(
+            (SELECT 'Verified registered DISCOM reply in thread (Tweet ID: ' || reply_tweet_id || ')' FROM complaint_replies WHERE complaint_id = complaints.id AND is_discom_reply = 1 LIMIT 1),
+            'Verified registered DISCOM reply on record'
+          )
+      WHERE (reply_within_60_min IS NOT NULL AND reply_within_60_min != '' AND reply_within_60_min != 'NO' AND reply_within_60_min != '-')
+         OR (id IN (SELECT DISTINCT complaint_id FROM complaint_replies WHERE is_discom_reply = 1));
 
-    dbInstance.run(`
       UPDATE complaints
       SET discom_tagged_in_reply = '@' || UPPER(discom_name) || 'HQ'
       WHERE discom_name IN ('PVVNL', 'PUVVNL', 'MVVNL', 'DVVNL', 'KESCO')

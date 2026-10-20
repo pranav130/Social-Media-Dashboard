@@ -1676,7 +1676,8 @@ app.get('/api/dashboard/charts', authMiddleware, (req, res) => {
     districts: districtRows,
     statuses: statusRows,
     shifts: linkShiftRows,
-    pickedStatuses: pickedRows
+    replyStatuses: replyRows,
+    pickedStatuses: replyRows
   });
 });
 
@@ -2173,31 +2174,26 @@ function handleDashboardTableExcelExport(req, res) {
     const isDiscomTagged = c.discom_name && ['PVVNL', 'PUVVNL', 'MVVNL', 'DVVNL', 'KESCO'].includes(c.discom_name.toUpperCase());
     const isAppreciation = c.picked_status === 'APPRECIATION' || c.current_status === 'Appreciation' || c.category_name === 'APPRECIATION';
 
-    // 1. Authoritative UPPCLLKO Replied (Group C): At least one verified UPPCLLKO reply in history
+    // Authoritative UPPCLLKO Reply Rule (Picked status completely retired)
     const isUppclReplied = !isAppreciation && Boolean(
       c.uppcl_replied === 1 ||
       c.has_historical_reply === 1 ||
       c.reply_within_30_min === 'YES' ||
       Boolean(c.published_reply_id)
     );
-
-    // 2. Authoritative Picked: Valid Pickup Event OR UPPCLLKO Replied
-    const isPicked = !isAppreciation && (
-      isUppclReplied ||
-      c.picked_status === 'YES' ||
-      (c.current_status && !['New', 'Pending Review', 'Unassigned'].includes(c.current_status)) ||
-      Boolean(c.forwarding_ref_no)
+    const isDiscomReplied = !isAppreciation && !isUppclReplied && Boolean(
+      c.discom_replied === 1 ||
+      c.current_status === 'DISCOM Follow Up' ||
+      Boolean(c.reply_within_60_min && c.reply_within_60_min !== 'NO')
     );
 
-    let pickedText = '-';
+    let replyStatusText = 'UPPCLLKO Not Replied';
     if (isAppreciation) {
-      pickedText = 'Appreciation (Gratitude Post)';
-    } else if (isPicked && isUppclReplied) {
-      pickedText = 'Picked: YES (UPPCLLKO Replied)';
-    } else if (isPicked && !isUppclReplied) {
-      pickedText = 'Picked: YES (Awaiting UPPCLLKO Reply)';
-    } else {
-      pickedText = 'Picked: NO (UPPCLLKO Not Replied)';
+      replyStatusText = 'Appreciation (Gratitude Post)';
+    } else if (isUppclReplied) {
+      replyStatusText = 'UPPCLLKO Replied';
+    } else if (isDiscomReplied) {
+      replyStatusText = 'DISCOM Replied (Registered Action)';
     }
 
     let reply30Text = '-';
@@ -2250,7 +2246,7 @@ function handleDashboardTableExcelExport(req, res) {
       'Grievance Summary': sanitizeForExcel(c.complaint_text || ''),
       'DISCOM': sanitizeForExcel(c.discom_name || ''),
       'District / Division': sanitizeForExcel(districtDiv),
-      'Picked Status': sanitizeForExcel(pickedText),
+      'UPPCLLKO Reply Status': sanitizeForExcel(replyStatusText),
       '30-Min First Reply': sanitizeForExcel(reply30Text),
       'Status': sanitizeForExcel(statusText),
       'Original Post URL': sanitizeForExcel(postHref)
@@ -2268,7 +2264,7 @@ function handleDashboardTableExcelExport(req, res) {
     { wch: 50 }, // Grievance Summary
     { wch: 12 }, // DISCOM
     { wch: 22 }, // District / Division
-    { wch: 32 }, // Picked Status
+    { wch: 30 }, // UPPCLLKO Reply Status
     { wch: 22 }, // 30-Min First Reply
     { wch: 34 }, // Status
     { wch: 45 }  // Original Post URL
@@ -2399,7 +2395,7 @@ app.get('/api/reports/analytics', authMiddleware, (req, res) => {
         SUM(CASE WHEN current_status = 'Closed' THEN 1 ELSE 0 END) as closed,
         SUM(CASE WHEN current_status IN ('Forwarded', 'Assigned to DISCOM', 'DISCOM Follow Up', 'Escalated') THEN 1 ELSE 0 END) as pending,
         SUM(CASE WHEN current_status = 'Resolved — Verification Pending' THEN 1 ELSE 0 END) as verification_pending,
-        SUM(CASE WHEN (picked_status = 'YES' OR uppcl_replied = 1) AND picked_status != 'APPRECIATION' THEN 1 ELSE 0 END) as picked_yes,
+        SUM(CASE WHEN uppcl_replied = 1 THEN 1 ELSE 0 END) as uppcl_replied,
         SUM(CASE WHEN picked_status = 'APPRECIATION' THEN 1 ELSE 0 END) as appreciation,
         SUM(CASE WHEN uppcl_replied = 1 THEN 1 ELSE 0 END) as uppcl_replied,
         ROUND((SUM(CASE WHEN current_status = 'Closed' THEN 1 ELSE 0 END) * 100.0 / MAX(COUNT(*), 1)), 1) as resolution_pct
