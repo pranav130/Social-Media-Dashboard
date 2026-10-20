@@ -1,5 +1,6 @@
 /* UPPCL Social Media Cell - Enterprise Operations Theme */
-:root {
+:root,
+[data-theme="light"] {
   --primary-dark: #0b1f36;
   --primary: #123456;
   --primary-light: #1b4b7a;

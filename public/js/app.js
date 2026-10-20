@@ -1,6 +1,6 @@
 // UPPCL Social Media Cell - Front-end Application
 const App = {
-  theme: 'midnight',
+  theme: 'light',
   user: null,
   token: null,
   currentPage: 'dashboard',
@@ -355,29 +355,31 @@ const App = {
 
   initTheme() {
     try {
-      let savedTheme = localStorage.getItem('uppcl_smc_theme_v2');
+      let savedTheme = localStorage.getItem('uppcl_smc_theme_v3');
       if (!savedTheme) {
-        // Fallback check or default to midnight
-        savedTheme = localStorage.getItem('uppcl_smc_theme') || 'midnight';
+        // Default to light theme
+        savedTheme = 'light';
+        localStorage.setItem('uppcl_smc_theme_v3', 'light');
+        localStorage.setItem('uppcl_smc_theme', 'light');
       }
       if (!['light', 'dark', 'midnight'].includes(savedTheme)) {
-        savedTheme = 'midnight';
+        savedTheme = 'light';
       }
       this.setTheme(savedTheme, false);
     } catch(e) {
-      this.setTheme('midnight', false);
+      this.setTheme('light', false);
     }
   },
 
   setTheme(theme, updateCharts = true) {
     if (!['light', 'dark', 'midnight'].includes(theme)) {
-      theme = 'midnight';
+      theme = 'light';
     }
     this.theme = theme;
     document.documentElement.setAttribute('data-theme', theme);
     try {
       localStorage.setItem('uppcl_smc_theme', theme);
-      localStorage.setItem('uppcl_smc_theme_v2', theme);
+      localStorage.setItem('uppcl_smc_theme_v3', theme);
     } catch(e) {}
 
     // Update Chart.js defaults if library loaded
@@ -4419,11 +4421,11 @@ const App = {
         </div>
         <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 14px;">Select system appearance mode. Preferences are preserved across sessions.</p>
         <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
-          <button type="button" class="btn ${this.theme === 'midnight' ? 'btn-primary' : 'btn-secondary'}" onclick="App.setTheme('midnight', true); App.renderSettings(document.getElementById('page-content'))">
-            <i class="fa-solid fa-cloud" style="color: #38bdf8;"></i> Midnight Theme (Default)
-          </button>
           <button type="button" class="btn ${this.theme === 'light' ? 'btn-primary' : 'btn-secondary'}" onclick="App.setTheme('light', true); App.renderSettings(document.getElementById('page-content'))">
-            <i class="fa-solid fa-sun" style="color: #f59e0b;"></i> Light Mode
+            <i class="fa-solid fa-sun" style="color: #f59e0b;"></i> Light Mode (Default)
+          </button>
+          <button type="button" class="btn ${this.theme === 'midnight' ? 'btn-primary' : 'btn-secondary'}" onclick="App.setTheme('midnight', true); App.renderSettings(document.getElementById('page-content'))">
+            <i class="fa-solid fa-cloud" style="color: #38bdf8;"></i> Midnight Theme
           </button>
           <button type="button" class="btn ${this.theme === 'dark' ? 'btn-primary' : 'btn-secondary'}" onclick="App.setTheme('dark', true); App.renderSettings(document.getElementById('page-content'))">
             <i class="fa-solid fa-moon" style="color: #6366f1;"></i> Dark Mode

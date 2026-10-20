@@ -6,15 +6,15 @@
   <script>
     (function() {
       try {
-        var savedTheme = localStorage.getItem('uppcl_smc_theme_v2');
+        var savedTheme = localStorage.getItem('uppcl_smc_theme_v3');
         if (!savedTheme) {
           // If first time under v2, default to midnight theme
-          savedTheme = 'midnight';
-          localStorage.setItem('uppcl_smc_theme_v2', 'midnight');
-          localStorage.setItem('uppcl_smc_theme', 'midnight');
+          savedTheme = 'light';
+          localStorage.setItem('uppcl_smc_theme_v3', 'light');
+          localStorage.setItem('uppcl_smc_theme', 'light');
         }
         if (!['light', 'dark', 'midnight'].includes(savedTheme)) {
-          savedTheme = 'midnight';
+          savedTheme = 'light';
         }
         document.documentElement.setAttribute('data-theme', savedTheme);
       } catch (e) {}
@@ -30,20 +30,20 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 
   <!-- Application Stylesheet -->
-  <link rel="stylesheet" href="/css/style.css?v=4.1">
+  <link rel="stylesheet" href="/css/style.css?v=5.0">
 </head>
 <body>
   <div id="app">
     <!-- App rendered by app.js -->
-    <div style="display: flex; height: 100vh; align-items: center; justify-content: center; background: #020617; color: #fff; font-family: sans-serif;">
+    <div style="display: flex; height: 100vh; align-items: center; justify-content: center; background: var(--bg-main, #f4f6f9); color: var(--text-main, #1f2937); font-family: sans-serif;">
       <div style="text-align: center;">
-        <i class="fa-solid fa-bolt fa-bounce" style="font-size: 40px; color: #38bdf8; margin-bottom: 16px;"></i>
+        <i class="fa-solid fa-bolt fa-bounce" style="font-size: 40px; color: #008080; margin-bottom: 16px;"></i>
         <h2>Loading UPPCL Social Media Cell Grievance System...</h2>
       </div>
     </div>
   </div>
 
   <!-- Application Logic -->
-  <script src="/js/app.js?v=4.1"></script>
+  <script src="/js/app.js?v=5.0"></script>
 </body>
 </html>
