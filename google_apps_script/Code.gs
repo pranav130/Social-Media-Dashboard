@@ -21,6 +21,7 @@ function onOpen() {
     .addItem('🧹 Remove Duplicate Rows from Sheet', 'removeDuplicateRowsFromSheet')
     .addItem('🧹 Remove Official Initiated Posts', 'removeOfficialPostsFromSheet')
     .addItem('📥 Sync All Complaints from Working Sheet (19-10-26)', 'syncFromWorkingSheet')
+    .addItem('📅 Auto-Fix Corrupted Date Column (Col A)', 'fixDateColumnInSheet')
     .addItem('🔗 Auto-Fix Malformed/Missing Post Links (Col E)', 'fixMalformedUrlsInSheet')
     .addItem('Apply Original Formatting (Blue Links & 45px Rows)', 'applyOriginalFormatting')
     .addItem('Fix Misclassified Appreciation Rows', 'fixMisclassifiedComplaints')
@@ -321,12 +322,9 @@ function syncFromWorkingSheet() {
     sheet.setRowHeight(r, 45);
   }
 
-  // Renumber S.No. (Column A) sequentially
+  // Preserve Column A (DATE) and never overwrite dates with integer counters
   const finalLastRow = sheet.getLastRow();
   const totalCount = finalLastRow - 2;
-  const sNos = [];
-  for (let i = 1; i <= totalCount; i++) sNos.push([i]);
-  sheet.getRange(3, 1, totalCount, 1).setValues(sNos);
 
   // Restore blue clickable hyperlinks in Column E
   const allUrls = sheet.getRange(3, 5, totalCount, 1).getValues();
@@ -647,6 +645,11 @@ function doPost(e) {
     if (contents.action === 'restore_links' || contents.action === 'apply_original_format') {
       applyOriginalFormatting();
       return ContentService.createTextOutput(JSON.stringify({ status: 'ok', action: contents.action }))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+    if (contents.action === 'fix_dates' || contents.action === 'correct_dates') {
+      const fixed = fixDateColumnInSheet();
+      return ContentService.createTextOutput(JSON.stringify({ status: 'ok', action: contents.action, fixedCount: fixed }))
         .setMimeType(ContentService.MimeType.JSON);
     }
     if (contents.action === 'fix_misclassified') {
@@ -1411,4 +1414,95 @@ function fixMalformedUrlsInSheet() {
   }
   return fixCount;
 }
+
+/**
+ * Automatically fixes the corrupted DATE column (Column A) across all rows in 'Twitter Complaint List'.
+ * Replaces 1900/1901/1902/1903/1904 numbers with genuine creation dates (e.g. 18-10-2026, 19-10-2026, 20-10-2026, 21-10-2026)
+ * mathematically derived from Twitter Snowflake IDs and IST timestamps.
+ */
+function fixDateColumnInSheet() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sheet = ss.getSheetByName('Twitter Complaint List');
+  if (!sheet) sheet = ss.getActiveSheet();
+
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 3) return 0;
+  const numRows = lastRow - 2;
+
+  // Read Column A (Date), Column E (Link URL), Column T (Tweet ID), Column V (First Detected IST)
+  const maxCol = Math.max(sheet.getLastColumn(), 23);
+  const data = sheet.getRange(3, 1, numRows, maxCol).getValues();
+  const dateValues = [];
+  let fixCount = 0;
+
+  for (let i = 0; i < data.length; i++) {
+    const row = data[i];
+    const curDate = String(row[0] || '').trim();
+    const url = String(row[4] || '').trim();
+    const tidCol = (maxCol >= 20) ? String(row[19] || '').trim() : '';
+    const colV = (maxCol >= 23) ? String(row[22] || '').trim() : '';
+
+    // A date is corrupted if it contains 1900-1904, is a plain integer counter (e.g. 1..2500), or does not have a 202x year
+    const isCorrupted = !curDate || /190[0-9]/.test(curDate) || /^\d{1,5}$/.test(curDate) || !curDate.includes('202');
+
+    if (isCorrupted) {
+      let resolvedDate = null;
+
+      // 1. Primary: Extract Twitter Snowflake ID from URL (Col E) or Post ID (Col T)
+      const m = url.match(/status\/(\d+)/i);
+      const tid = m ? m[1] : (tidCol && /^\d{15,25}$/.test(tidCol) ? tidCol : null);
+
+      if (tid) {
+        try {
+          const big = BigInt(tid);
+          const epochMs = Number((big >> 22n) + 1288834974657n);
+          const d = new Date(epochMs);
+          if (!isNaN(d.getTime()) && d.getFullYear() >= 2020 && d.getFullYear() <= 2030) {
+            resolvedDate = Utilities.formatDate(d, 'Asia/Kolkata', 'dd-MM-yyyy');
+          }
+        } catch (e) {}
+      }
+
+      // 2. Secondary: Fallback to First Detected At (IST) timestamp
+      if (!resolvedDate && colV) {
+        const dMatch = colV.match(/(\d{1,2}[-\/]\d{1,2}[-\/]\d{4})/);
+        if (dMatch) {
+          resolvedDate = dMatch[1].replace(/\//g, '-');
+        }
+      }
+
+      // 3. Tertiary: Working Sheet Default
+      if (!resolvedDate) {
+        resolvedDate = '19-10-2026';
+      }
+
+      dateValues.push([resolvedDate]);
+      fixCount++;
+    } else {
+      // Keep existing valid date string (formatted cleanly)
+      dateValues.push([curDate]);
+    }
+  }
+
+  // Write batch values back into Column A with text format to prevent Google Sheets from re-converting to 1900 serials
+  const dateRange = sheet.getRange(3, 1, numRows, 1);
+  dateRange.setNumberFormat('@');
+  dateRange.setValues(dateValues);
+  dateRange.setHorizontalAlignment('center');
+  dateRange.setVerticalAlignment('middle');
+  dateRange.setFontFamily('Verdana');
+  dateRange.setFontSize(10);
+  dateRange.setFontColor('#000000');
+
+  SpreadsheetApp.flush();
+
+  const msg = 'Successfully corrected ' + fixCount + ' corrupted dates in Column A (DATE) to standard DD-MM-YYYY format!';
+  try {
+    SpreadsheetApp.getUi().alert('Date Column Recovery\n\n' + msg);
+  } catch (e) {
+    Logger.log(msg);
+  }
+  return fixCount;
+}
+
 
