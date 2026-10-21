@@ -71,6 +71,7 @@ function onOpen() {
     .addItem('🧹 Remove Duplicate Rows from Sheet', 'removeDuplicateRowsFromSheet')
     .addItem('🧹 Remove Official Initiated Posts', 'removeOfficialPostsFromSheet')
     .addItem('📥 Sync All Complaints from Working Sheet (19-10-26)', 'syncFromWorkingSheet')
+    .addItem('🔄 Restore Standard Column Headers (Row 1)', 'restoreStandardHeaders')
     .addItem('📅 Auto-Fix Corrupted Date Column (Col A)', 'fixDateColumnInSheet')
     .addItem('🔗 Auto-Fix Malformed/Missing Post Links (Col E)', 'fixMalformedUrlsInSheet')
     .addItem('Apply CF Formula to Column C (Twitter ID Repeat Count)', 'applyCfFormulaToSheet')
@@ -1843,6 +1844,60 @@ function applyCfFormulaToSheet() {
   try {
     SpreadsheetApp.getUi().alert(msg);
   } catch(e) {
+    Logger.log(msg);
+  }
+}
+
+
+/**
+ * Restores the standard 23 column headers in Row 1 of 'Twitter Complaint List'
+ * in case they were accidentally overwritten by a "Fill Right" (Ctrl+R) or fill-handle drag.
+ */
+function restoreStandardHeaders() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sheet = ss.getSheetByName('Twitter Complaint List');
+  if (!sheet) sheet = ss.getActiveSheet();
+
+  const standardHeaders = [
+    'DATE',
+    'Link Shift',
+    'C F',
+    'REPLY_WITHIN_30_MIN_BY_Laqshya Media',
+    'LINK URL',
+    'Twitter Id',
+    'Picked Status',
+    'Head',
+    'Untagged Complaint',
+    'UPPCLLKO Replied (YES/NO)',
+    'Complaint Type',
+    'DISCOM',
+    'Zone',
+    'District',
+    'Status',
+    'COMPLAINT_NO',
+    'Post Text',
+    'Post Created At (UTC)',
+    'First Detected At (IST)',
+    'Language',
+    'Routing Confidence',
+    'Suggested Reply Draft',
+    'Reply Approval Status'
+  ];
+
+  const headerRange = sheet.getRange(1, 1, 1, standardHeaders.length);
+  headerRange.setValues([standardHeaders]);
+  headerRange.setFontFamily('Verdana').setFontSize(13).setFontWeight('bold')
+    .setBackground('#4DD0E1').setFontColor('#1A2F40')
+    .setHorizontalAlignment('center').setVerticalAlignment('middle')
+    .setWrap(true)
+    .setBorder(true, true, true, true, true, true, '#000000', SpreadsheetApp.BorderStyle.SOLID);
+  sheet.setRowHeight(1, 66);
+  SpreadsheetApp.flush();
+
+  const msg = 'Successfully restored all ' + standardHeaders.length + ' official column headers in Row 1!';
+  try {
+    SpreadsheetApp.getUi().alert('Headers Restored\n\n' + msg);
+  } catch (e) {
     Logger.log(msg);
   }
 }
