@@ -73,6 +73,7 @@ function onOpen() {
     .addItem('📥 Sync All Complaints from Working Sheet (19-10-26)', 'syncFromWorkingSheet')
     .addItem('📅 Auto-Fix Corrupted Date Column (Col A)', 'fixDateColumnInSheet')
     .addItem('🔗 Auto-Fix Malformed/Missing Post Links (Col E)', 'fixMalformedUrlsInSheet')
+    .addItem('Apply CF Formula to Column C (Twitter ID Repeat Count)', 'applyCfFormulaToSheet')
     .addItem('Apply Original Formatting (Blue Links & 45px Rows)', 'applyOriginalFormatting')
     .addItem('Fix Misclassified Appreciation Rows', 'fixMisclassifiedComplaints')
     .addItem('Make Rows Compact (22px)', 'makeRowsCompact')
@@ -1809,3 +1810,39 @@ function repairMisalignedRowsInSheet() {
 }
 
 
+
+
+
+/**
+ * Applies Complainant Frequency (CF) formula to Column C:
+ * Formula: =IF($F3="","",COUNTIF($F:$F,$F3))
+ * Counts how many times the Twitter ID in Column F repeats across the dataset.
+ */
+function applyCfFormulaToSheet() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sheet = ss.getSheetByName('Twitter Complaint List');
+  if (!sheet) sheet = ss.getActiveSheet();
+
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 3) {
+    try {
+      SpreadsheetApp.getUi().alert('No data rows found in "Twitter Complaint List".');
+    } catch(e) {
+      Logger.log('No data rows found.');
+    }
+    return;
+  }
+
+  // Column C is Column index 3 (1-based)
+  const cfRange = sheet.getRange(3, 3, lastRow - 2, 1);
+  cfRange.setFormula('=IF($F3="","",COUNTIF($F:$F,$F3))');
+  cfRange.setHorizontalAlignment('center').setVerticalAlignment('middle');
+  SpreadsheetApp.flush();
+
+  const msg = 'CF Formula Applied Successfully!\n\nPopulated =COUNTIF($F:$F, $F3) across ' + (lastRow - 2) + ' rows in Column C.';
+  try {
+    SpreadsheetApp.getUi().alert(msg);
+  } catch(e) {
+    Logger.log(msg);
+  }
+}

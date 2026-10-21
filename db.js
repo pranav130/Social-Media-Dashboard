@@ -890,7 +890,7 @@ function run(sql, params = []) {
 
 function exec(sql) {
   const db = getDbInstance();
-  db.run(sql);
+  db.exec(sql);
   scheduleSave();
 }
 
