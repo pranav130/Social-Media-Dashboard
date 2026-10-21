@@ -1056,13 +1056,9 @@ function refreshDashboard() {
   dashSheet.autoResizeColumns(1, 4);
 
   SpreadsheetApp.flush();
-  const msg = 'Dashboard KPIs Refreshed Successfully!
-
-' +
-    '• UPPCLLKO Replied: Linked to Column ' + uppclLtr + ' = "YES"
-' +
-    '• UPPCLLKO Not Replied: Linked to Column ' + uppclLtr + ' <> "YES"
-' +
+  const msg = 'Dashboard KPIs Refreshed Successfully!\n\n' +
+    '• UPPCLLKO Replied: Linked to Column ' + uppclLtr + ' = "YES"\n' +
+    '• UPPCLLKO Not Replied: Linked to Column ' + uppclLtr + ' <> "YES"\n' +
     '• All formulas and category breakdowns updated.';
   try {
     SpreadsheetApp.getUi().alert(msg);
