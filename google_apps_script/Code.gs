@@ -1454,8 +1454,8 @@ function fixDateColumnInSheet() {
 
       if (tid) {
         try {
-          const big = BigInt(tid);
-          const epochMs = Number((big >> 22n) + 1288834974657n);
+          // Calculate Snowflake epoch milliseconds using standard division (no BigInt literals to ensure 100% Apps Script compatibility)
+          const epochMs = Math.floor(Number(tid) / 4194304) + 1288834974657;
           const d = new Date(epochMs);
           if (!isNaN(d.getTime()) && d.getFullYear() >= 2020 && d.getFullYear() <= 2030) {
             resolvedDate = Utilities.formatDate(d, 'Asia/Kolkata', 'dd-MM-yyyy');
