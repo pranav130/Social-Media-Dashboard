@@ -71,6 +71,7 @@ function onOpen() {
     .addItem('🗑 Delete Selected Row as Frivolous', 'deleteSelectedRowAsFrivolous')
     .addItem('🧹 Remove Duplicate Rows from Sheet', 'removeDuplicateRowsFromSheet')
     .addItem('🧹 Remove Official Initiated Posts', 'removeOfficialPostsFromSheet')
+    .addItem('ðŸ§¹ Remove Posts Already Replied by DISCOM / Authorities', 'removeOfficialRepliedFromSheet')
     .addItem('📥 Sync All Complaints from Working Sheet (19-10-26)', 'syncFromWorkingSheet')
     .addItem('🔄 Restore Standard Column Headers (Row 1)', 'restoreStandardHeaders')
     .addItem('⚡ Populate UPPCLLKO Replied (YES/NO) across All Rows', 'populateUppclRepliedColumn')
@@ -233,6 +234,8 @@ function makeRowsCompact() {
  * that complaint must NOT land on the Google Sheet.
  */
 const DISCOM_FIELD_HANDLES = new Set([
+  // Apex & Ministerial Authorities (6 handles)
+  'cmofficeup', 'emofficeup', 'aksharmaoffice', 'aksharmabharat', 'chairmanuppcl', 'mduppcl',
   // DISCOM Corporate HQs (5 handles)
   'pvvnlhq', 'dvvnlhq', 'puvvnlhq', 'mvvnlhq', 'kescohq',
   // PuVVNL (21 handles)
@@ -262,10 +265,11 @@ const DISCOM_FIELD_HANDLES = new Set([
 /**
  * Checks if any of the 83 DISCOM / district handles replied to a tweet before UPPCLLKO.
  */
-function checkDiscomRepliedBeforeUppclInScript(tweetId, bearerToken) {
+function checkDiscomRepliedBeforeUppclInScript(tweetId, bearerToken, conversationId) {
   if (!tweetId) return { discomRepliedFirst: false };
   try {
-    const url = 'https://api.twitter.com/2/tweets/search/recent?query=' + encodeURIComponent('conversation_id:' + tweetId) +
+    const targetCid = conversationId || tweetId;
+    const url = 'https://api.twitter.com/2/tweets/search/recent?query=' + encodeURIComponent('conversation_id:' + targetCid) +
       '&max_results=50' +
       '&tweet.fields=created_at,author_id,conversation_id' +
       '&expansions=author_id' +
@@ -285,8 +289,37 @@ function checkDiscomRepliedBeforeUppclInScript(tweetId, bearerToken) {
     }
 
     const json = JSON.parse(resp.getContentText());
-    const tweets = json.data || [];
-    const users = (json.includes && json.includes.users) ? json.includes.users : [];
+    let tweets = json.data || [];
+    let users = (json.includes && json.includes.users) ? json.includes.users : [];
+
+    // If query returned 0 and we haven't resolved conversation_id, check tweet details to find root conversation_id
+    if (tweets.length === 0 && !conversationId) {
+      try {
+        const detailUrl = 'https://api.twitter.com/2/tweets/' + tweetId + '?tweet.fields=conversation_id';
+        const dResp = UrlFetchApp.fetch(detailUrl, {
+          method: 'get',
+          headers: { 'Authorization': 'Bearer ' + bearerToken, 'User-Agent': 'UPPCL-Grievance-Command-Centre/2.0' },
+          muteHttpExceptions: true
+        });
+        if (dResp.getResponseCode() === 200) {
+          const dJson = JSON.parse(dResp.getContentText());
+          if (dJson.data && dJson.data.conversation_id && dJson.data.conversation_id !== tweetId) {
+            const rootUrl = 'https://api.twitter.com/2/tweets/search/recent?query=' + encodeURIComponent('conversation_id:' + dJson.data.conversation_id) +
+              '&max_results=50&tweet.fields=created_at,author_id,conversation_id&expansions=author_id&user.fields=username';
+            const rResp = UrlFetchApp.fetch(rootUrl, {
+              method: 'get',
+              headers: { 'Authorization': 'Bearer ' + bearerToken, 'User-Agent': 'UPPCL-Grievance-Command-Centre/2.0' },
+              muteHttpExceptions: true
+            });
+            if (rResp.getResponseCode() === 200) {
+              const rJson = JSON.parse(rResp.getContentText());
+              tweets = rJson.data || [];
+              users = (rJson.includes && rJson.includes.users) ? rJson.includes.users : [];
+            }
+          }
+        }
+      } catch (e) {}
+    }
     const userMap = {};
     for (let u = 0; u < users.length; u++) {
       userMap[users[u].id] = (users[u].username || '').toLowerCase();
@@ -998,23 +1031,26 @@ function refreshDashboard() {
   // Clear existing content to avoid stale rows
   dashSheet.clear();
 
+  // -------------------------------------------------------------
+  // TABLE 1: Main KPI Metrics (Columns A - D)
+  // -------------------------------------------------------------
   const dashData = [
     ['UPPCL X COMPLAINT MONITORING DASHBOARD', '', '', ''],
     ['Metric', 'Value', 'Source / Formula', 'Notes'],
-    // 1. Overall Volume
+    // Overall Volume
     ['Total Complaints Recorded', `=COUNTA('Twitter Complaint List'!${urlLtr}3:${urlLtr})`, `Column ${urlLtr} (LINK URL)`, 'Active qualifying post links count'],
-    // 2. UPPCLLKO Reply Status (Strictly from Col J: UPPCLLKO Replied (YES/NO))
+    // UPPCLLKO Reply Status (Strictly from Col J: UPPCLLKO Replied (YES/NO))
     ['UPPCLLKO Replied', `=COUNTIF('Twitter Complaint List'!${uppclLtr}3:${uppclLtr}, "YES")`, `Column ${uppclLtr} = 'YES'`, 'UPPCLLKO Replied (YES/NO) = YES'],
     ['UPPCLLKO Not Replied', `=COUNTIFS('Twitter Complaint List'!${urlLtr}3:${urlLtr}, "<>", 'Twitter Complaint List'!${uppclLtr}3:${uppclLtr}, "<>YES")`, `Column ${uppclLtr} <> 'YES'`, 'Active complaints where UPPCLLKO has not replied'],
     ['UPPCLLKO Explicit NO', `=COUNTIF('Twitter Complaint List'!${uppclLtr}3:${uppclLtr}, "NO")`, `Column ${uppclLtr} = 'NO'`, 'Explicitly marked NO in dropdown'],
     ['UPPCLLKO Unmarked / Pending', `=COUNTIFS('Twitter Complaint List'!${urlLtr}3:${urlLtr}, "<>", 'Twitter Complaint List'!${uppclLtr}3:${uppclLtr}, "")`, `Column ${uppclLtr} is Blank`, 'Awaiting reply or verification'],
-    // 3. Category Breakdown (From Col K: Complaint Type)
+    // Category Breakdown (From Col K: Complaint Type)
     ['Supply Outages', `=COUNTIF('Twitter Complaint List'!${typeLtr}3:${typeLtr}, "SUPPLY_OUTAGE")`, `Column ${typeLtr} (Complaint Type)`, 'SUPPLY_OUTAGE'],
     ['Transformer Damage', `=COUNTIF('Twitter Complaint List'!${typeLtr}3:${typeLtr}, "TRANSFORMER_DAMAGE")`, `Column ${typeLtr} (Complaint Type)`, 'TRANSFORMER_DAMAGE'],
     ['Billing Issues', `=COUNTIF('Twitter Complaint List'!${typeLtr}3:${typeLtr}, "BILL_RELATED")`, `Column ${typeLtr} (Complaint Type)`, 'BILL_RELATED'],
     ['Voltage Fluctuations', `=COUNTIF('Twitter Complaint List'!${typeLtr}3:${typeLtr}, "SUPPLY_VOLTAGE")`, `Column ${typeLtr} (Complaint Type)`, 'SUPPLY_VOLTAGE'],
     ['New Connection Issues', `=COUNTIF('Twitter Complaint List'!${typeLtr}3:${typeLtr}, "CONNECTION_NEW")`, `Column ${typeLtr} (Complaint Type)`, 'CONNECTION_NEW'],
-    // 4. DISCOM Breakdown (From Col L: DISCOM)
+    // DISCOM Breakdown (From Col L: DISCOM)
     ['MVVNL Complaints', `=COUNTIF('Twitter Complaint List'!${discomLtr}3:${discomLtr}, "MVVNL")`, `Column ${discomLtr} (DISCOM)`, 'Central UP'],
     ['PVVNL Complaints', `=COUNTIF('Twitter Complaint List'!${discomLtr}3:${discomLtr}, "PVVNL")`, `Column ${discomLtr} (DISCOM)`, 'Western UP'],
     ['PuVVNL Complaints', `=COUNTIF('Twitter Complaint List'!${discomLtr}3:${discomLtr}, "PuVVNL")`, `Column ${discomLtr} (DISCOM)`, 'Eastern UP'],
@@ -1024,48 +1060,107 @@ function refreshDashboard() {
 
   dashSheet.getRange(1, 1, dashData.length, 4).setValues(dashData);
 
-  // Formatting Title Banner
+  // Table 1 Formatting
   dashSheet.getRange(1, 1, 1, 4).merge()
     .setFontFamily('Verdana').setFontWeight('bold').setFontSize(14)
     .setBackground('#4DD0E1').setFontColor('#1A2F40').setHorizontalAlignment('center').setVerticalAlignment('middle');
   dashSheet.setRowHeight(1, 45);
 
-  // Formatting Header Row
   dashSheet.getRange(2, 1, 1, 4)
     .setFontFamily('Verdana').setFontWeight('bold').setFontSize(11)
     .setBackground('#4DD0E1').setFontColor('#1A2F40').setHorizontalAlignment('center').setVerticalAlignment('middle');
   dashSheet.setRowHeight(2, 32);
 
-  // Data rows base format
   dashSheet.getRange(3, 1, dashData.length - 2, 4)
-    .setFontFamily('Verdana').setFontSize(10).setVerticalAlignment('middle');
+    .setFontFamily('Verdana').setFontSize(11).setVerticalAlignment('middle');
   
-  // Highlight UPPCLLKO Replied rows
   dashSheet.getRange(4, 1, 1, 4).setBackground('#E8F5E9').setFontWeight('bold'); // Green tint for YES
-  dashSheet.getRange(5, 1, 1, 4).setBackground('#FFF3E0').setFontWeight('bold'); // Amber/Orange tint for Not Replied
+  dashSheet.getRange(5, 1, 1, 4).setBackground('#FFF3E0').setFontWeight('bold'); // Amber tint for Not Replied
+
+  dashSheet.getRange(3, 2, dashData.length - 2, 1).setHorizontalAlignment('center').setFontWeight('bold').setFontSize(12);
 
   for (let r = 3; r <= dashData.length; r++) {
     dashSheet.setRowHeight(r, 28);
   }
 
-  // Center align Values column (Col B)
-  dashSheet.getRange(3, 2, dashData.length - 2, 1).setHorizontalAlignment('center').setFontWeight('bold');
-
   dashSheet.getRange(1, 1, dashData.length, 4)
     .setBorder(true, true, true, true, true, true, '#000000', SpreadsheetApp.BorderStyle.SOLID);
+
+  // -------------------------------------------------------------
+  // TABLE 2: Official Monitored Handles List (Columns F - H)
+  // WITH ENLARGED, PROMINENT FONT SIZES (13pt - 15pt Verdana)
+  // -------------------------------------------------------------
+  const handlesData = [
+    ['OFFICIAL MONITORED HANDLES LIST (5 HANDLES)', '', ''],
+    ['Official X Handle', 'Designation / Organization', 'Role & Jurisdiction'],
+    ['@UPPCLLKO', 'UPPCL Official HQ', 'Central Social Media Cell & Corporate HQ'],
+    ['@EMofficeUP', 'Energy Minister Office UP', 'Office of Hon. Energy Minister'],
+    ['@AKSharmaOffice', 'A.K. Sharma Office', 'Cabinet Minister Official Office'],
+    ['@aksharmaBharat', 'A.K. Sharma', 'Hon. Minister (Personal/Public)'],
+    ['@mduppcl', 'Managing Director, UPPCL', 'DISCOM Operational Oversight']
+  ];
+
+  dashSheet.getRange(1, 6, handlesData.length, 3).setValues(handlesData);
+
+  // Title Banner (F1:H1) - 15pt bold
+  dashSheet.getRange(1, 6, 1, 3).merge()
+    .setFontFamily('Verdana').setFontWeight('bold').setFontSize(15)
+    .setBackground('#008080').setFontColor('#FFFFFF')
+    .setHorizontalAlignment('center').setVerticalAlignment('middle');
+
+  // Header Row (F2:H2) - 13pt bold
+  dashSheet.getRange(2, 6, 1, 3)
+    .setFontFamily('Verdana').setFontWeight('bold').setFontSize(13)
+    .setBackground('#4DD0E1').setFontColor('#1A2F40')
+    .setHorizontalAlignment('center').setVerticalAlignment('middle');
+
+  // Handle Names Column F (F3:F7) - 14pt Bold Blue Font
+  dashSheet.getRange(3, 6, 5, 1)
+    .setFontFamily('Verdana').setFontWeight('bold').setFontSize(14)
+    .setFontColor('#0055aa').setHorizontalAlignment('left').setVerticalAlignment('middle');
+
+  // Designation Column G (G3:G7) - 13pt Semi-Bold Font
+  dashSheet.getRange(3, 7, 5, 1)
+    .setFontFamily('Verdana').setFontWeight('bold').setFontSize(13)
+    .setFontColor('#1A2F40').setHorizontalAlignment('left').setVerticalAlignment('middle');
+
+  // Role Column H (H3:H7) - 12pt Normal Font
+  dashSheet.getRange(3, 8, 5, 1)
+    .setFontFamily('Verdana').setFontSize(12)
+    .setFontColor('#333333').setHorizontalAlignment('left').setVerticalAlignment('middle');
+
+  // Alternating row background for handles table
+  for (let r = 3; r <= 7; r++) {
+    dashSheet.setRowHeight(r, 36); // Generous, comfortable row height
+    if (r % 2 === 1) {
+      dashSheet.getRange(r, 6, 1, 3).setBackground('#F0FDF4'); // Subtle mint tint
+    } else {
+      dashSheet.getRange(r, 6, 1, 3).setBackground('#FFFFFF');
+    }
+  }
+
+  dashSheet.getRange(1, 6, handlesData.length, 3)
+    .setBorder(true, true, true, true, true, true, '#000000', SpreadsheetApp.BorderStyle.SOLID);
+
+  // Column widths
   dashSheet.autoResizeColumns(1, 4);
+  dashSheet.setColumnWidth(5, 30); // Spacer column E
+  dashSheet.setColumnWidth(6, 210); // Handle
+  dashSheet.setColumnWidth(7, 260); // Designation
+  dashSheet.setColumnWidth(8, 380); // Role
 
   SpreadsheetApp.flush();
-  const msg = 'Dashboard KPIs Refreshed Successfully!\n\n' +
-    '• UPPCLLKO Replied: Linked to Column ' + uppclLtr + ' = "YES"\n' +
-    '• UPPCLLKO Not Replied: Linked to Column ' + uppclLtr + ' <> "YES"\n' +
-    '• All formulas and category breakdowns updated.';
+  const msg = 'Dashboard Updated Successfully!\n\n' +
+    '• Official Monitored Handles List font size increased to 13pt - 15pt bold.\n' +
+    '• UPPCLLKO Replied / Not Replied linked directly to Column ' + uppclLtr + ' (UPPCLLKO Replied (YES/NO)).\n' +
+    '• All formulas refreshed.';
   try {
     SpreadsheetApp.getUi().alert(msg);
   } catch(e) {
     Logger.log(msg);
   }
 }
+
 
 function setupSupportingTabs() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -2558,4 +2653,66 @@ function populateUppclRepliedColumn() {
   }
 
   return { total: numRows, yesCount, noCount };
+}
+
+/**
+ * Scans pending complaint rows in 'Twitter Complaint List' and deletes/archives
+ * any complaints where an official handle (@PuVVNLHQ, @MVVNLHQ, ministers, etc.)
+ * has ALREADY replied before @UPPCLLKO.
+ */
+function removeOfficialRepliedFromSheet() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sheet = ss.getSheetByName('Twitter Complaint List');
+  if (!sheet) sheet = ss.getActiveSheet();
+
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 3) return 0;
+
+  const numRows = lastRow - 2;
+  const colMap = getSheetColumnMap(sheet);
+  const data = sheet.getRange(3, 1, numRows, sheet.getLastColumn()).getValues();
+
+  const props = PropertiesService.getScriptProperties();
+  const bearerToken = props.getProperty('X_BEARER_TOKEN') ||
+    'AAAAAAAAAAAAAAAAAAAAACbr%2FwEAAAAAySPqrdOjXkNWagBKKbkzMA97ZnI%3DRBPSknXnu5S8uXS3j7lPbXPHlYCpiLfD2Yt8cRtRvWm1NcSi1E';
+
+  const linkUrlCol = (colMap.linkUrl !== undefined) ? colMap.linkUrl : 4;
+  const uppclCol = (colMap.uppclReplied !== undefined) ? colMap.uppclReplied : 9;
+  const statusCol = (colMap.status !== undefined) ? colMap.status : 14;
+  const complaintNoCol = (colMap.complaintNo !== undefined) ? colMap.complaintNo : 15;
+
+  let removedCount = 0;
+  // Scan backwards from bottom so row deletions do not shift indices
+  for (let i = data.length - 1; i >= 0; i--) {
+    const row = data[i];
+    const rowIndex = i + 3;
+    const url = String(row[linkUrlCol] || '').trim();
+    const uppclReplied = String(row[uppclCol] || '').trim().toUpperCase();
+    const complaintNo = String(row[complaintNoCol] || '').trim();
+
+    // Only inspect pending or unreplied rows (skip rows where UPPCLLKO already replied)
+    if (uppclReplied === 'YES') continue;
+
+    const m = url.match(/status\/(\d+)/i);
+    const tid = m ? m[1] : '';
+    if (!tid) continue;
+
+    // Check if an official handle replied on X
+    const check = checkDiscomRepliedBeforeUppclInScript(tid, bearerToken);
+    if (check && check.discomRepliedFirst) {
+      Logger.log('Removing Row ' + rowIndex + ' (' + url + ') because @' + check.handle + ' already replied.');
+      archiveFrivolousInSheet(tid, url, complaintNo);
+      sheet.deleteRow(rowIndex);
+      removedCount++;
+    }
+  }
+
+  SpreadsheetApp.flush();
+  const msg = 'Official Reply Audit Complete!\n\nRemoved ' + removedCount + ' complaint row(s) where official handles (@PuVVNLHQ, @MVVNLHQ, etc.) already replied before UPPCLLKO.';
+  try {
+    SpreadsheetApp.getUi().alert(msg);
+  } catch (e) {
+    Logger.log(msg);
+  }
+  return removedCount;
 }

@@ -432,7 +432,11 @@ function shouldDeleteOrOmitPost({ remark = '', status = '', reply30 = '', reply6
     return { shouldOmit: true, reason: 'EXPLICIT_DELETED_IN_SHEET' };
   }
 
-// DISCOM replies preserved under Scenario A
+  // 2. DISCOM or official authority already replied before UPPCLLKO
+  if (cleanRemark.includes('discom replied') || cleanRemark.includes('already replied') || cleanRemark.includes('attended') ||
+      cleanStatus.includes('discom replied') || cleanStatus.includes('official replied') || cleanStatus.includes('resolved by discom')) {
+    return { shouldOmit: true, reason: 'OFFICIAL_ALREADY_REPLIED' };
+  }
 
   // 4. Live X API conversation thread check
   if (threadCheckResult && threadCheckResult.officialRepliedFirst) {
@@ -448,7 +452,7 @@ const threadCheckCache = new Map();
  * Live X API check: verifies if any of the 89 non-UPPCL official handles replied
  * to a conversation before @UPPCLLKO replied.
  */
-async function checkOfficialRepliedBeforeUppcl(tweetId, customBearerToken) {
+async function checkOfficialRepliedBeforeUppcl(tweetId, customBearerToken, conversationId = null) {
   if (!tweetId) return { officialRepliedFirst: false };
   if (threadCheckCache.has(tweetId)) {
     return threadCheckCache.get(tweetId);
@@ -460,10 +464,10 @@ async function checkOfficialRepliedBeforeUppcl(tweetId, customBearerToken) {
   }
 
   try {
-    const query = `conversation_id:${tweetId}`;
-    const url = `https://api.twitter.com/2/tweets/search/recent?query=${encodeURIComponent(query)}&tweet.fields=created_at,author_id,conversation_id&expansions=author_id&user.fields=username`;
+    let targetCid = conversationId || tweetId;
+    let url = `https://api.twitter.com/2/tweets/search/recent?query=${encodeURIComponent('conversation_id:' + targetCid)}&tweet.fields=created_at,author_id,conversation_id&expansions=author_id&user.fields=username`;
 
-    const resp = await fetch(url, {
+    let resp = await fetch(url, {
       method: 'GET',
       headers: {
         'Authorization': `Bearer ${bearerToken}`,
@@ -475,8 +479,32 @@ async function checkOfficialRepliedBeforeUppcl(tweetId, customBearerToken) {
       return { officialRepliedFirst: false };
     }
 
-    const json = await resp.json();
-    const tweets = json.data || [];
+    let json = await resp.json();
+    let tweets = json.data || [];
+
+    // If query returned 0 and we haven't resolved conversation_id, check tweet details to find root conversation_id
+    if (tweets.length === 0 && !conversationId) {
+      try {
+        const detailUrl = `https://api.twitter.com/2/tweets/${tweetId}?tweet.fields=conversation_id`;
+        const dResp = await fetch(detailUrl, {
+          headers: { 'Authorization': `Bearer ${bearerToken}`, 'User-Agent': 'UPPCL-Grievance-Command-Centre/2.0' }
+        });
+        if (dResp.ok) {
+          const dJson = await dResp.json();
+          if (dJson.data && dJson.data.conversation_id && dJson.data.conversation_id !== tweetId) {
+            targetCid = dJson.data.conversation_id;
+            url = `https://api.twitter.com/2/tweets/search/recent?query=${encodeURIComponent('conversation_id:' + targetCid)}&tweet.fields=created_at,author_id,conversation_id&expansions=author_id&user.fields=username`;
+            resp = await fetch(url, {
+              headers: { 'Authorization': `Bearer ${bearerToken}`, 'User-Agent': 'UPPCL-Grievance-Command-Centre/2.0' }
+            });
+            if (resp.ok) {
+              json = await resp.json();
+              tweets = json.data || [];
+            }
+          }
+        }
+      } catch (e) {}
+    }
     const users = (json.includes && json.includes.users) ? json.includes.users : [];
     const userMap = {};
     users.forEach(u => { userMap[u.id] = (u.username || '').toLowerCase(); });
@@ -1216,8 +1244,8 @@ function processSheetMatrix(headers, data, method, startTime = Date.now()) {
           replyEvidence = 'Verified UPPCLLKO reply on record';
         }
       }
-    } else if (isSheetRepliedYes && !replyEvidence) {
-      replyEvidence = 'Verified UPPCLLKO reply in sheet record';
+    } else if (isSheetRepliedYes) {
+      replyEvidence = replyEvidence || 'Verified UPPCLLKO reply in sheet record';
       firstRepliedAt = firstRepliedAt || nowIst;
     }
 
@@ -1373,7 +1401,8 @@ function processSheetMatrix(headers, data, method, startTime = Date.now()) {
     WHERE (id NOT IN (SELECT DISTINCT complaint_id FROM complaint_replies WHERE is_uppcl_reply = 1))
       AND (published_reply_id IS NULL OR published_reply_id = '')
       AND (id NOT IN (SELECT DISTINCT complaint_id FROM x_outgoing_replies WHERE status IN ('Published', 'SENT')))
-      AND (reply_evidence IS NULL OR reply_evidence NOT LIKE '%sheet%');
+      AND (reply_evidence IS NULL OR (reply_evidence NOT LIKE '%sheet%' AND reply_evidence NOT LIKE '%Verified%'))
+      AND (uppcl_replied = 0 OR uppcl_replied IS NULL);
   `);
 
   // 4. Scenario A: Registered DISCOM replied (Preserve DISCOM Redressal Tracking)

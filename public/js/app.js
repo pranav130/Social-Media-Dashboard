@@ -842,10 +842,10 @@ const App = {
 
         <div class="chart-card">
           <div class="chart-header">
-            <div class="chart-title"><i class="fa-brands fa-x-twitter"></i> Official Monitored Handles List</div>
-            <span style="font-size: 11px; color: var(--text-muted); font-weight: 600;"><i class="fa-solid fa-satellite-dish" style="color: #10b981;"></i> 5 Monitored Handles</span>
+            <div class="chart-title" style="font-size: 18px; font-weight: 800;"><i class="fa-brands fa-x-twitter"></i> Official Monitored Handles List</div>
+            <span style="font-size: 14.5px; color: var(--text-muted); font-weight: 700;"><i class="fa-solid fa-satellite-dish" style="color: #10b981;"></i> 5 Monitored Handles</span>
           </div>
-          <div class="chart-body" id="official-monitored-handles-container" style="overflow-y: auto; display: flex; flex-direction: column; gap: 5px; height: 260px; padding: 2px;">
+          <div class="chart-body" id="official-monitored-handles-container" style="overflow-y: auto; display: flex; flex-direction: column; gap: 10px; min-height: 320px; padding: 6px;">
           </div>
         </div>
 
@@ -1677,35 +1677,38 @@ const App = {
     container.innerHTML = monitoredHandles.map(h => {
       const isActive = currentHandle === h.handle;
       return `
-        <div style="display: flex; align-items: center; justify-content: space-between; padding: 6px 10px; background: ${isActive ? 'rgba(0, 128, 128, 0.08)' : 'var(--bg-subtle)'}; border: 1px solid ${isActive ? 'var(--primary)' : 'var(--border-color)'}; border-radius: 6px; gap: 8px;">
-          <div style="display: flex; align-items: center; gap: 9px; min-width: 0;">
-            <span style="display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 50%; background: #000; color: #fff; font-size: 10px; flex-shrink: 0;">
+        <div style="display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; background: ${isActive ? 'rgba(0, 128, 128, 0.12)' : 'var(--bg-subtle)'}; border: 1.5px solid ${isActive ? 'var(--primary)' : 'var(--border-color)'}; border-radius: 9px; gap: 14px; transition: all 0.2s ease;">
+          <div style="display: flex; align-items: center; gap: 14px; min-width: 0;">
+            <span style="display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; border-radius: 50%; background: #000; color: #fff; font-size: 16px; flex-shrink: 0; box-shadow: 0 1px 3px rgba(0,0,0,0.25);">
               <i class="fa-brands fa-x-twitter"></i>
             </span>
             <div style="min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
-              <a href="https://x.com/${h.handle.replace('@', '')}" target="_blank" rel="noopener noreferrer" style="font-weight: 700; font-size: 12px; color: var(--primary); text-decoration: none;" title="Open ${h.handle} profile on X">
-                ${h.handle} <i class="fa-solid fa-arrow-up-right-from-square" style="font-size: 8px; color: var(--text-muted);"></i>
-              </a>
-              <span style="font-size: 11px; color: var(--text-muted); margin-left: 6px;">&bull; ${h.title}</span>
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <a href="https://x.com/${h.handle.replace('@', '')}" target="_blank" rel="noopener noreferrer" style="font-weight: 800; font-size: 18px; color: var(--primary); text-decoration: none;" title="Open ${h.handle} profile on X">
+                  ${h.handle} <i class="fa-solid fa-arrow-up-right-from-square" style="font-size: 13px; color: var(--text-muted);"></i>
+                </a>
+                <span style="font-size: 16px; font-weight: 700; color: var(--text-dark);">&bull; ${h.title}</span>
+              </div>
+              <div style="font-size: 13.5px; color: var(--text-muted); margin-top: 2px;">${h.role}</div>
             </div>
           </div>
-          <div style="display: flex; align-items: center; gap: 6px; flex-shrink: 0;">
+          <div style="display: flex; align-items: center; gap: 10px; flex-shrink: 0;">
             ${isActive ? `
-              <span style="display: inline-flex; align-items: center; gap: 4px; background: rgba(0, 128, 128, 0.15); color: var(--primary); border: 1px solid var(--primary); font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 4px;">
+              <span style="display: inline-flex; align-items: center; gap: 6px; background: rgba(0, 128, 128, 0.18); color: var(--primary); border: 1.5px solid var(--primary); font-size: 13.5px; font-weight: 700; padding: 5px 12px; border-radius: 6px;">
                 <i class="fa-solid fa-check"></i> Active
               </span>
-              <button type="button" class="btn btn-sm btn-outline" onclick="App.filterDashboardByHandle('All')" style="padding: 1px 7px; font-size: 10px; cursor: pointer; color: #ef4444; border-color: #ef4444;" title="Reset handle filter">
+              <button type="button" class="btn btn-sm btn-outline" onclick="App.filterDashboardByHandle('All')" style="padding: 6px 12px; font-size: 13px; font-weight: 700; cursor: pointer; color: #ef4444; border-color: #ef4444; border-radius: 6px;" title="Reset handle filter">
                 <i class="fa-solid fa-xmark"></i> Clear
               </button>
             ` : `
-              <span style="display: inline-flex; align-items: center; gap: 4px; background: rgba(16, 185, 129, 0.12); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.25); font-size: 10px; font-weight: 600; padding: 1px 6px; border-radius: 4px;" title="Actively monitored 24/7">
-                <span class="sync-pulse-dot live" style="width: 5px; height: 5px; display: inline-block;"></span> Monitored
+              <span style="display: inline-flex; align-items: center; gap: 6px; background: rgba(16, 185, 129, 0.14); color: #10b981; border: 1.5px solid rgba(16, 185, 129, 0.35); font-size: 13.5px; font-weight: 700; padding: 5px 12px; border-radius: 6px;" title="Actively monitored 24/7">
+                <span class="sync-pulse-dot live" style="width: 8px; height: 8px; display: inline-block;"></span> Monitored
               </span>
-              <button type="button" class="btn btn-sm btn-outline" onclick="App.filterDashboardByHandle('${h.handle}')" style="padding: 1px 7px; font-size: 10px; cursor: pointer;" title="Filter dashboard for ${h.handle}">
+              <button type="button" class="btn btn-sm btn-outline" onclick="App.filterDashboardByHandle('${h.handle}')" style="padding: 6px 14px; font-size: 13.5px; font-weight: 700; cursor: pointer; border-radius: 6px;" title="Filter dashboard for ${h.handle}">
                 <i class="fa-solid fa-filter"></i> Filter
               </button>
             `}
-            <button type="button" class="btn btn-sm btn-ghost" onclick="App.navigate('register', { assigned_handle: '${h.handle}' })" style="padding: 1px 5px; font-size: 10px; cursor: pointer;" title="Open all complaints for ${h.handle} in Register">
+            <button type="button" class="btn btn-sm btn-ghost" onclick="App.navigate('register', { assigned_handle: '${h.handle}' })" style="padding: 6px 10px; font-size: 14px; cursor: pointer; border-radius: 6px;" title="Open all complaints for ${h.handle} in Register">
               <i class="fa-solid fa-arrow-up-right-from-square"></i>
             </button>
           </div>
@@ -3952,33 +3955,33 @@ const App = {
               <table class="data-table">
                 <thead>
                   <tr>
-                    <th>Official X Handle</th>
-                    <th>Organization / Office</th>
-                    <th>Complaints Count</th>
-                    <th>Share of Inflow</th>
-                    <th>Action</th>
+                    <th style="font-size: 14px;">Official X Handle</th>
+                    <th style="font-size: 14px;">Organization / Office</th>
+                    <th style="font-size: 14px;">Complaints Count</th>
+                    <th style="font-size: 14px;">Share of Inflow</th>
+                    <th style="font-size: 14px;">Action</th>
                   </tr>
                 </thead>
                 <tbody>
                   ${handles.map(h => `
                     <tr>
                       <td>
-                        <b style="color: var(--primary);"><i class="fa-brands fa-x-twitter"></i> ${h.handle}</b>
+                        <b style="color: var(--primary); font-size: 15px;"><i class="fa-brands fa-x-twitter"></i> ${h.handle}</b>
                       </td>
-                      <td style="font-size: 12px; color: var(--text-muted);">
+                      <td style="font-size: 13.5px; color: var(--text-dark); font-weight: 500;">
                         ${h.handle === '@UPPCLLKO' ? 'UPPCL Corporate Headquarters (Apex)' : (h.handle.includes('CMOffice') ? 'Chief Minister Office UP' : (h.handle.includes('Sharma') ? 'Hon. Energy Minister Office' : 'DISCOM / Field Office'))}
                       </td>
-                      <td><b>${h.count}</b></td>
+                      <td><b style="font-size: 15px;">${h.count}</b></td>
                       <td>
                         <div style="display: flex; align-items: center; gap: 8px;">
-                          <span>${h.share_pct}%</span>
+                          <span style="font-size: 13.5px; font-weight: 600;">${h.share_pct}%</span>
                           <div class="rate-progress-track" style="width: 100px; margin: 0;">
                             <div class="rate-progress-fill" style="width: ${Math.min(h.share_pct, 100)}%; background-color: var(--accent);"></div>
                           </div>
                         </div>
                       </td>
                       <td>
-                        <button class="btn btn-secondary btn-sm" onclick="App.navigate('register', { assigned_handle: '${h.handle}' })">
+                        <button class="btn btn-secondary btn-sm" onclick="App.navigate('register', { assigned_handle: '${h.handle}' })" style="font-size: 12.5px; padding: 4px 10px;">
                           <i class="fa-solid fa-filter"></i> Filter Register
                         </button>
                       </td>
