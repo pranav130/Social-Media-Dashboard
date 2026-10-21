@@ -509,32 +509,31 @@ async function checkOfficialRepliedBeforeUppcl(tweetId, customBearerToken, conve
     const userMap = {};
     users.forEach(u => { userMap[u.id] = (u.username || '').toLowerCase(); });
 
-    let uppclReplyTime = null;
-    let officialReplyTime = null;
-    let officialRepliedHandle = null;
+    let result = { officialRepliedFirst: false, officialRepliedLast: false };
 
-    for (const tw of tweets) {
-      const username = userMap[tw.author_id];
-      if (username === 'uppcllko') {
-        const t = new Date(tw.created_at).getTime();
-        if (!uppclReplyTime || t < uppclReplyTime) uppclReplyTime = t;
-      } else if (NON_UPPCL_OFFICIAL_HANDLES.has(username)) {
-        const t = new Date(tw.created_at).getTime();
-        if (!officialReplyTime || t < officialReplyTime) {
-          officialReplyTime = t;
-          officialRepliedHandle = username;
-        }
-      }
-    }
+    if (tweets && tweets.length > 0) {
+      // Sort all conversation tweets chronologically (oldest to newest)
+      tweets.sort((a, b) => (new Date(a.created_at).getTime() || 0) - (new Date(b.created_at).getTime() || 0));
 
-    let result = { officialRepliedFirst: false };
-    if (officialReplyTime) {
-      if (!uppclReplyTime || officialReplyTime < uppclReplyTime) {
+      const latestTweet = tweets[tweets.length - 1];
+      const latestAuthor = (userMap[latestTweet.author_id] || '').toLowerCase();
+
+      // STRICT RULE: Only consider the complaint ignored/replied by DISCOM if the LAST post/reply
+      // in the thread was authored by an authoritative handle. If the consumer replies afterwards,
+      // the complaint must remain active so UPPCL can entertain and address it!
+      if (NON_UPPCL_OFFICIAL_HANDLES.has(latestAuthor)) {
         result = {
           officialRepliedFirst: true,
-          handle: officialRepliedHandle,
-          officialTime: officialReplyTime,
-          uppclTime: uppclReplyTime
+          officialRepliedLast: true,
+          handle: latestAuthor,
+          lastTweetId: latestTweet.id,
+          lastCreatedAt: latestTweet.created_at
+        };
+      } else {
+        result = {
+          officialRepliedFirst: false,
+          officialRepliedLast: false,
+          lastAuthor: latestAuthor
         };
       }
     }

@@ -325,28 +325,32 @@ function checkDiscomRepliedBeforeUppclInScript(tweetId, bearerToken, conversatio
       userMap[users[u].id] = (users[u].username || '').toLowerCase();
     }
 
-    let uppclReplyTime = null;
-    let discomReplyTime = null;
-    let discomHandle = null;
+    if (tweets && tweets.length > 0) {
+      // Sort all conversation tweets chronologically (oldest to newest)
+      tweets.sort(function(a, b) {
+        return (new Date(a.created_at).getTime() || 0) - (new Date(b.created_at).getTime() || 0);
+      });
 
-    for (let i = 0; i < tweets.length; i++) {
-      const tw = tweets[i];
-      const username = userMap[tw.author_id];
-      const t = tw.created_at ? new Date(tw.created_at).getTime() : 0;
+      const latestTweet = tweets[tweets.length - 1];
+      const latestAuthor = (userMap[latestTweet.author_id] || '').toLowerCase();
 
-      if (username === 'uppcllko') {
-        if (!uppclReplyTime || t < uppclReplyTime) uppclReplyTime = t;
-      } else if (DISCOM_FIELD_HANDLES.has(username)) {
-        if (!discomReplyTime || t < discomReplyTime) {
-          discomReplyTime = t;
-          discomHandle = username;
-        }
-      }
-    }
-
-    if (discomReplyTime) {
-      if (!uppclReplyTime || discomReplyTime < uppclReplyTime) {
-        return { discomRepliedFirst: true, handle: discomHandle };
+      // STRICT RULE: Only consider the complaint ignored/replied by DISCOM if the LAST post/reply
+      // in the thread was authored by an authoritative handle. If the consumer replies afterwards,
+      // the complaint must remain active so UPPCL can entertain and address it!
+      if (DISCOM_FIELD_HANDLES.has(latestAuthor)) {
+        return {
+          discomRepliedFirst: true,
+          discomRepliedLast: true,
+          handle: latestAuthor,
+          lastTweetId: latestTweet.id,
+          lastCreatedAt: latestTweet.created_at
+        };
+      } else {
+        return {
+          discomRepliedFirst: false,
+          discomRepliedLast: false,
+          lastAuthor: latestAuthor
+        };
       }
     }
   } catch (err) {
