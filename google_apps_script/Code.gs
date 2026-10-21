@@ -72,6 +72,7 @@ function onOpen() {
     .addItem('🧹 Remove Official Initiated Posts', 'removeOfficialPostsFromSheet')
     .addItem('📥 Sync All Complaints from Working Sheet (19-10-26)', 'syncFromWorkingSheet')
     .addItem('🔄 Restore Standard Column Headers (Row 1)', 'restoreStandardHeaders')
+    .addItem('📋 Setup YES/NO Dropdowns for UPPCLLKO Replied (Col J)', 'setupUppclRepliedDropdowns')
     .addItem('📅 Auto-Fix Corrupted Date Column (Col A)', 'fixDateColumnInSheet')
     .addItem('🔗 Auto-Fix Malformed/Missing Post Links (Col E)', 'fixMalformedUrlsInSheet')
     .addItem('Apply CF Formula to Column C (Twitter ID Repeat Count)', 'applyCfFormulaToSheet')
@@ -183,6 +184,14 @@ function applyOriginalFormatting() {
   }
   urlRange.setRichTextValues(richTextValues);
   urlRange.setHorizontalAlignment('left');
+
+  // 5. Setup YES/NO Dropdown Data Validation for UPPCLLKO Replied (Col J)
+  const uppclCol = (colMap.uppclReplied !== undefined) ? colMap.uppclReplied + 1 : 10;
+  const dropdownRule = SpreadsheetApp.newDataValidation()
+    .requireValueInList(['YES', 'NO'], true)
+    .setAllowInvalid(true)
+    .build();
+  sheet.getRange(3, uppclCol, numDataRows, 1).setDataValidation(dropdownRule);
 
   // Left-align text columns
   if (colMap.postText !== undefined) {
@@ -370,6 +379,14 @@ function syncFromWorkingSheet() {
   const rawValues = rowsToAppend.map(r => r.values);
 
   sheet.getRange(startAppendRow, 1, numToAppend, 32).setValues(rawValues);
+
+  // Apply YES/NO dropdown to UPPCLLKO Replied column for newly appended rows
+  const uppclColSync = (colMap.uppclReplied !== undefined) ? colMap.uppclReplied + 1 : 10;
+  const dropdownRuleSync = SpreadsheetApp.newDataValidation()
+    .requireValueInList(['YES', 'NO'], true)
+    .setAllowInvalid(true)
+    .build();
+  sheet.getRange(startAppendRow, uppclColSync, numToAppend, 1).setDataValidation(dropdownRuleSync);
 
   // Set row heights and formatting
   for (let r = startAppendRow; r < startAppendRow + numToAppend; r++) {
@@ -661,11 +678,6 @@ function fixMisclassifiedComplaints() {
   }
   return correctedCount;
 }
-  } catch (e) {
-    // Webhook execution context without active UI
-  }
-  return correctedCount;
-}
 
 /**
  * Webhook receiver that serves live spreadsheet data to the analytics dashboard
@@ -747,6 +759,11 @@ function doPost(e) {
       return ContentService.createTextOutput(JSON.stringify({ status: 'ok', action: contents.action, fixedCount: fixed }))
         .setMimeType(ContentService.MimeType.JSON);
     }
+    if (contents.action === 'setup_dropdown' || contents.action === 'setup_uppcl_replied_dropdown') {
+      const configuredCount = setupUppclRepliedDropdowns();
+      return ContentService.createTextOutput(JSON.stringify({ status: 'ok', action: contents.action, configuredRows: configuredCount }))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
     if (contents.action === 'delete_frivolous' || contents.action === 'delete_complaint') {
       const deleteResult = deleteComplaintFromSheet(contents);
       return ContentService.createTextOutput(JSON.stringify(deleteResult))
@@ -776,6 +793,14 @@ function doPost(e) {
     range.setVerticalAlignment('middle');
     range.setWrapStrategy(SpreadsheetApp.WrapStrategy.WRAP);
     range.setBorder(true, true, true, true, true, true, '#000000', SpreadsheetApp.BorderStyle.SOLID);
+
+    // Apply YES/NO dropdown to UPPCLLKO Replied column for inserted rows
+    const uppclColPost = (colMap.uppclReplied !== undefined) ? colMap.uppclReplied + 1 : 10;
+    const dropdownRulePost = SpreadsheetApp.newDataValidation()
+      .requireValueInList(['YES', 'NO'], true)
+      .setAllowInvalid(true)
+      .build();
+    sheet.getRange(startRow, uppclColPost, rows.length, 1).setDataValidation(dropdownRulePost);
 
     // Set row height to 45px matching original format
     for (let i = 0; i < rows.length; i++) {
@@ -1254,6 +1279,14 @@ function runCloudSyncCycle() {
     }
 
     SpreadsheetApp.flush();
+    // Apply YES/NO dropdown for UPPCLLKO Replied column
+    const uppclColCycle = (colMap.uppclReplied !== undefined) ? colMap.uppclReplied + 1 : 10;
+    const dropdownRuleCycle = SpreadsheetApp.newDataValidation()
+      .requireValueInList(['YES', 'NO'], true)
+      .setAllowInvalid(true)
+      .build();
+    sheet.getRange(insertStartRow, uppclColCycle, rowsToInsert.length, 1).setDataValidation(dropdownRuleCycle);
+
     Logger.log('Successfully appended ' + rowsToInsert.length + ' new complaints from the 5 Monitored Handles.');
   } else {
     Logger.log('Sync cycle complete: No new complaints found for the 5 Monitored Handles.');
@@ -1900,4 +1933,42 @@ function restoreStandardHeaders() {
   } catch (e) {
     Logger.log(msg);
   }
+}
+
+
+/**
+ * Configures the 'UPPCLLKO Replied (YES/NO)' column (Column J)
+ * with an interactive in-cell dropdown containing 'YES' and 'NO'.
+ * Applies across all data rows (Row 3 to the end of the sheet).
+ */
+function setupUppclRepliedDropdowns() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sheet = ss.getSheetByName('Twitter Complaint List');
+  if (!sheet) sheet = ss.getActiveSheet();
+
+  const lastRow = sheet.getLastRow();
+  const maxRows = sheet.getMaxRows();
+  const targetRows = Math.max(lastRow, maxRows);
+  if (targetRows < 3) return 0;
+
+  const colMap = getSheetColumnMap(sheet);
+  const targetCol = (colMap.uppclReplied !== undefined) ? colMap.uppclReplied + 1 : 10;
+  const numDataRows = targetRows - 2;
+
+  const rule = SpreadsheetApp.newDataValidation()
+    .requireValueInList(['YES', 'NO'], true)
+    .setAllowInvalid(true)
+    .build();
+
+  sheet.getRange(3, targetCol, numDataRows, 1).setDataValidation(rule);
+  SpreadsheetApp.flush();
+
+  const colHeader = sheet.getRange(1, targetCol).getValue() || 'UPPCLLKO Replied (YES/NO)';
+  const msg = 'Successfully enabled YES/NO in-cell dropdowns for ' + colHeader + ' (Column ' + targetCol + ') across ' + numDataRows + ' rows (Rows 3 to ' + targetRows + ')!';
+  try {
+    SpreadsheetApp.getUi().alert('Dropdown Setup Complete\n\n' + msg);
+  } catch (e) {
+    Logger.log(msg);
+  }
+  return numDataRows;
 }
