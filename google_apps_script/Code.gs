@@ -1416,9 +1416,9 @@ function fixMalformedUrlsInSheet() {
 }
 
 /**
- * Automatically fixes the corrupted DATE column (Column A) across all rows in 'Twitter Complaint List'.
- * Replaces 1900/1901/1902/1903/1904 numbers with genuine creation dates (e.g. 18-10-2026, 19-10-2026, 20-10-2026, 21-10-2026)
- * mathematically derived from Twitter Snowflake IDs and IST timestamps.
+ * Automatically fixes and normalizes the DATE column (Column A) across all rows in 'Twitter Complaint List'.
+ * Replaces 1900/1901/1902/1903/1904 numbers, long GMT timestamp strings (e.g. "Tue Oct 20 2026 12:30:00 GMT+0530"),
+ * and raw Date objects with strictly normalized "DD-MM-YYYY" strings (e.g. 18-10-2026, 19-10-2026, 20-10-2026, 21-10-2026).
  */
 function fixDateColumnInSheet() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -1437,24 +1437,52 @@ function fixDateColumnInSheet() {
 
   for (let i = 0; i < data.length; i++) {
     const row = data[i];
-    const curDate = String(row[0] || '').trim();
+    const rawCell = row[0];
+    const curDate = String(rawCell || '').trim();
     const url = String(row[4] || '').trim();
     const tidCol = (maxCol >= 20) ? String(row[19] || '').trim() : '';
     const colV = (maxCol >= 23) ? String(row[22] || '').trim() : '';
 
-    // A date is corrupted if it contains 1900-1904, is a plain integer counter (e.g. 1..2500), or does not have a 202x year
-    const isCorrupted = !curDate || /190[0-9]/.test(curDate) || /^\d{1,5}$/.test(curDate) || !curDate.includes('202');
+    let resolvedDate = null;
 
-    if (isCorrupted) {
-      let resolvedDate = null;
+    // 1. If it is already strictly DD-MM-YYYY (e.g. "20-10-2026"), keep it
+    if (/^\d{2}-\d{2}-\d{4}$/.test(curDate)) {
+      resolvedDate = curDate;
+    }
+    // 2. If it is a native Date object from Google Sheets
+    else if (rawCell instanceof Date) {
+      resolvedDate = Utilities.formatDate(rawCell, 'Asia/Kolkata', 'dd-MM-yyyy');
+    }
+    // 3. If it is a long GMT/IST timestamp string (e.g. "Tue Oct 20 2026 12:30:00 GMT+0530")
+    else if (curDate.includes('GMT') || curDate.includes('Standard Time') || /[a-zA-Z]{3}\s+[a-zA-Z]{3}\s+\d+/.test(curDate)) {
+      const parsed = new Date(curDate);
+      if (!isNaN(parsed.getTime())) {
+        resolvedDate = Utilities.formatDate(parsed, 'Asia/Kolkata', 'dd-MM-yyyy');
+      }
+    }
+    // 4. If it is YYYY-MM-DD or D-M-YYYY
+    else if (/^\d{1,4}[-\/]\d{1,2}[-\/]\d{1,4}$/.test(curDate) && !/190[0-9]/.test(curDate)) {
+      const parts = curDate.split(/[-\/]/);
+      if (parts.length === 3) {
+        if (parts[0].length === 4) {
+          // YYYY-MM-DD -> DD-MM-YYYY
+          resolvedDate = ('0' + parts[2]).slice(-2) + '-' + ('0' + parts[1]).slice(-2) + '-' + parts[0];
+        } else {
+          // D-M-YYYY -> DD-MM-YYYY
+          resolvedDate = ('0' + parts[0]).slice(-2) + '-' + ('0' + parts[1]).slice(-2) + '-' + parts[2];
+        }
+      }
+    }
 
-      // 1. Primary: Extract Twitter Snowflake ID from URL (Col E) or Post ID (Col T)
+    // 5. If still not resolved or corrupted (1900-1904, plain integer counter like "1", "2"):
+    // Derive from Twitter Snowflake ID in Col E (Link URL) or Col T (Tweet ID)
+    if (!resolvedDate || resolvedDate.includes('190') || !resolvedDate.includes('202')) {
       const m = url.match(/status\/(\d+)/i);
       const tid = m ? m[1] : (tidCol && /^\d{15,25}$/.test(tidCol) ? tidCol : null);
 
       if (tid) {
         try {
-          // Calculate Snowflake epoch milliseconds using standard division (no BigInt literals to ensure 100% Apps Script compatibility)
+          // Snowflake timestamp ms = Math.floor(id / 4194304) + 1288834974657
           const epochMs = Math.floor(Number(tid) / 4194304) + 1288834974657;
           const d = new Date(epochMs);
           if (!isNaN(d.getTime()) && d.getFullYear() >= 2020 && d.getFullYear() <= 2030) {
@@ -1463,28 +1491,27 @@ function fixDateColumnInSheet() {
         } catch (e) {}
       }
 
-      // 2. Secondary: Fallback to First Detected At (IST) timestamp
+      // Secondary fallback to Col V (First Detected At IST)
       if (!resolvedDate && colV) {
-        const dMatch = colV.match(/(\d{1,2}[-\/]\d{1,2}[-\/]\d{4})/);
+        const dMatch = colV.match(/(\d{1,2})[-\/](\d{1,2})[-\/](\d{4})/);
         if (dMatch) {
-          resolvedDate = dMatch[1].replace(/\//g, '-');
+          resolvedDate = ('0' + dMatch[1]).slice(-2) + '-' + ('0' + dMatch[2]).slice(-2) + '-' + dMatch[3];
         }
       }
 
-      // 3. Tertiary: Working Sheet Default
+      // Tertiary default
       if (!resolvedDate) {
         resolvedDate = '19-10-2026';
       }
-
-      dateValues.push([resolvedDate]);
-      fixCount++;
-    } else {
-      // Keep existing valid date string (formatted cleanly)
-      dateValues.push([curDate]);
     }
+
+    if (resolvedDate !== curDate) {
+      fixCount++;
+    }
+    dateValues.push([resolvedDate]);
   }
 
-  // Write batch values back into Column A with text format to prevent Google Sheets from re-converting to 1900 serials
+  // Write batch values back into Column A with text format to prevent Google Sheets from re-converting to 1900 serials or Date objects
   const dateRange = sheet.getRange(3, 1, numRows, 1);
   dateRange.setNumberFormat('@');
   dateRange.setValues(dateValues);
@@ -1496,9 +1523,9 @@ function fixDateColumnInSheet() {
 
   SpreadsheetApp.flush();
 
-  const msg = 'Successfully corrected ' + fixCount + ' corrupted dates in Column A (DATE) to standard DD-MM-YYYY format!';
+  const msg = 'Successfully normalized ' + fixCount + ' date entries in Column A (DATE) to uniform DD-MM-YYYY format!';
   try {
-    SpreadsheetApp.getUi().alert('Date Column Recovery\n\n' + msg);
+    SpreadsheetApp.getUi().alert('Date Column Normalization\n\n' + msg);
   } catch (e) {
     Logger.log(msg);
   }
