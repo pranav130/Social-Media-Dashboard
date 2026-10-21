@@ -494,6 +494,10 @@ function syncFromWorkingSheet() {
       padded[c] = row[c];
     }
 
+    // Ensure UPPCLLKO Replied (YES/NO) is NOT automatically filled — must remain blank until manual selection or button click
+    const uppclColIdx = (colMap.uppclReplied !== undefined) ? colMap.uppclReplied : 9;
+    padded[uppclColIdx] = '';
+
     rowsToAppend.push({
       values: padded,
       url: url
@@ -2098,7 +2102,8 @@ function repairMisalignedRowsInSheet() {
     if (colMap.pickedStatus !== undefined) cleanRow[colMap.pickedStatus] = c.pickedStatus;
     if (colMap.head !== undefined) cleanRow[colMap.head] = recoveredHead;
     if (colMap.untagged !== undefined) cleanRow[colMap.untagged] = 'NO';
-    if (colMap.uppclReplied !== undefined) cleanRow[colMap.uppclReplied] = '';
+    const existingReplied = (colMap.uppclReplied !== undefined) ? String(row[colMap.uppclReplied] || '').trim().toUpperCase() : '';
+    if (colMap.uppclReplied !== undefined) cleanRow[colMap.uppclReplied] = (existingReplied === 'YES' || existingReplied === 'NO') ? existingReplied : '';
     if (colMap.complaintType !== undefined) cleanRow[colMap.complaintType] = c.complaintType;
     if (colMap.discom !== undefined) cleanRow[colMap.discom] = c.discom;
     if (colMap.zone !== undefined) cleanRow[colMap.zone] = c.zone;
@@ -2625,7 +2630,9 @@ function populateUppclRepliedColumn() {
       }
     }
 
-    if (tid && VERIFIED_UPPCL_REPLIED_TWEET_IDS.has(tid)) {
+    const currentVal = String(row[uppclCol - 1] || '').trim().toUpperCase();
+    // Retain YES if verified in tweet history OR if an operator manually selected YES
+    if ((tid && VERIFIED_UPPCL_REPLIED_TWEET_IDS.has(tid)) || currentVal === 'YES') {
       outputValues.push(['YES']);
       yesCount++;
     } else {
