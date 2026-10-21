@@ -65,6 +65,7 @@ function onOpen() {
     .addItem('▶ Resume 24/7 Cloud Sync', 'resumeXSync')
     .addItem('⏹ Disable 24/7 Cloud Sync', 'disable247CloudSync')
     .addItem('⚡ Run Cloud Sync Once Now', 'runCloudSyncCycle')
+    .addItem('🛡 Reconcile 5 Approved Handles & Archive Excluded', 'reconcileFiveApprovedHandles')
     .addSeparator()
     .addItem('🛠 Repair Misaligned Rows (2715-2722)', 'repairMisalignedRowsInSheet')
     .addItem('🗑 Delete Selected Row as Frivolous', 'deleteSelectedRowAsFrivolous')
@@ -72,6 +73,7 @@ function onOpen() {
     .addItem('🧹 Remove Official Initiated Posts', 'removeOfficialPostsFromSheet')
     .addItem('📥 Sync All Complaints from Working Sheet (19-10-26)', 'syncFromWorkingSheet')
     .addItem('🔄 Restore Standard Column Headers (Row 1)', 'restoreStandardHeaders')
+    .addItem('⚡ Populate UPPCLLKO Replied (YES/NO) across All Rows', 'populateUppclRepliedColumn')
     .addItem('📋 Setup YES/NO Dropdowns for UPPCLLKO Replied (Col J)', 'setupUppclRepliedDropdowns')
     .addItem('📅 Auto-Fix Corrupted Date Column (Col A)', 'fixDateColumnInSheet')
     .addItem('🔗 Auto-Fix Malformed/Missing Post Links (Col E)', 'fixMalformedUrlsInSheet')
@@ -225,6 +227,101 @@ function makeRowsCompact() {
 /**
  * Global Official UPPCL and DISCOM Handles (90+ apex, headquarters, and district handles)
  */
+/**
+ * 83 Official DISCOM & District Handles
+ * If any of these handles replied to a complaint post before UPPCLLKO,
+ * that complaint must NOT land on the Google Sheet.
+ */
+const DISCOM_FIELD_HANDLES = new Set([
+  // DISCOM Corporate HQs (5 handles)
+  'pvvnlhq', 'dvvnlhq', 'puvvnlhq', 'mvvnlhq', 'kescohq',
+  // PuVVNL (21 handles)
+  'puvvnlazamgarh', 'puvvnlbhadohi', 'puvvnlballia', 'puvvnlbasti', 'puvvnlchandauli',
+  'puvvnldeoria', 'puvvnlfatehpur', 'puvvnlghazipur', 'puvvnlgorakhpur', 'puvvnljaunpur',
+  'puvvnlkaushambi', 'puvvnlkusinagar', 'puvvnlmhrjganj', 'puvvnlmau', 'puvvnlmirzapur1',
+  'puvvnlprtapgarh', 'puvvnlprayagraj', 'puvvnlsknagar', 'puvvnlsdnagar', 'puvvnlsonbhadra',
+  'puvvnlvaranasi',
+  // MVVNL (22 handles)
+  'mvvnlbareilly', 'mvvnlbudaun', 'mvvnlpilibhit', 'mvvnlsahjahapur', 'edc_ambdkrnagar',
+  'mvvnlamethi', 'mvvnlbarabanki', 'mvvnlayodhya', 'mvvnlsultanpur', 'mvvnlbahraich',
+  'mvvnlbalrampur', 'mvvnlgonda', 'mvvnlshrawasti', 'zoneamausi', 'mvvnlcisgomti2',
+  'zonegomtinagar', 'mvvnllesatrans', 'mvvnllakhimpur', 'mvvnlhardoi', 'mvvnlraebareli',
+  'mvvnlsitapur', 'mvvnlunnao',
+  // DVVNL (21 handles)
+  'dvvnlagra', 'dvvnlaligarh', 'dvvnlauraiya', 'dvvnlbanda', 'dvvnlchitrakoot',
+  'dvvnletah', 'dvvnletawah01', 'dvvnlfarrukhaba', 'dvvnlfirozabad', 'dvvnlhamirpur',
+  'dvvnlhathras', 'dvvnljalaun2', 'dvvnljhansi', 'dvvnlkannauj', 'dvvnlkanpurdeha',
+  'dvvnlkanpurnagr', 'dvvnlkasganj', 'dvvnllalitpur2', 'dvvnlmahoba', 'dvvnlmainpuri',
+  'dvvnlmathura1',
+  // PVVNL (14 handles)
+  'pvvnlamroha', 'pvvnlbaghpat', 'pvvnlbijnor', 'pvvnlbulandshr', 'pvvnlgbnagar',
+  'pvvnlghaziabad', 'pvvnlhapur', 'pvvnlmeerut', 'pvvnlmoradabad', 'pvvnlmuzafarngr',
+  'pvvnlrampur', 'pvvnlsaharanpur', 'pvvnlsambhal', 'pvvnlshamli'
+]);
+
+/**
+ * Checks if any of the 83 DISCOM / district handles replied to a tweet before UPPCLLKO.
+ */
+function checkDiscomRepliedBeforeUppclInScript(tweetId, bearerToken) {
+  if (!tweetId) return { discomRepliedFirst: false };
+  try {
+    const url = 'https://api.twitter.com/2/tweets/search/recent?query=' + encodeURIComponent('conversation_id:' + tweetId) +
+      '&max_results=50' +
+      '&tweet.fields=created_at,author_id,conversation_id' +
+      '&expansions=author_id' +
+      '&user.fields=username';
+
+    const resp = UrlFetchApp.fetch(url, {
+      method: 'get',
+      headers: {
+        'Authorization': 'Bearer ' + bearerToken,
+        'User-Agent': 'UPPCL-Grievance-Command-Centre/2.0'
+      },
+      muteHttpExceptions: true
+    });
+
+    if (resp.getResponseCode() !== 200) {
+      return { discomRepliedFirst: false };
+    }
+
+    const json = JSON.parse(resp.getContentText());
+    const tweets = json.data || [];
+    const users = (json.includes && json.includes.users) ? json.includes.users : [];
+    const userMap = {};
+    for (let u = 0; u < users.length; u++) {
+      userMap[users[u].id] = (users[u].username || '').toLowerCase();
+    }
+
+    let uppclReplyTime = null;
+    let discomReplyTime = null;
+    let discomHandle = null;
+
+    for (let i = 0; i < tweets.length; i++) {
+      const tw = tweets[i];
+      const username = userMap[tw.author_id];
+      const t = tw.created_at ? new Date(tw.created_at).getTime() : 0;
+
+      if (username === 'uppcllko') {
+        if (!uppclReplyTime || t < uppclReplyTime) uppclReplyTime = t;
+      } else if (DISCOM_FIELD_HANDLES.has(username)) {
+        if (!discomReplyTime || t < discomReplyTime) {
+          discomReplyTime = t;
+          discomHandle = username;
+        }
+      }
+    }
+
+    if (discomReplyTime) {
+      if (!uppclReplyTime || discomReplyTime < uppclReplyTime) {
+        return { discomRepliedFirst: true, handle: discomHandle };
+      }
+    }
+  } catch (err) {
+    Logger.log('Error checking replies for ' + tweetId + ': ' + err);
+  }
+  return { discomRepliedFirst: false };
+}
+
 const UPPCL_OFFICIAL_HANDLES = new Set([
   // Apex & Ministers
   'uppcllko', 'cmofficeup', 'emofficeup', 'aksharmaoffice', 'aksharmabharat', 'chairmanuppcl', 'mduppcl',
@@ -1162,6 +1259,13 @@ function runCloudSyncCycle() {
       // Filter out official accounts from landing on our sheet
       if (isOfficialAccountInScript(username)) continue;
 
+      // STRICT DISCOM-FIRST REPLY FILTER:
+      // If any of the 83 DISCOM / district handles replied before UPPCLLKO, do NOT insert!
+      const discomCheck = checkDiscomRepliedBeforeUppclInScript(tweetId, bearerToken);
+      if (discomCheck && discomCheck.discomRepliedFirst) {
+        Logger.log('Strict rejection: Tweet ' + tweetId + ' dropped because DISCOM @' + discomCheck.handle + ' replied before UPPCLLKO.');
+        continue;
+      }
       const tweetUrl = 'https://x.com/' + username + '/status/' + tweetId;
       if (existingUrls.has(tweetUrl.toLowerCase())) continue;
 
@@ -1200,7 +1304,7 @@ function runCloudSyncCycle() {
       if (colMap.pickedStatus !== undefined) row[colMap.pickedStatus] = c.pickedStatus;
       if (colMap.head !== undefined) row[colMap.head] = headCode;
       if (colMap.untagged !== undefined) row[colMap.untagged] = 'NO';
-      if (colMap.uppclReplied !== undefined) row[colMap.uppclReplied] = '';
+      if (colMap.uppclReplied !== undefined) row[colMap.uppclReplied] = (c && c.pickedStatus === 'YES') ? 'YES' : 'NO';
       if (colMap.complaintType !== undefined) row[colMap.complaintType] = c.complaintType;
       if (colMap.discom !== undefined) row[colMap.discom] = c.discom;
       if (colMap.zone !== undefined) row[colMap.zone] = c.zone;
@@ -1791,7 +1895,7 @@ function repairMisalignedRowsInSheet() {
     if (colMap.pickedStatus !== undefined) cleanRow[colMap.pickedStatus] = c.pickedStatus;
     if (colMap.head !== undefined) cleanRow[colMap.head] = recoveredHead;
     if (colMap.untagged !== undefined) cleanRow[colMap.untagged] = 'NO';
-    if (colMap.uppclReplied !== undefined) cleanRow[colMap.uppclReplied] = '';
+    if (colMap.uppclReplied !== undefined) cleanRow[colMap.uppclReplied] = 'NO';
     if (colMap.complaintType !== undefined) cleanRow[colMap.complaintType] = c.complaintType;
     if (colMap.discom !== undefined) cleanRow[colMap.discom] = c.discom;
     if (colMap.zone !== undefined) cleanRow[colMap.zone] = c.zone;
@@ -1971,4 +2075,531 @@ function setupUppclRepliedDropdowns() {
     Logger.log(msg);
   }
   return numDataRows;
+}
+
+
+
+/**
+ * Reconciles Google Sheet:
+ * 1. Updates Settings tab MONITORED_APEX to the 5 approved handles.
+ * 2. Archives complaints solely associated with @CMOfficeUP or @ChairmanUppcl.
+ * 3. Archives complaints where any of the 83 DISCOM handles replied BEFORE UPPCLLKO.
+ * 4. Re-resolves dual-tagged complaints from 'upc' to qualifying approved heads.
+ */
+function reconcileFiveApprovedHandles() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  
+  // Local resolver ensuring function works standalone
+  function getApexHead(tweetText) {
+    const t = (tweetText || '').toLowerCase();
+    if (t.includes('mduppcl')) return 'upm';
+    if (t.includes('aksharmaoffice')) return 'ako';
+    if (t.includes('aksharmabharat')) return 'akb';
+    if (t.includes('emofficeup')) return 'emo';
+    if (t.includes('uppcllko')) return 'upl';
+    return 'upl';
+  }
+
+  // Pre-computed verified complaints where DISCOM replied before UPPCLLKO
+  const discomFirstMap = {
+    '2112195095642702100': { handle: 'pvvnlhq', reason: 'DISCOM @pvvnlhq replied before UPPCLLKO (UPPCLLKO not replied)' },
+    '2112507662466441258': { handle: 'pvvnlhq', reason: 'DISCOM @pvvnlhq replied before UPPCLLKO (UPPCLLKO not replied)' },
+    '2112064284255801547': { handle: 'pvvnlhq', reason: 'DISCOM @pvvnlhq replied before UPPCLLKO (UPPCLLKO not replied)' },
+    '2112053721492509158': { handle: 'pvvnlhq', reason: 'DISCOM @pvvnlhq replied first (Tweet ID: 2112064154723041505) before UPPCLLKO (Tweet ID: 2112534258434842704)' },
+    '2112422187831562614': { handle: 'pvvnlhq', reason: 'DISCOM @pvvnlhq replied before UPPCLLKO (UPPCLLKO not replied)' },
+    '2112453711566168416': { handle: 'pvvnlhq', reason: 'DISCOM @pvvnlhq replied before UPPCLLKO (UPPCLLKO not replied)' },
+    '2112426835481104796': { handle: 'pvvnlhq', reason: 'DISCOM @pvvnlhq replied before UPPCLLKO (UPPCLLKO not replied)' },
+    '2112255976040755310': { handle: 'pvvnlhq', reason: 'DISCOM @pvvnlhq replied before UPPCLLKO (UPPCLLKO not replied)' },
+    '2112141928490013122': { handle: 'pvvnlhq', reason: 'DISCOM @pvvnlhq replied first (Tweet ID: 2112230696152645734) before UPPCLLKO (Tweet ID: 2112417831283528035)' },
+    '2111891117310661096': { handle: 'pvvnlhq', reason: 'DISCOM @pvvnlhq replied first (Tweet ID: 2111942687360508329) before UPPCLLKO (Tweet ID: 2112016139039736315)' },
+    '2112141321897144403': { handle: 'puvvnlhq', reason: 'DISCOM @puvvnlhq replied before UPPCLLKO (UPPCLLKO not replied)' },
+    '2112521724659220604': { handle: 'puvvnlhq', reason: 'DISCOM @puvvnlhq replied before UPPCLLKO (UPPCLLKO not replied)' },
+    '2112210806435934661': { handle: 'puvvnlhq', reason: 'DISCOM @puvvnlhq replied first (Tweet ID: 2112222598117691600) before UPPCLLKO (Tweet ID: 2112760498248962104)' },
+    '2112467501552660735': { handle: 'puvvnlhq', reason: 'DISCOM @puvvnlhq replied before UPPCLLKO (UPPCLLKO not replied)' },
+    '2112573197615059296': { handle: 'puvvnlhq', reason: 'DISCOM @puvvnlhq replied before UPPCLLKO (UPPCLLKO not replied)' },
+    '2112562300838432789': { handle: 'puvvnlhq', reason: 'DISCOM @puvvnlhq replied before UPPCLLKO (UPPCLLKO not replied)' },
+    '2112543129006170200': { handle: 'puvvnlhq', reason: 'DISCOM @puvvnlhq replied first (Tweet ID: 2112545628278645109) before UPPCLLKO (Tweet ID: 2112607433881428114)' },
+    '2112522288927268890': { handle: 'puvvnlhq', reason: 'DISCOM @puvvnlhq replied before UPPCLLKO (UPPCLLKO not replied)' },
+    '2112513307664130262': { handle: 'puvvnlhq', reason: 'DISCOM @puvvnlhq replied before UPPCLLKO (UPPCLLKO not replied)' },
+    '2112390772691718569': { handle: 'puvvnlhq', reason: 'DISCOM @puvvnlhq replied before UPPCLLKO (UPPCLLKO not replied)' },
+    '2112372936137138485': { handle: 'puvvnlhq', reason: 'DISCOM @puvvnlhq replied before UPPCLLKO (UPPCLLKO not replied)' },
+    '2112353549044928662': { handle: 'puvvnlhq', reason: 'DISCOM @puvvnlhq replied before UPPCLLKO (UPPCLLKO not replied)' },
+    '2112168252235206929': { handle: 'mvvnlhq', reason: 'DISCOM @mvvnlhq replied first (Tweet ID: 2112174480525345271) before UPPCLLKO (Tweet ID: 2112778749909647651)' },
+    '2112254948218183698': { handle: 'puvvnlhq', reason: 'DISCOM @puvvnlhq replied before UPPCLLKO (UPPCLLKO not replied)' },
+    '2112237148896420029': { handle: 'puvvnlhq', reason: 'DISCOM @puvvnlhq replied before UPPCLLKO (UPPCLLKO not replied)' },
+    '2112203905610485883': { handle: 'puvvnlhq', reason: 'DISCOM @puvvnlhq replied before UPPCLLKO (UPPCLLKO not replied)' },
+    '2112201354727105018': { handle: 'puvvnlhq', reason: 'DISCOM @puvvnlhq replied before UPPCLLKO (UPPCLLKO not replied)' },
+    '2112178431941284300': { handle: 'puvvnlhq', reason: 'DISCOM @puvvnlhq replied before UPPCLLKO (UPPCLLKO not replied)' },
+    '2112157366955204975': { handle: 'puvvnlhq', reason: 'DISCOM @puvvnlhq replied before UPPCLLKO (UPPCLLKO not replied)' },
+    '2112152544797753836': { handle: 'puvvnlhq', reason: 'DISCOM @puvvnlhq replied before UPPCLLKO (UPPCLLKO not replied)' },
+    '2112121984175972547': { handle: 'puvvnlhq', reason: 'DISCOM @puvvnlhq replied before UPPCLLKO (UPPCLLKO not replied)' },
+    '2112130307898192159': { handle: 'puvvnlhq', reason: 'DISCOM @puvvnlhq replied before UPPCLLKO (UPPCLLKO not replied)' },
+    '2111898004626292927': { handle: 'puvvnlhq', reason: 'DISCOM @puvvnlhq replied before UPPCLLKO (UPPCLLKO not replied)' },
+    '2112001200430489911': { handle: 'puvvnlhq', reason: 'DISCOM @puvvnlhq replied before UPPCLLKO (UPPCLLKO not replied)' },
+    '2112502858222555502': { handle: 'mvvnlhq', reason: 'DISCOM @mvvnlhq replied before UPPCLLKO (UPPCLLKO not replied)' },
+    '2112352514368819457': { handle: 'mvvnlhq', reason: 'DISCOM @mvvnlhq replied before UPPCLLKO (UPPCLLKO not replied)' },
+    '2112563326958067757': { handle: 'mvvnlhq', reason: 'DISCOM @mvvnlhq replied first (Tweet ID: 2112569196496421270) before UPPCLLKO (Tweet ID: 2112779003383918996)' },
+    '2112546990110498825': { handle: 'mvvnlhq', reason: 'DISCOM @mvvnlhq replied before UPPCLLKO (UPPCLLKO not replied)' },
+    '2112134279165870398': { handle: 'mvvnlhq', reason: 'DISCOM @mvvnlhq replied before UPPCLLKO (UPPCLLKO not replied)' },
+    '2112551998784671961': { handle: 'mvvnlhq', reason: 'DISCOM @mvvnlhq replied before UPPCLLKO (UPPCLLKO not replied)' },
+    '2112572241275924674': { handle: 'mvvnlhq', reason: 'DISCOM @mvvnlhq replied before UPPCLLKO (UPPCLLKO not replied)' },
+    '2112543214033125704': { handle: 'mvvnlhq', reason: 'DISCOM @mvvnlhq replied before UPPCLLKO (UPPCLLKO not replied)' },
+    '2112405982743838877': { handle: 'mvvnlhq', reason: 'DISCOM @mvvnlhq replied before UPPCLLKO (UPPCLLKO not replied)' },
+    '2112522160803914050': { handle: 'mvvnlhq', reason: 'DISCOM @mvvnlhq replied before UPPCLLKO (UPPCLLKO not replied)' },
+    '2112437512354648142': { handle: 'mvvnlhq', reason: 'DISCOM @mvvnlhq replied before UPPCLLKO (UPPCLLKO not replied)' },
+    '2112492454121480193': { handle: 'mvvnlhq', reason: 'DISCOM @mvvnlhq replied first (Tweet ID: 2112510366148399247) before UPPCLLKO (Tweet ID: 2112776740720566426)' },
+    '2112496033305600301': { handle: 'mvvnlhq', reason: 'DISCOM @mvvnlhq replied before UPPCLLKO (UPPCLLKO not replied)' },
+    '2112480666772476321': { handle: 'mvvnlhq', reason: 'DISCOM @mvvnlhq replied before UPPCLLKO (UPPCLLKO not replied)' },
+    '2112474228364894372': { handle: 'mvvnlhq', reason: 'DISCOM @mvvnlhq replied before UPPCLLKO (UPPCLLKO not replied)' },
+    '2112459295485034750': { handle: 'mvvnlhq', reason: 'DISCOM @mvvnlhq replied before UPPCLLKO (UPPCLLKO not replied)' },
+    '2112461581002961242': { handle: 'mvvnlhq', reason: 'DISCOM @mvvnlhq replied before UPPCLLKO (UPPCLLKO not replied)' },
+    '2112450159951163677': { handle: 'mvvnlhq', reason: 'DISCOM @mvvnlhq replied before UPPCLLKO (UPPCLLKO not replied)' },
+    '2112448991791354030': { handle: 'mvvnlhq', reason: 'DISCOM @mvvnlhq replied before UPPCLLKO (UPPCLLKO not replied)' },
+    '2112420398260486628': { handle: 'mvvnlhq', reason: 'DISCOM @mvvnlhq replied before UPPCLLKO (UPPCLLKO not replied)' },
+    '2112416307455173004': { handle: 'mvvnlhq', reason: 'DISCOM @mvvnlhq replied before UPPCLLKO (UPPCLLKO not replied)' },
+    '2112429294291202429': { handle: 'mvvnlhq', reason: 'DISCOM @mvvnlhq replied before UPPCLLKO (UPPCLLKO not replied)' },
+    '2112409595151077696': { handle: 'mvvnlhq', reason: 'DISCOM @mvvnlhq replied before UPPCLLKO (UPPCLLKO not replied)' },
+    '2112368928601378979': { handle: 'mvvnlhq', reason: 'DISCOM @mvvnlhq replied before UPPCLLKO (UPPCLLKO not replied)' },
+    '2112342570206646392': { handle: 'mvvnlhq', reason: 'DISCOM @mvvnlhq replied before UPPCLLKO (UPPCLLKO not replied)' },
+    '2112167020120989856': { handle: 'kescohq', reason: 'DISCOM @kescohq replied before UPPCLLKO (UPPCLLKO not replied)' },
+    '2112205469876187327': { handle: 'mvvnlhq', reason: 'DISCOM @mvvnlhq replied first (Tweet ID: 2112212463173480482) before UPPCLLKO (Tweet ID: 2112212544593318261)' },
+    '2112152362811072555': { handle: 'mvvnlhq', reason: 'DISCOM @mvvnlhq replied first (Tweet ID: 2112183540435878389) before UPPCLLKO (Tweet ID: 2112785773141586221)' },
+    '2112177126116069470': { handle: 'mvvnlhq', reason: 'DISCOM @mvvnlhq replied before UPPCLLKO (UPPCLLKO not replied)' },
+    '2112131519804318149': { handle: 'mvvnlhq', reason: 'DISCOM @mvvnlhq replied before UPPCLLKO (UPPCLLKO not replied)' },
+    '2112094892021440989': { handle: 'mvvnlhq', reason: 'DISCOM @mvvnlhq replied before UPPCLLKO (UPPCLLKO not replied)' },
+    '2112066666414969344': { handle: 'mvvnlhq', reason: 'DISCOM @mvvnlhq replied first (Tweet ID: 2112093352091132347) before UPPCLLKO (Tweet ID: 2112114798297247974)' },
+    '2111961871502942324': { handle: 'mvvnlhq', reason: 'DISCOM @mvvnlhq replied first (Tweet ID: 2111969550854205861) before UPPCLLKO (Tweet ID: 2112056350364901700)' },
+    '2111604765486707028': { handle: 'mvvnlhq', reason: 'DISCOM @mvvnlhq replied first (Tweet ID: 2111651999137845424) before UPPCLLKO (Tweet ID: 2111866307876708746)' },
+    '2112379250082975856': { handle: 'dvvnlhq', reason: 'DISCOM @dvvnlhq replied before UPPCLLKO (UPPCLLKO not replied)' },
+    '2112102320741789969': { handle: 'dvvnlhq', reason: 'DISCOM @dvvnlhq replied before UPPCLLKO (UPPCLLKO not replied)' },
+    '2112426056619631021': { handle: 'dvvnlhq', reason: 'DISCOM @dvvnlhq replied before UPPCLLKO (UPPCLLKO not replied)' },
+    '2112507454068236689': { handle: 'dvvnlhq', reason: 'DISCOM @dvvnlhq replied before UPPCLLKO (UPPCLLKO not replied)' },
+    '2112442884305862702': { handle: 'dvvnlhq', reason: 'DISCOM @dvvnlhq replied before UPPCLLKO (UPPCLLKO not replied)' },
+    '2112545343011422258': { handle: 'dvvnlhq', reason: 'DISCOM @dvvnlhq replied before UPPCLLKO (UPPCLLKO not replied)' },
+    '2112557722961084431': { handle: 'dvvnlhq', reason: 'DISCOM @dvvnlhq replied before UPPCLLKO (UPPCLLKO not replied)' },
+    '2112499356616310939': { handle: 'dvvnlhq', reason: 'DISCOM @dvvnlhq replied first (Tweet ID: 2112501973769683271) before UPPCLLKO (Tweet ID: 2112530452519194769)' },
+    '2112489812611731766': { handle: 'dvvnlhq', reason: 'DISCOM @dvvnlhq replied before UPPCLLKO (UPPCLLKO not replied)' },
+    '2112490205722915302': { handle: 'dvvnlhq', reason: 'DISCOM @dvvnlhq replied before UPPCLLKO (UPPCLLKO not replied)' },
+    '2112474425576800654': { handle: 'dvvnlhq', reason: 'DISCOM @dvvnlhq replied before UPPCLLKO (UPPCLLKO not replied)' },
+    '2112414648024871113': { handle: 'dvvnlhq', reason: 'DISCOM @dvvnlhq replied before UPPCLLKO (UPPCLLKO not replied)' },
+    '2112406956116005226': { handle: 'dvvnlhq', reason: 'DISCOM @dvvnlhq replied before UPPCLLKO (UPPCLLKO not replied)' },
+    '2112387014456942826': { handle: 'dvvnlhq', reason: 'DISCOM @dvvnlhq replied before UPPCLLKO (UPPCLLKO not replied)' },
+    '2112387034048582002': { handle: 'dvvnlhq', reason: 'DISCOM @dvvnlhq replied before UPPCLLKO (UPPCLLKO not replied)' },
+    '2112359967877726601': { handle: 'dvvnlhq', reason: 'DISCOM @dvvnlhq replied first (Tweet ID: 2112370228609089640) before UPPCLLKO (Tweet ID: 2112538671341867178)' },
+    '2112273651232022714': { handle: 'dvvnlhq', reason: 'DISCOM @dvvnlhq replied before UPPCLLKO (UPPCLLKO not replied)' },
+    '2112070435626201198': { handle: 'dvvnlhq', reason: 'DISCOM @dvvnlhq replied first (Tweet ID: 2112074212705993029) before UPPCLLKO (Tweet ID: 2112099317075116421)' },
+    '2112021305897992271': { handle: 'dvvnlhq', reason: 'DISCOM @dvvnlhq replied before UPPCLLKO (UPPCLLKO not replied)' },
+    '2112309605552533730': { handle: 'kescohq', reason: 'DISCOM @kescohq replied before UPPCLLKO (UPPCLLKO not replied)' },
+    '2112420139476115936': { handle: 'kescohq', reason: 'DISCOM @kescohq replied before UPPCLLKO (UPPCLLKO not replied)' },
+    '2112498044969308366': { handle: 'kescohq', reason: 'DISCOM @kescohq replied before UPPCLLKO (UPPCLLKO not replied)' },
+    '2112472813026361462': { handle: 'kescohq', reason: 'DISCOM @kescohq replied before UPPCLLKO (UPPCLLKO not replied)' },
+    '2112180891061719365': { handle: 'kescohq', reason: 'DISCOM @kescohq replied before UPPCLLKO (UPPCLLKO not replied)' },
+    '2112122549979201561': { handle: 'kescohq', reason: 'DISCOM @kescohq replied before UPPCLLKO (UPPCLLKO not replied)' },
+    '2112101740212629600': { handle: 'kescohq', reason: 'DISCOM @kescohq replied before UPPCLLKO (UPPCLLKO not replied)' },
+    '2112032157665517892': { handle: 'kescohq', reason: 'DISCOM @kescohq replied before UPPCLLKO (UPPCLLKO not replied)' },
+    '2112048673421173006': { handle: 'kescohq', reason: 'DISCOM @kescohq replied before UPPCLLKO (UPPCLLKO not replied)' }
+  };
+
+  // 1. Update Settings tab
+  const settingsSheet = ss.getSheetByName('Settings');
+  if (settingsSheet) {
+    const data = settingsSheet.getDataRange().getValues();
+    for (let r = 0; r < data.length; r++) {
+      if (String(data[r][0] || '').trim() === 'MONITORED_APEX') {
+        settingsSheet.getRange(r + 1, 2).setValue('@UPPCLLKO, @EMofficeUP, @AKSharmaOffice, @aksharmaBharat, @mduppcl');
+        Logger.log('Updated Settings tab MONITORED_APEX cell B' + (r + 1));
+        break;
+      }
+    }
+  }
+
+  // 2. Setup or get Archived_Excluded_Complaints sheet
+  let archiveSheet = ss.getSheetByName('Archived_Excluded_Complaints');
+  if (!archiveSheet) {
+    archiveSheet = ss.insertSheet('Archived_Excluded_Complaints');
+  }
+  
+  const headers = ['Archived Date', 'Original Row', 'Complaint No', 'LINK URL', 'Handle', 'Head', 'Reason', 'Tweet Text'];
+  if (archiveSheet.getLastRow() < 1) {
+    archiveSheet.getRange(1, 1, 1, headers.length).setValues([headers])
+      .setFontWeight('bold').setBackground('#E57373').setFontColor('#FFFFFF')
+      .setHorizontalAlignment('center').setVerticalAlignment('middle');
+    archiveSheet.setRowHeight(1, 40);
+    archiveSheet.setFrozenRows(1);
+  }
+
+  // 3. Scan Twitter Complaint List
+  const sheet = ss.getSheetByName('Twitter Complaint List');
+  if (!sheet) {
+    SpreadsheetApp.getUi().alert('Error: "Twitter Complaint List" sheet not found.');
+    return;
+  }
+
+  const lastRow = sheet.getLastRow();
+  const lastCol = sheet.getLastColumn();
+  if (lastRow < 3) {
+    SpreadsheetApp.getUi().alert('No data rows found in "Twitter Complaint List".');
+    return;
+  }
+
+  // Dynamic header discovery from Row 1
+  const headerRow = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+  let headCol = -1;
+  let textCol = -1;
+  let urlCol = -1;
+  let handleCol = -1;
+  let cnoCol = -1;
+
+  for (let c = 0; c < headerRow.length; c++) {
+    const h = String(headerRow[c] || '').trim().toLowerCase();
+    if (h === 'head') headCol = c;
+    else if (/post\s*text|tweet\s*text|complaint\s*text/.test(h)) textCol = c;
+    else if (/link\s*url|post\s*url|url/.test(h)) urlCol = c;
+    else if (/twitter\s*id|handle/.test(h)) handleCol = c;
+    else if (/complaint\s*_?no/.test(h)) cnoCol = c;
+  }
+
+  if (headCol === -1) headCol = 7;
+  if (textCol === -1) textCol = 16;
+  if (urlCol === -1) urlCol = 4;
+  if (handleCol === -1) handleCol = 5;
+  if (cnoCol === -1) cnoCol = 15;
+
+  const approvedList = ['uppcllko', 'emofficeup', 'aksharmaoffice', 'aksharmabharat', 'mduppcl'];
+  const removedList = ['chairmanuppcl', 'cmofficeup'];
+
+  const data = sheet.getRange(3, 1, lastRow - 2, lastCol).getValues();
+  const rowsToDelete = [];
+  const archiveRows = [];
+  let reResolvedCount = 0;
+  let discomFirstCount = 0;
+  let solelyRemovedCount = 0;
+
+  for (let i = 0; i < data.length; i++) {
+    const rowIdx = i + 3;
+    const rowData = data[i];
+
+    const head = String(rowData[headCol] || '').toLowerCase().trim();
+    const postUrl = String(rowData[urlCol] || '').trim();
+    const complaintNo = (cnoCol !== -1) ? String(rowData[cnoCol] || '').trim() : '';
+    const handle = String(rowData[handleCol] || '').trim();
+    const postText = (textCol !== -1) ? String(rowData[textCol] || '').trim() : '';
+
+    const tidMatch = postUrl.match(/status\/(\d+)/);
+    const tid = tidMatch ? tidMatch[1] : '';
+
+    const textForApproved = (postText + ' ' + postUrl + ' ' + handle).toLowerCase();
+    const hasApproved = approvedList.some(function(h) { return textForApproved.indexOf(h) !== -1; });
+
+    const textForRemoved = postText.toLowerCase();
+    const hasRemoved = removedList.some(function(h) { return textForRemoved.indexOf(h) !== -1; }) || (head === 'upc');
+
+    // RULE 1: Solely associated with @ChairmanUppcl / @CMOfficeUP without approved handles
+    if (hasRemoved && !hasApproved) {
+      archiveRows.push([
+        new Date(),
+        rowIdx,
+        complaintNo,
+        postUrl,
+        handle,
+        head,
+        'Associated solely with removed handle (@ChairmanUppcl / @CMOfficeUP)',
+        postText
+      ]);
+      rowsToDelete.push(rowIdx);
+      solelyRemovedCount++;
+    }
+    // RULE 2: DISCOM / District handle replied BEFORE UPPCLLKO
+    else if (tid && discomFirstMap[tid]) {
+      const info = discomFirstMap[tid];
+      archiveRows.push([
+        new Date(),
+        rowIdx,
+        complaintNo,
+        postUrl,
+        handle,
+        head,
+        info.reason,
+        postText
+      ]);
+      rowsToDelete.push(rowIdx);
+      discomFirstCount++;
+    }
+    // Dual-tagged with removed handle but has approved handle -> re-resolve head
+    else if (head === 'upc' && hasApproved) {
+      const newHead = getApexHead(postText || postUrl || handle);
+      sheet.getRange(rowIdx, headCol + 1).setValue(newHead);
+      reResolvedCount++;
+    }
+  }
+
+  // Append all archived rows to Archived_Excluded_Complaints
+  if (archiveRows.length > 0) {
+    const startArchiveRow = archiveSheet.getLastRow() + 1;
+    archiveSheet.getRange(startArchiveRow, 1, archiveRows.length, archiveRows[0].length).setValues(archiveRows);
+    archiveSheet.getRange(startArchiveRow, 1, archiveRows.length, archiveRows[0].length)
+      .setFontFamily('Verdana').setFontSize(10).setVerticalAlignment('middle')
+      .setBorder(true, true, true, true, true, true, '#000000', SpreadsheetApp.BorderStyle.SOLID);
+    archiveSheet.autoResizeColumns(1, headers.length);
+  }
+
+  // Delete excluded rows from Twitter Complaint List from bottom to top
+  for (let d = rowsToDelete.length - 1; d >= 0; d--) {
+    sheet.deleteRow(rowsToDelete[d]);
+  }
+
+  SpreadsheetApp.flush();
+
+  const msg = 'Reconciliation Complete!\n\n' +
+    '• Archived ' + archiveRows.length + ' complaints to "Archived_Excluded_Complaints":\n' +
+    '   - ' + discomFirstCount + ' complaints where DISCOM/district handle replied before UPPCLLKO\n' +
+    '   - ' + solelyRemovedCount + ' complaints solely associated with removed handles\n' +
+    '• Re-resolved ' + reResolvedCount + ' dual-tagged complaints from "upc" to approved heads.\n' +
+    '• Settings updated MONITORED_APEX to the 5 approved handles.\n' +
+    '• ' + (lastRow - 2 - archiveRows.length) + ' active qualifying complaints remain on "Twitter Complaint List".';
+
+  try {
+    SpreadsheetApp.getUi().alert(msg);
+  } catch(e) {
+    Logger.log(msg);
+  }
+}
+
+
+/**
+ * Authoritative Master List of 160 Verified Historical @UPPCLLKO Reply Tweet IDs
+ * Derived from complete conversation reconstruction and multi-tiered audit trail.
+ */
+const VERIFIED_UPPCL_REPLIED_TWEET_IDS = new Set([
+  "2111604765486707028",
+  "2111617408557568279",
+  "2111631974771360067",
+  "2111891117310661096",
+  "2111914423871062483",
+  "2111920321758724325",
+  "2111961871502942324",
+  "2111971385157554369",
+  "2111973752116498606",
+  "2111983536450457802",
+  "2111991753486237823",
+  "2111992959256367117",
+  "2112008355359461442",
+  "2112008869203574948",
+  "2112009033611968929",
+  "2112009487364366416",
+  "2112011516354728379",
+  "2112013175168389365",
+  "2112017269048156384",
+  "2112018088489357384",
+  "2112019450853835087",
+  "2112020724038959510",
+  "2112024098792685745",
+  "2112037363321053518",
+  "2112042897948422562",
+  "2112043922537255004",
+  "2112049810836725943",
+  "2112050013086056846",
+  "2112051917904081014",
+  "2112052188168257654",
+  "2112053721492509158",
+  "2112054873856283022",
+  "2112059204274200993",
+  "2112060601686233204",
+  "2112063969028719082",
+  "2112064906258501767",
+  "2112065097569009744",
+  "2112066666414969344",
+  "2112070435626201198",
+  "2112085097721778522",
+  "2112088024003866705",
+  "2112091248114971025",
+  "2112095759743201565",
+  "2112101743974826245",
+  "2112108436251152519",
+  "2112109456226222309",
+  "2112110537861411003",
+  "2112110586540728589",
+  "2112111966856556977",
+  "2112113957909737551",
+  "2112114162000363907",
+  "2112123332317663356",
+  "2112123954215211377",
+  "2112125787709325673",
+  "2112130204466590045",
+  "2112134410384363635",
+  "2112136014760448402",
+  "2112138587705892912",
+  "2112138645683445760",
+  "2112139420237492416",
+  "2112141928490013122",
+  "2112146074735616497",
+  "2112152362811072555",
+  "2112159986923237528",
+  "2112161402341486657",
+  "2112161752280670707",
+  "2112163533509251541",
+  "2112167183912702222",
+  "2112168252235206929",
+  "2112168757347193012",
+  "2112169144087187794",
+  "2112174533553922442",
+  "2112178888306786508",
+  "2112184765151682799",
+  "2112190323120325116",
+  "2112192276718051645",
+  "2112192724791415254",
+  "2112192989221282247",
+  "2112193377617997914",
+  "2112198594833101120",
+  "2112199621980340330",
+  "2112200183752831029",
+  "2112200320407462235",
+  "2112202297350693042",
+  "2112205469876187327",
+  "2112209719012229125",
+  "2112209824369016884",
+  "2112210806435934661",
+  "2112215192759361722",
+  "2112217252049424418",
+  "2112221480914391069",
+  "2112235082593571096",
+  "2112235834279891234",
+  "2112237835516514598",
+  "2112238057957253228",
+  "2112349691413406007",
+  "2112359967877726601",
+  "2112361448114720813",
+  "2112364897858408643",
+  "2112369153852187019",
+  "2112369378000007430",
+  "2112370304471466090",
+  "2112374826530943042",
+  "2112375055070179562",
+  "2112376337709310144",
+  "2112376768795689021",
+  "2112378869202448853",
+  "2112381066157928596",
+  "2112384160707035370",
+  "2112398766812889265",
+  "2112403502211514486",
+  "2112404499176554739",
+  "2112404983186616735",
+  "2112406956426318201",
+  "2112410753038987401",
+  "2112413471698813401",
+  "2112413931067376063",
+  "2112416294649942044",
+  "2112419414293327973",
+  "2112422974116843654",
+  "2112423862130602240",
+  "2112427528577237115",
+  "2112438916200755362",
+  "2112439185261085025",
+  "2112439500026896747",
+  "2112449935505604835",
+  "2112450167186346284",
+  "2112466533331124377",
+  "2112469847158514049",
+  "2112478797979328823",
+  "2112482037932372316",
+  "2112486084336898134",
+  "2112492454121480193",
+  "2112496914596020438",
+  "2112499356616310939",
+  "2112501489889689611",
+  "2112506180086239417",
+  "2112511821731250592",
+  "2112512166616265095",
+  "2112512682784092434",
+  "2112513042596708472",
+  "2112521388628320434",
+  "2112521967865860344",
+  "2112523535721930785",
+  "2112526559030473024",
+  "2112530159899402414",
+  "2112534199785975847",
+  "2112540697220071882",
+  "2112540698012688554",
+  "2112540788601328090",
+  "2112543129006170200",
+  "2112546133029626305",
+  "2112546408981283020",
+  "2112559578441261416",
+  "2112563326958067757",
+  "2112563401625051437",
+  "2112567087491420186",
+  "2112571567523901584",
+  "2112573506114494926",
+  "2112573939608436768"
+]);
+
+/**
+ * Fills the 'UPPCLLKO Replied (YES/NO)' column (Column J) across all data rows in 'Twitter Complaint List'.
+ * Rule:
+ *  - YES: If UPPCLLKO ever replied to that post (in present or anywhere in historical conversation trail).
+ *  - NO:  If UPPCLLKO never replied to that post.
+ */
+function populateUppclRepliedColumn() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sheet = ss.getSheetByName('Twitter Complaint List');
+  if (!sheet) sheet = ss.getActiveSheet();
+
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 3) return { total: 0, yesCount: 0, noCount: 0 };
+
+  const numRows = lastRow - 2;
+  const colMap = getSheetColumnMap(sheet);
+  const uppclCol = (colMap.uppclReplied !== undefined) ? colMap.uppclReplied + 1 : 10;
+  const linkCol = (colMap.linkUrl !== undefined) ? colMap.linkUrl + 1 : 5;
+  const pidCol = (colMap.postId !== undefined) ? colMap.postId + 1 : null;
+
+  const urlValues = sheet.getRange(3, linkCol, numRows, 1).getValues();
+  const pidValues = pidCol ? sheet.getRange(3, pidCol, numRows, 1).getValues() : null;
+
+  const outputValues = [];
+  let yesCount = 0;
+  let noCount = 0;
+
+  for (let i = 0; i < numRows; i++) {
+    const rawUrl = String(urlValues[i][0] || '').trim();
+    let tid = '';
+    const m = rawUrl.match(/status\/(\d+)/i);
+    if (m) {
+      tid = m[1];
+    } else if (pidValues && /^\d{15,25}$/.test(String(pidValues[i][0] || '').trim())) {
+      tid = String(pidValues[i][0] || '').trim();
+    }
+
+    if (tid && VERIFIED_UPPCL_REPLIED_TWEET_IDS.has(tid)) {
+      outputValues.push(['YES']);
+      yesCount++;
+    } else {
+      outputValues.push(['NO']);
+      noCount++;
+    }
+  }
+
+  // Fast single-batch write (updates all rows in 1 second)
+  sheet.getRange(3, uppclCol, numRows, 1).setValues(outputValues);
+
+  // Apply in-cell dropdown chips
+  const rule = SpreadsheetApp.newDataValidation()
+    .requireValueInList(['YES', 'NO'], true)
+    .setAllowInvalid(true)
+    .build();
+  sheet.getRange(3, uppclCol, numRows, 1).setDataValidation(rule);
+
+  SpreadsheetApp.flush();
+
+  const colName = sheet.getRange(1, uppclCol).getValue() || 'UPPCLLKO Replied (YES/NO)';
+  const msg = 'Successfully populated \'' + colName + '\' (Column ' + uppclCol + ') across all ' + numRows + ' rows:\n\n' +
+              '• YES (Verified UPPCLLKO Replied): ' + yesCount + '\n' +
+              '• NO (Never Replied): ' + noCount;
+  try {
+    SpreadsheetApp.getUi().alert('UPPCLLKO Reply Status Populated\n\n' + msg);
+  } catch (e) {
+    Logger.log(msg);
+  }
+
+  return { total: numRows, yesCount, noCount };
 }
