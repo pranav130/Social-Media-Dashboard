@@ -1017,7 +1017,7 @@ function processSheetMatrix(headers, data, method, startTime = Date.now()) {
     const reply60 = getVal('reply_within_60_min');
     const rawComplaintNo = getVal('complaint_no', 15) || getVal('complaint_no', 17);
     let rawPostText = getVal('post_text', 20) || getVal('post_text', 16) || getVal('post_text', 21) || remark;
-    if (!rawPostText || rawPostText.length < 10) {
+    if (!rawPostText || rawPostText.length < 10 || /^\d{15,25}$/.test(rawPostText.trim())) {
       const candidateCols = [20, 16, 21, 22, 18, 17, 19];
       for (const colIdx of candidateCols) {
         const cellStr = String(row[colIdx] || '').trim();
@@ -1026,7 +1026,7 @@ function processSheetMatrix(headers, data, method, startTime = Date.now()) {
           break;
         }
       }
-      if (!rawPostText || rawPostText.length < 10) {
+      if (!rawPostText || rawPostText.length < 10 || /^\d{15,25}$/.test(rawPostText.trim())) {
         let longest = '';
         for (let colIdx = 5; colIdx < row.length; colIdx++) {
           const cellStr = String(row[colIdx] || '').trim();
