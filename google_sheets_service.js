@@ -1020,10 +1020,10 @@ function processSheetMatrix(headers, data, method, startTime = Date.now()) {
     const existingComp = (linkUrl && existingMap.get(linkUrl)) || (rowTid && existingMap.get(rowTid)) || null;
 
     // Historical reply recognition:
-    // UPPCLLKO verified reply is strictly reply30 === 'YES', explicit UPPCLLKO reply tweet data,
-    // or verified historical reply in thread from complaint_replies / cache.
-    const hasIncomingVerifiedReply = (reply30 && reply30.toUpperCase() === 'YES') ||
-                                     Boolean(getVal('reply_post_id', 27)) ||
+    // UPPCLLKO verified reply is strictly explicit UPPCLLKO reply tweet data,
+    // or verified historical reply in thread from complaint_replies.
+    // NEVER treat reply30 (Laqshya SLA tag) as proof of UPPCLLKO reply!
+    const hasIncomingVerifiedReply = Boolean(getVal('reply_post_id', 27)) ||
                                      Boolean(getVal('reply_post_url', 28)) ||
                                      Boolean(getVal('reply_posted_at', 29));
 
@@ -1032,7 +1032,6 @@ function processSheetMatrix(headers, data, method, startTime = Date.now()) {
       existingComp && (
         existingComp.has_historical_reply === 1 ||
         existingComp.uppcl_replied === 1 ||
-        existingComp.reply_within_30_min === 'YES' ||
         Boolean(existingComp.published_reply_id)
       )
     );
@@ -1044,9 +1043,7 @@ function processSheetMatrix(headers, data, method, startTime = Date.now()) {
     if (hasIncomingVerifiedReply) {
       firstRepliedAt = firstRepliedAt || nowIst;
       if (!replyEvidence) {
-        if (reply30 && reply30.toUpperCase() === 'YES') {
-          replyEvidence = 'Verified UPPCLLKO reply within 30 mins (Laqshya SLA confirmed)';
-        } else if (getVal('reply_post_url', 28)) {
+        if (getVal('reply_post_url', 28)) {
           replyEvidence = 'Verified reply URL: ' + getVal('reply_post_url', 28);
         } else {
           replyEvidence = 'Verified UPPCLLKO reply on record';
@@ -1167,19 +1164,20 @@ function processSheetMatrix(headers, data, method, startTime = Date.now()) {
   db.run(`
     -- Authoritative Historical UPPCLLKO Reply Rule (Picked status retired):
     -- 1. All complaints with verified UPPCLLKO reply (historical, 30m, published, or complaint_replies)
+    -- 1. All complaints with verified UPPCLLKO reply (genuine reply record, published reply ID, or sent reply)
     UPDATE complaints
     SET has_historical_reply = 1,
         uppcl_replied = 1,
         picked_status = NULL,
-        reply_evidence = COALESCE(
-          (SELECT 'Verified historical @UPPCLLKO reply in thread (Tweet ID: ' || reply_tweet_id || ')' FROM complaint_replies WHERE complaint_id = complaints.id AND is_uppcl_reply = 1 LIMIT 1),
-          reply_evidence,
-          'Verified historical @UPPCLLKO reply on record'
+        reply_evidence = (
+          SELECT 'Verified historical @UPPCLLKO reply in thread (Tweet ID: ' || reply_tweet_id || ')' 
+          FROM complaint_replies 
+          WHERE complaint_id = complaints.id AND is_uppcl_reply = 1 
+          ORDER BY id DESC LIMIT 1
         )
-    WHERE (reply_within_30_min = 'YES')
+    WHERE (id IN (SELECT DISTINCT complaint_id FROM complaint_replies WHERE is_uppcl_reply = 1))
        OR (published_reply_id IS NOT NULL AND published_reply_id != '')
-       OR (id IN (SELECT DISTINCT complaint_id FROM x_outgoing_replies WHERE status IN ('Published', 'SENT')))
-       OR (id IN (SELECT DISTINCT complaint_id FROM complaint_replies WHERE is_uppcl_reply = 1));
+       OR (id IN (SELECT DISTINCT complaint_id FROM x_outgoing_replies WHERE status IN ('Published', 'SENT')));
 
     -- 2. Complaints where UPPCLLKO has not replied
     UPDATE complaints
@@ -1187,21 +1185,28 @@ function processSheetMatrix(headers, data, method, startTime = Date.now()) {
         uppcl_replied = 0,
         picked_status = NULL,
         reply_evidence = NULL
-    WHERE (has_historical_reply = 0 OR has_historical_reply IS NULL)
-      AND (reply_within_30_min != 'YES' OR reply_within_30_min IS NULL)
+    WHERE (id NOT IN (SELECT DISTINCT complaint_id FROM complaint_replies WHERE is_uppcl_reply = 1))
       AND (published_reply_id IS NULL OR published_reply_id = '')
-      AND (id NOT IN (SELECT DISTINCT complaint_id FROM x_outgoing_replies WHERE status IN ('Published', 'SENT')))
-      AND (id NOT IN (SELECT DISTINCT complaint_id FROM complaint_replies WHERE is_uppcl_reply = 1));
+      AND (id NOT IN (SELECT DISTINCT complaint_id FROM x_outgoing_replies WHERE status IN ('Published', 'SENT')));
 
     -- 3. Scenario A: Registered DISCOM replied (Preserve DISCOM Redressal Tracking)
     UPDATE complaints
     SET discom_replied = 1,
         discom_reply_evidence = COALESCE(
-          (SELECT 'Verified registered DISCOM reply in thread (Tweet ID: ' || reply_tweet_id || ')' FROM complaint_replies WHERE complaint_id = complaints.id AND is_discom_reply = 1 LIMIT 1),
-          'Verified registered DISCOM reply on record'
-        )
-    WHERE (reply_within_60_min IS NOT NULL AND reply_within_60_min != '' AND reply_within_60_min != 'NO' AND reply_within_60_min != '-')
-       OR (id IN (SELECT DISTINCT complaint_id FROM complaint_replies WHERE is_discom_reply = 1));
+            (SELECT 'Verified registered DISCOM reply in thread (Tweet ID: ' || reply_tweet_id || ')' 
+             FROM complaint_replies 
+             WHERE complaint_id = complaints.id AND is_discom_reply = 1 
+             ORDER BY id DESC LIMIT 1),
+            'Verified registered DISCOM reply on record'
+          )
+    WHERE (id IN (SELECT DISTINCT complaint_id FROM complaint_replies WHERE is_discom_reply = 1))
+       OR (reply_within_60_min IS NOT NULL AND reply_within_60_min != '' AND reply_within_60_min != 'NO' AND reply_within_60_min != '-');
+
+    UPDATE complaints
+    SET discom_replied = 0,
+        discom_reply_evidence = NULL
+    WHERE (id NOT IN (SELECT DISTINCT complaint_id FROM complaint_replies WHERE is_discom_reply = 1))
+      AND (reply_within_60_min IS NULL OR reply_within_60_min = '' OR reply_within_60_min = 'NO' OR reply_within_60_min = '-');
 
     UPDATE complaints
     SET discom_tagged_in_reply = '@' || UPPER(discom_name) || 'HQ'

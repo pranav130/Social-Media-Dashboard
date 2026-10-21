@@ -2189,7 +2189,6 @@ function handleDashboardTableExcelExport(req, res) {
     const isUppclReplied = !isAppreciation && Boolean(
       c.uppcl_replied === 1 ||
       c.has_historical_reply === 1 ||
-      c.reply_within_30_min === 'YES' ||
       Boolean(c.published_reply_id)
     );
     const isDiscomReplied = !isAppreciation && !isUppclReplied && Boolean(
@@ -3348,53 +3347,52 @@ if (process.env.NO_SERVER_AUTOSTART !== 'true') {
       console.warn('[Server] Phantom purge warning:', phErr.message);
     }
 
-    // Harmonize Picked Status & Operational Status with permanent reply reality
-    // Critical Rule: Authoritative Historical UPPCLLKO Reply & Pickup Event Reconciliation
+    // Authoritative Historical UPPCLLKO Reply Rule (Picked status permanently retired)
     try {
       db.run(`
+        -- 1. All complaints with verified UPPCLLKO reply (genuine reply record, published reply ID, or sent reply)
         UPDATE complaints
         SET has_historical_reply = 1,
             uppcl_replied = 1,
-            picked_status = 'YES',
-            reply_evidence = COALESCE(
-              (SELECT 'Verified historical @UPPCLLKO reply in thread (Tweet ID: ' || reply_tweet_id || ')' FROM complaint_replies WHERE complaint_id = complaints.id AND is_uppcl_reply = 1 LIMIT 1),
-              reply_evidence,
-              'Verified historical @UPPCLLKO reply on record'
+            picked_status = NULL,
+            reply_evidence = (
+              SELECT 'Verified historical @UPPCLLKO reply in thread (Tweet ID: ' || reply_tweet_id || ')' 
+              FROM complaint_replies 
+              WHERE complaint_id = complaints.id AND is_uppcl_reply = 1 
+              ORDER BY id DESC LIMIT 1
             )
-        WHERE (reply_within_30_min = 'YES')
+        WHERE (id IN (SELECT DISTINCT complaint_id FROM complaint_replies WHERE is_uppcl_reply = 1))
            OR (published_reply_id IS NOT NULL AND published_reply_id != '')
-           OR (id IN (SELECT DISTINCT complaint_id FROM x_outgoing_replies WHERE status IN ('Published', 'SENT')))
-           OR (id IN (SELECT DISTINCT complaint_id FROM complaint_replies WHERE is_uppcl_reply = 1));
+           OR (id IN (SELECT DISTINCT complaint_id FROM x_outgoing_replies WHERE status IN ('Published', 'SENT')));
 
+        -- 2. Complaints where UPPCLLKO has not replied
         UPDATE complaints
         SET has_historical_reply = 0,
             uppcl_replied = 0,
-            reply_evidence = NULL,
-            picked_status = 'YES'
-        WHERE (has_historical_reply = 0 OR has_historical_reply IS NULL)
-          AND (reply_within_30_min != 'YES' OR reply_within_30_min IS NULL)
+            picked_status = NULL,
+            reply_evidence = NULL
+        WHERE (id NOT IN (SELECT DISTINCT complaint_id FROM complaint_replies WHERE is_uppcl_reply = 1))
           AND (published_reply_id IS NULL OR published_reply_id = '')
-          AND (id NOT IN (SELECT DISTINCT complaint_id FROM x_outgoing_replies WHERE status IN ('Published', 'SENT')))
-          AND (id NOT IN (SELECT DISTINCT complaint_id FROM complaint_replies WHERE is_uppcl_reply = 1))
-          AND (picked_status != 'APPRECIATION')
-          AND (
-            (current_status IN ('Assigned to DISCOM', 'Forwarded', 'DISCOM Follow Up', 'Escalated', 'Under Investigation', 'Resolved — Verification Pending', 'Closed'))
-            OR (forwarding_ref_no IS NOT NULL AND forwarding_ref_no != '')
-            OR (assigned_operator_id IS NOT NULL)
-          );
+          AND (id NOT IN (SELECT DISTINCT complaint_id FROM x_outgoing_replies WHERE status IN ('Published', 'SENT')));
+
+        -- 3. Scenario A: Registered DISCOM reply tracking
+        UPDATE complaints
+        SET discom_replied = 1,
+            discom_reply_evidence = COALESCE(
+            (SELECT 'Verified registered DISCOM reply in thread (Tweet ID: ' || reply_tweet_id || ')' 
+             FROM complaint_replies 
+             WHERE complaint_id = complaints.id AND is_discom_reply = 1 
+             ORDER BY id DESC LIMIT 1),
+            'Verified registered DISCOM reply on record'
+          )
+        WHERE (id IN (SELECT DISTINCT complaint_id FROM complaint_replies WHERE is_discom_reply = 1))
+           OR (reply_within_60_min IS NOT NULL AND reply_within_60_min != '' AND reply_within_60_min != 'NO' AND reply_within_60_min != '-');
 
         UPDATE complaints
-        SET has_historical_reply = 0,
-            uppcl_replied = 0,
-            reply_evidence = NULL,
-            picked_status = 'NO'
-        WHERE (has_historical_reply = 0 OR has_historical_reply IS NULL)
-          AND (reply_within_30_min != 'YES' OR reply_within_30_min IS NULL)
-          AND (published_reply_id IS NULL OR published_reply_id = '')
-          AND (id NOT IN (SELECT DISTINCT complaint_id FROM x_outgoing_replies WHERE status IN ('Published', 'SENT')))
-          AND (id NOT IN (SELECT DISTINCT complaint_id FROM complaint_replies WHERE is_uppcl_reply = 1))
-          AND (picked_status != 'APPRECIATION')
-          AND (current_status = 'New' OR current_status IS NULL OR current_status = '');
+        SET discom_replied = 0,
+            discom_reply_evidence = NULL
+        WHERE (id NOT IN (SELECT DISTINCT complaint_id FROM complaint_replies WHERE is_discom_reply = 1))
+          AND (reply_within_60_min IS NULL OR reply_within_60_min = '' OR reply_within_60_min = 'NO' OR reply_within_60_min = '-');
 
         UPDATE complaints
         SET discom_tagged_in_reply = '@' || UPPER(discom_name) || 'HQ'
@@ -3404,7 +3402,7 @@ if (process.env.NO_SERVER_AUTOSTART !== 'true') {
 
       db.saveToDiskSync();
     } catch (hErr) {
-      console.warn('[Server] Picked status harmonization warning:', hErr.message);
+      console.warn('[Server] Reply harmonization warning:', hErr.message);
     }
 
     app.listen(PORT, '0.0.0.0', () => {

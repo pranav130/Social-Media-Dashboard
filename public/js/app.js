@@ -1224,10 +1224,8 @@ const App = {
           c.uppcl_replied === 1 ||
           c.uppcl_replied === '1' ||
           c.has_historical_reply === 1 ||
-          c.reply_within_30_min === 'YES' ||
           Boolean(c.published_reply_id)
         );
-        const isPicked = !isAppreciation && (hasUppclReplied || c.picked_status === 'YES');
 
         let displayStatus = c.current_status;
         let statusSub = '';
@@ -2123,10 +2121,8 @@ const App = {
                   c.uppcl_replied === 1 ||
                   c.uppcl_replied === '1' ||
                   c.has_historical_reply === 1 ||
-                  c.reply_within_30_min === 'YES' ||
                   Boolean(c.published_reply_id)
                 );
-                const isPicked = !isAppreciation && (hasUppclReplied || c.picked_status === 'YES');
 
                 let displayStatus = c.current_status;
                 let statusSub = '';
@@ -2855,7 +2851,6 @@ const App = {
                         c.uppcl_replied === 1 ||
                         c.uppcl_replied === '1' ||
                         c.has_historical_reply === 1 ||
-                        c.reply_within_30_min === 'YES' ||
                         Boolean(c.published_reply_id)
                       );
                       return hasReplied 

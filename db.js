@@ -475,45 +475,102 @@ function createSchema() {
   tryAddColumn('complaints', 'discom_reply_evidence TEXT');
   tryAddColumn('complaints', 'last_reply_author TEXT');
 
+  // Pre-load verified historical replies from data/verified_replies_seed.json
+  try {
+    const repliesSeedFile = path.join(__dirname, 'data', 'verified_replies_seed.json');
+    if (fs.existsSync(repliesSeedFile)) {
+      const existingCount = dbInstance.exec("SELECT COUNT(*) FROM complaint_replies;")[0]?.values[0][0] || 0;
+      if (existingCount < 500) {
+        const seedReplies = JSON.parse(fs.readFileSync(repliesSeedFile, 'utf8'));
+        if (Array.isArray(seedReplies) && seedReplies.length > 0) {
+          for (const r of seedReplies) {
+            dbInstance.run(`
+              INSERT OR IGNORE INTO complaint_replies
+              (complaint_id, conversation_id, reply_tweet_id, author_handle, author_name, author_id, reply_text, is_uppcl_reply, is_discom_reply, replied_at, verified_source, created_at)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+            `, [
+              r.complaint_id,
+              r.conversation_id,
+              r.reply_tweet_id,
+              r.author_handle,
+              r.author_name,
+              r.author_id,
+              r.reply_text,
+              r.is_uppcl_reply || 0,
+              r.is_discom_reply || 0,
+              r.replied_at,
+              r.verified_source || 'SEED_VERIFIED',
+              r.created_at || new Date().toISOString()
+            ]);
+          }
+        }
+      }
+    }
+  } catch (sErr) {
+    console.warn('Verified replies seed error:', sErr.message);
+  }
+
+  // Ensure conversation_id and original_post_id are extracted from post_url
+  try {
+    const compRows = dbInstance.exec("SELECT id, post_url FROM complaints WHERE (conversation_id IS NULL OR conversation_id = '') AND post_url IS NOT NULL;");
+    if (compRows.length && compRows[0].values) {
+      for (const [id, url] of compRows[0].values) {
+        const m = (url || '').match(/status\/(\d+)/i);
+        if (m) {
+          dbInstance.run("UPDATE complaints SET conversation_id = ?, original_post_id = ? WHERE id = ?;", [m[1], m[1], id]);
+        }
+      }
+    }
+  } catch (e) {}
+
   try {
     // Authoritative Historical UPPCLLKO Reply Rule:
     // If UPPCLLKO replied even once anywhere in conversation history -> uppcl_replied = 1, has_historical_reply = 1
+    // NEVER assume UPPCLLKO replied based on reply_within_30_min SLA flag.
     dbInstance.run(`
+      -- 1. All complaints with verified UPPCLLKO reply (genuine reply record, published reply ID, or sent reply)
       UPDATE complaints
       SET has_historical_reply = 1,
           uppcl_replied = 1,
           picked_status = NULL,
-          reply_evidence = COALESCE(
-            (SELECT 'Verified historical @UPPCLLKO reply in thread (Tweet ID: ' || reply_tweet_id || ')' FROM complaint_replies WHERE complaint_id = complaints.id AND is_uppcl_reply = 1 LIMIT 1),
-            reply_evidence,
-            'Verified historical @UPPCLLKO reply on record'
+          reply_evidence = (
+            SELECT 'Verified historical @UPPCLLKO reply in thread (Tweet ID: ' || reply_tweet_id || ')' 
+            FROM complaint_replies 
+            WHERE complaint_id = complaints.id AND is_uppcl_reply = 1 
+            ORDER BY id DESC LIMIT 1
           )
-      WHERE (reply_within_30_min = 'YES')
+      WHERE (id IN (SELECT DISTINCT complaint_id FROM complaint_replies WHERE is_uppcl_reply = 1))
          OR (published_reply_id IS NOT NULL AND published_reply_id != '')
-         OR (id IN (SELECT DISTINCT complaint_id FROM x_outgoing_replies WHERE status IN ('Published', 'SENT')))
-         OR (id IN (SELECT DISTINCT complaint_id FROM complaint_replies WHERE is_uppcl_reply = 1));
+         OR (id IN (SELECT DISTINCT complaint_id FROM x_outgoing_replies WHERE status IN ('Published', 'SENT')));
 
-      -- Unreplied complaints
+      -- 2. Complaints where UPPCLLKO has not replied
       UPDATE complaints
       SET has_historical_reply = 0,
           uppcl_replied = 0,
           picked_status = NULL,
           reply_evidence = NULL
-      WHERE (has_historical_reply = 0 OR has_historical_reply IS NULL)
-        AND (reply_within_30_min != 'YES' OR reply_within_30_min IS NULL)
+      WHERE (id NOT IN (SELECT DISTINCT complaint_id FROM complaint_replies WHERE is_uppcl_reply = 1))
         AND (published_reply_id IS NULL OR published_reply_id = '')
-        AND (id NOT IN (SELECT DISTINCT complaint_id FROM x_outgoing_replies WHERE status IN ('Published', 'SENT')))
-        AND (id NOT IN (SELECT DISTINCT complaint_id FROM complaint_replies WHERE is_uppcl_reply = 1));
+        AND (id NOT IN (SELECT DISTINCT complaint_id FROM x_outgoing_replies WHERE status IN ('Published', 'SENT')));
 
-      -- Registered DISCOM reply tracking (Scenario A exception)
+      -- 3. Scenario A: Registered DISCOM reply tracking (Preserve DISCOM Redressal Tracking)
       UPDATE complaints
       SET discom_replied = 1,
           discom_reply_evidence = COALESCE(
-            (SELECT 'Verified registered DISCOM reply in thread (Tweet ID: ' || reply_tweet_id || ')' FROM complaint_replies WHERE complaint_id = complaints.id AND is_discom_reply = 1 LIMIT 1),
+            (SELECT 'Verified registered DISCOM reply in thread (Tweet ID: ' || reply_tweet_id || ')' 
+             FROM complaint_replies 
+             WHERE complaint_id = complaints.id AND is_discom_reply = 1 
+             ORDER BY id DESC LIMIT 1),
             'Verified registered DISCOM reply on record'
           )
-      WHERE (reply_within_60_min IS NOT NULL AND reply_within_60_min != '' AND reply_within_60_min != 'NO' AND reply_within_60_min != '-')
-         OR (id IN (SELECT DISTINCT complaint_id FROM complaint_replies WHERE is_discom_reply = 1));
+      WHERE (id IN (SELECT DISTINCT complaint_id FROM complaint_replies WHERE is_discom_reply = 1))
+         OR (reply_within_60_min IS NOT NULL AND reply_within_60_min != '' AND reply_within_60_min != 'NO' AND reply_within_60_min != '-');
+
+      UPDATE complaints
+      SET discom_replied = 0,
+          discom_reply_evidence = NULL
+      WHERE (id NOT IN (SELECT DISTINCT complaint_id FROM complaint_replies WHERE is_discom_reply = 1))
+        AND (reply_within_60_min IS NULL OR reply_within_60_min = '' OR reply_within_60_min = 'NO' OR reply_within_60_min = '-');
 
       UPDATE complaints
       SET discom_tagged_in_reply = '@' || UPPER(discom_name) || 'HQ'
