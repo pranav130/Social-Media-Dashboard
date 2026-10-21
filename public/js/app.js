@@ -1034,6 +1034,8 @@ const App = {
 
     const params = {};
     if (discomVal && discomVal !== 'All') params.discom = discomVal;
+    const handleVal = document.getElementById('dash-filter-handle') ? document.getElementById('dash-filter-handle').value : 'All';
+    if (handleVal && handleVal !== 'All') params.assigned_handle = handleVal;
     if (this.dashFilter.search) params.search = this.dashFilter.search;
 
     if (kpi === 'total') {
@@ -1076,6 +1078,10 @@ const App = {
 
     if (discomVal && discomVal !== 'All') {
       q.append('discom', discomVal);
+    }
+    const handleVal = document.getElementById('dash-filter-handle') ? document.getElementById('dash-filter-handle').value : 'All';
+    if (handleVal && handleVal !== 'All') {
+      q.append('monitored_account', handleVal);
     }
     if (this.dashFilter.search && this.dashFilter.search.trim()) {
       q.append('search', this.dashFilter.search.trim());
@@ -1157,6 +1163,7 @@ const App = {
 
     const kpi = this.dashFilter.kpi || 'total';
     const discomVal = document.getElementById('dash-filter-discom') ? document.getElementById('dash-filter-discom').value : 'All';
+    const handleVal = document.getElementById('dash-filter-handle') ? document.getElementById('dash-filter-handle').value : 'All';
     const todayDate = this.getIstDateStr ? this.getIstDateStr() : new Date().toISOString().substring(0, 10);
 
     const q = new URLSearchParams();
@@ -1167,6 +1174,9 @@ const App = {
 
     if (discomVal && discomVal !== 'All') {
       q.append('discom', discomVal);
+    }
+    if (handleVal && handleVal !== 'All') {
+      q.append('monitored_account', handleVal);
     }
     if (this.dashFilter.search && this.dashFilter.search.trim()) {
       q.append('search', this.dashFilter.search.trim());
@@ -1654,6 +1664,8 @@ const App = {
     const container = document.getElementById('official-monitored-handles-container');
     if (!container) return;
 
+    const currentHandle = document.getElementById('dash-filter-handle') ? document.getElementById('dash-filter-handle').value : 'All';
+
     const monitoredHandles = [
       { handle: '@UPPCLLKO', title: 'UPPCL Official HQ', role: 'Central Social Media Cell & Corporate HQ' },
       { handle: '@EMofficeUP', title: 'Energy Minister Office UP', role: 'Office of Hon. Energy Minister' },
@@ -1662,29 +1674,52 @@ const App = {
       { handle: '@mduppcl', title: 'Managing Director, UPPCL', role: 'DISCOM Operational Oversight' }
     ];
 
-    container.innerHTML = monitoredHandles.map(h => `
-      <div style="display: flex; align-items: center; justify-content: space-between; padding: 5px 10px; background: var(--bg-subtle); border: 1px solid var(--border-color); border-radius: 6px; gap: 8px;">
-        <div style="display: flex; align-items: center; gap: 9px; min-width: 0;">
-          <span style="display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 50%; background: #000; color: #fff; font-size: 10px; flex-shrink: 0;">
-            <i class="fa-brands fa-x-twitter"></i>
-          </span>
-          <div style="min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
-            <a href="https://x.com/${h.handle.replace('@', '')}" target="_blank" rel="noopener noreferrer" style="font-weight: 700; font-size: 12px; color: var(--primary); text-decoration: none;" title="Open ${h.handle} profile on X">
-              ${h.handle} <i class="fa-solid fa-arrow-up-right-from-square" style="font-size: 8px; color: var(--text-muted);"></i>
-            </a>
-            <span style="font-size: 11px; color: var(--text-muted); margin-left: 6px;">&bull; ${h.title}</span>
+    container.innerHTML = monitoredHandles.map(h => {
+      const isActive = currentHandle === h.handle;
+      return `
+        <div style="display: flex; align-items: center; justify-content: space-between; padding: 6px 10px; background: ${isActive ? 'rgba(0, 128, 128, 0.08)' : 'var(--bg-subtle)'}; border: 1px solid ${isActive ? 'var(--primary)' : 'var(--border-color)'}; border-radius: 6px; gap: 8px;">
+          <div style="display: flex; align-items: center; gap: 9px; min-width: 0;">
+            <span style="display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 50%; background: #000; color: #fff; font-size: 10px; flex-shrink: 0;">
+              <i class="fa-brands fa-x-twitter"></i>
+            </span>
+            <div style="min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+              <a href="https://x.com/${h.handle.replace('@', '')}" target="_blank" rel="noopener noreferrer" style="font-weight: 700; font-size: 12px; color: var(--primary); text-decoration: none;" title="Open ${h.handle} profile on X">
+                ${h.handle} <i class="fa-solid fa-arrow-up-right-from-square" style="font-size: 8px; color: var(--text-muted);"></i>
+              </a>
+              <span style="font-size: 11px; color: var(--text-muted); margin-left: 6px;">&bull; ${h.title}</span>
+            </div>
+          </div>
+          <div style="display: flex; align-items: center; gap: 6px; flex-shrink: 0;">
+            ${isActive ? `
+              <span style="display: inline-flex; align-items: center; gap: 4px; background: rgba(0, 128, 128, 0.15); color: var(--primary); border: 1px solid var(--primary); font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 4px;">
+                <i class="fa-solid fa-check"></i> Active
+              </span>
+              <button type="button" class="btn btn-sm btn-outline" onclick="App.filterDashboardByHandle('All')" style="padding: 1px 7px; font-size: 10px; cursor: pointer; color: #ef4444; border-color: #ef4444;" title="Reset handle filter">
+                <i class="fa-solid fa-xmark"></i> Clear
+              </button>
+            ` : `
+              <span style="display: inline-flex; align-items: center; gap: 4px; background: rgba(16, 185, 129, 0.12); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.25); font-size: 10px; font-weight: 600; padding: 1px 6px; border-radius: 4px;" title="Actively monitored 24/7">
+                <span class="sync-pulse-dot live" style="width: 5px; height: 5px; display: inline-block;"></span> Monitored
+              </span>
+              <button type="button" class="btn btn-sm btn-outline" onclick="App.filterDashboardByHandle('${h.handle}')" style="padding: 1px 7px; font-size: 10px; cursor: pointer;" title="Filter dashboard for ${h.handle}">
+                <i class="fa-solid fa-filter"></i> Filter
+              </button>
+            `}
+            <button type="button" class="btn btn-sm btn-ghost" onclick="App.navigate('register', { assigned_handle: '${h.handle}' })" style="padding: 1px 5px; font-size: 10px; cursor: pointer;" title="Open all complaints for ${h.handle} in Register">
+              <i class="fa-solid fa-arrow-up-right-from-square"></i>
+            </button>
           </div>
         </div>
-        <div style="display: flex; align-items: center; gap: 6px; flex-shrink: 0;">
-          <span style="display: inline-flex; align-items: center; gap: 4px; background: rgba(16, 185, 129, 0.12); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.25); font-size: 10px; font-weight: 600; padding: 1px 6px; border-radius: 4px;" title="Actively monitored 24/7">
-            <span class="sync-pulse-dot live" style="width: 5px; height: 5px; display: inline-block;"></span> Monitored
-          </span>
-          <button type="button" class="btn btn-sm btn-outline" onclick="App.navigate('register', { search: '${h.handle}' })" style="padding: 1px 7px; font-size: 10px; cursor: pointer;" title="Filter complaints mentioning ${h.handle}">
-            <i class="fa-solid fa-filter"></i> Filter
-          </button>
-        </div>
-      </div>
-    `).join('');
+      `;
+    }).join('');
+  },
+
+  filterDashboardByHandle(handle) {
+    const sel = document.getElementById('dash-filter-handle');
+    if (sel) {
+      sel.value = handle;
+    }
+    this.reloadDashboard();
   },
 
   // -----------------------------------------------------------

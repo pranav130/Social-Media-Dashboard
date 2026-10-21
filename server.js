@@ -3370,8 +3370,22 @@ if (process.env.NO_SERVER_AUTOSTART !== 'true') {
 
     // Authoritative Historical UPPCLLKO Reply Rule (Picked status permanently retired)
     try {
+      // 1. Re-link verified historical replies in complaint_replies with current complaint IDs
       db.run(`
-        -- 1. All complaints with verified UPPCLLKO reply (genuine reply record, published reply ID, or sent reply)
+        UPDATE complaint_replies
+        SET complaint_id = (
+          SELECT c.id FROM complaints c 
+          WHERE c.post_url LIKE '%' || complaint_replies.conversation_id || '%' 
+          LIMIT 1
+        )
+        WHERE EXISTS (
+          SELECT 1 FROM complaints c 
+          WHERE c.post_url LIKE '%' || complaint_replies.conversation_id || '%'
+        );
+      `);
+
+      // 2. All complaints with verified UPPCLLKO reply (genuine reply record, published reply ID, or sent reply)
+      db.run(`
         UPDATE complaints
         SET has_historical_reply = 1,
             uppcl_replied = 1,
@@ -3385,8 +3399,10 @@ if (process.env.NO_SERVER_AUTOSTART !== 'true') {
         WHERE (id IN (SELECT DISTINCT complaint_id FROM complaint_replies WHERE is_uppcl_reply = 1))
            OR (published_reply_id IS NOT NULL AND published_reply_id != '')
            OR (id IN (SELECT DISTINCT complaint_id FROM x_outgoing_replies WHERE status IN ('Published', 'SENT')));
+      `);
 
-        -- 2. Complaints where UPPCLLKO has not replied
+      // 3. Complaints where UPPCLLKO has not replied
+      db.run(`
         UPDATE complaints
         SET has_historical_reply = 0,
             uppcl_replied = 0,
@@ -3394,11 +3410,29 @@ if (process.env.NO_SERVER_AUTOSTART !== 'true') {
             reply_evidence = NULL
         WHERE (id NOT IN (SELECT DISTINCT complaint_id FROM complaint_replies WHERE is_uppcl_reply = 1))
           AND (published_reply_id IS NULL OR published_reply_id = '')
-          AND (id NOT IN (SELECT DISTINCT complaint_id FROM x_outgoing_replies WHERE status IN ('Published', 'SENT')));
+          AND (id NOT IN (SELECT DISTINCT complaint_id FROM x_outgoing_replies WHERE status IN ('Published', 'SENT')))
+          AND (reply_evidence IS NULL OR reply_evidence NOT LIKE '%sheet%');
+      `);
 
-        -- 3. Scenario A: Registered DISCOM reply tracking
+      // 4. Scenario A: Registered DISCOM reply tracking
+      db.run(`
+        UPDATE complaints
+        SET discom_name = CASE
+              WHEN (SELECT author_handle FROM complaint_replies WHERE complaint_id = complaints.id AND is_discom_reply = 1 LIMIT 1) LIKE '%pvvnl%' THEN 'PVVNL'
+              WHEN (SELECT author_handle FROM complaint_replies WHERE complaint_id = complaints.id AND is_discom_reply = 1 LIMIT 1) LIKE '%puvvnl%' THEN 'PuVVNL'
+              WHEN (SELECT author_handle FROM complaint_replies WHERE complaint_id = complaints.id AND is_discom_reply = 1 LIMIT 1) LIKE '%mvvnl%' THEN 'MVVNL'
+              WHEN (SELECT author_handle FROM complaint_replies WHERE complaint_id = complaints.id AND is_discom_reply = 1 LIMIT 1) LIKE '%dvvnl%' THEN 'DVVNL'
+              WHEN (SELECT author_handle FROM complaint_replies WHERE complaint_id = complaints.id AND is_discom_reply = 1 LIMIT 1) LIKE '%kesco%' THEN 'KESCo'
+              ELSE discom_name
+            END
+        WHERE (discom_name IS NULL OR discom_name = '' OR discom_name = 'UPPCL')
+          AND id IN (SELECT complaint_id FROM complaint_replies WHERE is_discom_reply = 1);
+      `);
+
+      db.run(`
         UPDATE complaints
         SET discom_replied = 1,
+            assigned_nodal_officer_name = COALESCE(assigned_nodal_officer_name, 'DISCOM Nodal Officer (' || discom_name || ')'),
             discom_reply_evidence = COALESCE(
             (SELECT 'Verified registered DISCOM reply in thread (Tweet ID: ' || reply_tweet_id || ')' 
              FROM complaint_replies 
@@ -3408,13 +3442,17 @@ if (process.env.NO_SERVER_AUTOSTART !== 'true') {
           )
         WHERE (id IN (SELECT DISTINCT complaint_id FROM complaint_replies WHERE is_discom_reply = 1))
            OR (reply_within_60_min IS NOT NULL AND reply_within_60_min != '' AND reply_within_60_min != 'NO' AND reply_within_60_min != '-');
+      `);
 
+      db.run(`
         UPDATE complaints
         SET discom_replied = 0,
             discom_reply_evidence = NULL
         WHERE (id NOT IN (SELECT DISTINCT complaint_id FROM complaint_replies WHERE is_discom_reply = 1))
           AND (reply_within_60_min IS NULL OR reply_within_60_min = '' OR reply_within_60_min = 'NO' OR reply_within_60_min = '-');
+      `);
 
+      db.run(`
         UPDATE complaints
         SET discom_tagged_in_reply = '@' || UPPER(discom_name) || 'HQ'
         WHERE discom_name IN ('PVVNL', 'PUVVNL', 'MVVNL', 'DVVNL', 'KESCO')

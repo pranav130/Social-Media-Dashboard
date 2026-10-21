@@ -590,11 +590,11 @@ async function fetchSheetMatrix() {
         const row = manualRows[r];
         const url = getValFromMap(row, manualHeaderMap, 'link_url', 4);
         const handle = getValFromMap(row, manualHeaderMap, 'twitter_id', 5);
-        const text = getValFromMap(row, manualHeaderMap, 'post_text', 16) || getValFromMap(row, manualHeaderMap, 'remark', 13);
-        const remark = getValFromMap(row, manualHeaderMap, 'remark', 13);
+        const text = getValFromMap(row, manualHeaderMap, 'post_text', 16);
+        const remark = getValFromMap(row, manualHeaderMap, 'remark');
         const status = getValFromMap(row, manualHeaderMap, 'status', 14);
-        const reply30 = getValFromMap(row, manualHeaderMap, 'reply_within_30_min', 3) || getValFromMap(row, manualHeaderMap, 'reply_within_30_min', 15);
-        const reply60 = getValFromMap(row, manualHeaderMap, 'reply_within_60_min', 16);
+        const reply30 = getValFromMap(row, manualHeaderMap, 'reply_within_30_min', 3);
+        const reply60 = getValFromMap(row, manualHeaderMap, 'reply_within_60_min');
 
         if (!url && !handle && !text) continue;
         if (isOfficialHandle(handle) || isOfficialHandle(url)) continue;
@@ -625,11 +625,11 @@ async function fetchSheetMatrix() {
         const row = autoRows[r];
         const url = getValFromMap(row, autoHeaderMap, 'link_url', 4);
         const handle = getValFromMap(row, autoHeaderMap, 'twitter_id', 5);
-        const text = getValFromMap(row, autoHeaderMap, 'post_text', 16) || getValFromMap(row, autoHeaderMap, 'remark', 13);
-        const remark = getValFromMap(row, autoHeaderMap, 'remark', 13);
+        const text = getValFromMap(row, autoHeaderMap, 'post_text', 16);
+        const remark = getValFromMap(row, autoHeaderMap, 'remark');
         const status = getValFromMap(row, autoHeaderMap, 'status', 14);
-        const reply30 = getValFromMap(row, autoHeaderMap, 'reply_within_30_min', 3) || getValFromMap(row, autoHeaderMap, 'reply_within_30_min', 15);
-        const reply60 = getValFromMap(row, autoHeaderMap, 'reply_within_60_min', 16);
+        const reply30 = getValFromMap(row, autoHeaderMap, 'reply_within_30_min', 3);
+        const reply60 = getValFromMap(row, autoHeaderMap, 'reply_within_60_min');
 
         if (!url && !handle && !text) continue;
         if (isOfficialHandle(handle) || isOfficialHandle(url)) continue;
@@ -674,16 +674,15 @@ async function fetchSheetMatrix() {
         const row = manualRows[idx + 2];
         const url = getValFromMap(row, mHeaderMap, 'link_url', 4);
         const handle = getValFromMap(row, mHeaderMap, 'twitter_id', 5);
-        const text = getValFromMap(row, mHeaderMap, 'post_text', 16) || getValFromMap(row, mHeaderMap, 'remark', 13);
-        const remark = getValFromMap(row, mHeaderMap, 'remark', 13);
+        const text = getValFromMap(row, mHeaderMap, 'post_text', 16);
+        const remark = getValFromMap(row, mHeaderMap, 'remark');
         const status = getValFromMap(row, mHeaderMap, 'status', 14);
-        const reply30 = getValFromMap(row, mHeaderMap, 'reply_within_30_min', 3) || getValFromMap(row, mHeaderMap, 'reply_within_30_min', 15);
-        const reply60 = getValFromMap(row, mHeaderMap, 'reply_within_60_min', 16);
+        const reply30 = getValFromMap(row, mHeaderMap, 'reply_within_30_min', 3);
+        const reply60 = getValFromMap(row, mHeaderMap, 'reply_within_60_min');
         const tid = extractTweetId(url) || url;
 
         if (isOfficialHandle(handle) || isOfficialHandle(url)) continue;
-        const rowHead = getValFromMap(row, mHeaderMap, 'head', 7) || getValFromMap(row, mHeaderMap, 'head', 6);
-        if (!resolveMonitoredAccount(rowHead, text, url)) continue;
+        if (!isPostEligible(text)) continue;
         if (tid && frivolousSet.has(tid)) continue;
         if (url && frivolousSet.has(url.toLowerCase())) continue;
         if (shouldDeleteOrOmitPost({ remark, status, reply30, reply60, tweetId: tid }).shouldOmit) continue;
@@ -707,16 +706,15 @@ async function fetchSheetMatrix() {
         const row = autoRows[idx + 2];
         const url = getValFromMap(row, aHeaderMap, 'link_url', 4);
         const handle = getValFromMap(row, aHeaderMap, 'twitter_id', 5);
-        const text = getValFromMap(row, aHeaderMap, 'post_text', 16) || getValFromMap(row, aHeaderMap, 'remark', 13);
-        const remark = getValFromMap(row, aHeaderMap, 'remark', 13);
+        const text = getValFromMap(row, aHeaderMap, 'post_text', 16);
+        const remark = getValFromMap(row, aHeaderMap, 'remark');
         const status = getValFromMap(row, aHeaderMap, 'status', 14);
-        const reply30 = getValFromMap(row, aHeaderMap, 'reply_within_30_min', 3) || getValFromMap(row, aHeaderMap, 'reply_within_30_min', 15);
-        const reply60 = getValFromMap(row, aHeaderMap, 'reply_within_60_min', 16);
+        const reply30 = getValFromMap(row, aHeaderMap, 'reply_within_30_min', 3);
+        const reply60 = getValFromMap(row, aHeaderMap, 'reply_within_60_min');
         const tid = extractTweetId(url) || url;
 
         if (isOfficialHandle(handle) || isOfficialHandle(url)) continue;
-        const rowHead = getValFromMap(row, aHeaderMap, 'head', 7) || getValFromMap(row, aHeaderMap, 'head', 6);
-        if (!resolveMonitoredAccount(rowHead, text, url)) continue;
+        if (!isPostEligible(text)) continue;
         if (tid && frivolousSet.has(tid)) continue;
         if (url && frivolousSet.has(url.toLowerCase())) continue;
         if (shouldDeleteOrOmitPost({ remark, status, reply30, reply60, tweetId: tid }).shouldOmit) continue;
@@ -962,12 +960,12 @@ function processSheetMatrix(headers, data, method, startTime = Date.now()) {
     const rawDiscom = getVal('discom', 11) || getVal('discom', 10);
     const rawZone = getVal('zone', 12) || getVal('zone', 11);
     const rawDistrict = getVal('district', 13) || getVal('district', 12);
-    const remark = getVal('remark', 13);
+    const remark = getVal('remark');
     const rawStatus = getVal('status', 14) || 'Pending';
     const reply30 = getVal('reply_within_30_min', 3) || getVal('reply_within_30_min', 15);
-    const reply60 = getVal('reply_within_60_min', 16);
+    const reply60 = getVal('reply_within_60_min');
     const rawComplaintNo = getVal('complaint_no', 15) || getVal('complaint_no', 17);
-    const rawPostText = getVal('post_text', 16) || getVal('post_text', 20) || remark;
+    const rawPostText = getVal('post_text', 16) || remark;
     const postCreatedAt = getVal('post_created_at', 17) || getVal('post_created_at', 21);
     const firstDetectedAt = getVal('first_detected_at', 18) || getVal('first_detected_at', 22);
     const language = getVal('language', 19) || getVal('language', 23);
@@ -1256,10 +1254,22 @@ function processSheetMatrix(headers, data, method, startTime = Date.now()) {
   // 1) Remark or status indicates deleted
   // 2) DISCOM replied before UPPCLLKO (reply_within_60_min is set and reply_within_30_min is not)
   // 3) Marked in frivolous_complaints
+  // 1. Re-link verified historical replies in complaint_replies with fresh complaint IDs
   db.run(`
-    -- Authoritative Historical UPPCLLKO Reply Rule (Picked status retired):
-    -- 1. All complaints with verified UPPCLLKO reply (historical, 30m, published, or complaint_replies)
-    -- 1. All complaints with verified UPPCLLKO reply (genuine reply record, published reply ID, or sent reply)
+    UPDATE complaint_replies
+    SET complaint_id = (
+      SELECT c.id FROM complaints c 
+      WHERE c.post_url LIKE '%' || complaint_replies.conversation_id || '%' 
+      LIMIT 1
+    )
+    WHERE EXISTS (
+      SELECT 1 FROM complaints c 
+      WHERE c.post_url LIKE '%' || complaint_replies.conversation_id || '%'
+    );
+  `);
+
+  // 2. All complaints with verified UPPCLLKO reply (historical, published, or complaint_replies)
+  db.run(`
     UPDATE complaints
     SET has_historical_reply = 1,
         uppcl_replied = 1,
@@ -1273,8 +1283,10 @@ function processSheetMatrix(headers, data, method, startTime = Date.now()) {
     WHERE (id IN (SELECT DISTINCT complaint_id FROM complaint_replies WHERE is_uppcl_reply = 1))
        OR (published_reply_id IS NOT NULL AND published_reply_id != '')
        OR (id IN (SELECT DISTINCT complaint_id FROM x_outgoing_replies WHERE status IN ('Published', 'SENT')));
+  `);
 
-    -- 2. Complaints where UPPCLLKO has not replied
+  // 3. Complaints where UPPCLLKO has not replied
+  db.run(`
     UPDATE complaints
     SET has_historical_reply = 0,
         uppcl_replied = 0,
@@ -1282,11 +1294,29 @@ function processSheetMatrix(headers, data, method, startTime = Date.now()) {
         reply_evidence = NULL
     WHERE (id NOT IN (SELECT DISTINCT complaint_id FROM complaint_replies WHERE is_uppcl_reply = 1))
       AND (published_reply_id IS NULL OR published_reply_id = '')
-      AND (id NOT IN (SELECT DISTINCT complaint_id FROM x_outgoing_replies WHERE status IN ('Published', 'SENT')));
+      AND (id NOT IN (SELECT DISTINCT complaint_id FROM x_outgoing_replies WHERE status IN ('Published', 'SENT')))
+      AND (reply_evidence IS NULL OR reply_evidence NOT LIKE '%sheet%');
+  `);
 
-    -- 3. Scenario A: Registered DISCOM replied (Preserve DISCOM Redressal Tracking)
+  // 4. Scenario A: Registered DISCOM replied (Preserve DISCOM Redressal Tracking)
+  db.run(`
+    UPDATE complaints
+    SET discom_name = CASE
+          WHEN (SELECT author_handle FROM complaint_replies WHERE complaint_id = complaints.id AND is_discom_reply = 1 LIMIT 1) LIKE '%pvvnl%' THEN 'PVVNL'
+          WHEN (SELECT author_handle FROM complaint_replies WHERE complaint_id = complaints.id AND is_discom_reply = 1 LIMIT 1) LIKE '%puvvnl%' THEN 'PuVVNL'
+          WHEN (SELECT author_handle FROM complaint_replies WHERE complaint_id = complaints.id AND is_discom_reply = 1 LIMIT 1) LIKE '%mvvnl%' THEN 'MVVNL'
+          WHEN (SELECT author_handle FROM complaint_replies WHERE complaint_id = complaints.id AND is_discom_reply = 1 LIMIT 1) LIKE '%dvvnl%' THEN 'DVVNL'
+          WHEN (SELECT author_handle FROM complaint_replies WHERE complaint_id = complaints.id AND is_discom_reply = 1 LIMIT 1) LIKE '%kesco%' THEN 'KESCo'
+          ELSE discom_name
+        END
+    WHERE (discom_name IS NULL OR discom_name = '' OR discom_name = 'UPPCL')
+      AND id IN (SELECT complaint_id FROM complaint_replies WHERE is_discom_reply = 1);
+  `);
+
+  db.run(`
     UPDATE complaints
     SET discom_replied = 1,
+        assigned_nodal_officer_name = COALESCE(assigned_nodal_officer_name, 'DISCOM Nodal Officer (' || discom_name || ')'),
         discom_reply_evidence = COALESCE(
             (SELECT 'Verified registered DISCOM reply in thread (Tweet ID: ' || reply_tweet_id || ')' 
              FROM complaint_replies 
@@ -1296,18 +1326,24 @@ function processSheetMatrix(headers, data, method, startTime = Date.now()) {
           )
     WHERE (id IN (SELECT DISTINCT complaint_id FROM complaint_replies WHERE is_discom_reply = 1))
        OR (reply_within_60_min IS NOT NULL AND reply_within_60_min != '' AND reply_within_60_min != 'NO' AND reply_within_60_min != '-');
+  `);
 
+  db.run(`
     UPDATE complaints
     SET discom_replied = 0,
         discom_reply_evidence = NULL
     WHERE (id NOT IN (SELECT DISTINCT complaint_id FROM complaint_replies WHERE is_discom_reply = 1))
       AND (reply_within_60_min IS NULL OR reply_within_60_min = '' OR reply_within_60_min = 'NO' OR reply_within_60_min = '-');
+  `);
 
+  db.run(`
     UPDATE complaints
     SET discom_tagged_in_reply = '@' || UPPER(discom_name) || 'HQ'
     WHERE discom_name IN ('PVVNL', 'PUVVNL', 'MVVNL', 'DVVNL', 'KESCO')
       AND (discom_tagged_in_reply IS NULL OR discom_tagged_in_reply = '');
+  `);
 
+  db.run(`
     DELETE FROM complaints 
     WHERE (forwarding_remarks IS NOT NULL AND LOWER(forwarding_remarks) LIKE '%delete%')
        OR (current_status IS NOT NULL AND LOWER(current_status) LIKE '%delete%')
