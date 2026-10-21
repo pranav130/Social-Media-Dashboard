@@ -73,7 +73,6 @@ function onOpen() {
     .addItem('🧹 Remove Official Initiated Posts', 'removeOfficialPostsFromSheet')
     .addItem('📥 Sync All Complaints from Working Sheet (19-10-26)', 'syncFromWorkingSheet')
     .addItem('🔄 Restore Standard Column Headers (Row 1)', 'restoreStandardHeaders')
-    .addItem('⚡ Populate UPPCLLKO Replied (YES/NO) across All Rows', 'populateUppclRepliedColumn')
     .addItem('📋 Setup YES/NO Dropdowns for UPPCLLKO Replied (Col J)', 'setupUppclRepliedDropdowns')
     .addItem('📅 Auto-Fix Corrupted Date Column (Col A)', 'fixDateColumnInSheet')
     .addItem('🔗 Auto-Fix Malformed/Missing Post Links (Col E)', 'fixMalformedUrlsInSheet')
@@ -959,9 +958,116 @@ function releaseEmergencyStop() {
   }
 }
 
+/**
+ * Refreshes and updates the 'Dashboard' tab with authoritative KPI formulas.
+ * Dynamically resolves columns from 'Twitter Complaint List':
+ * - UPPCLLKO Replied & UPPCLLKO Not Replied from Column J ('UPPCLLKO Replied (YES/NO)')
+ * - Total Complaints from Column E ('LINK URL')
+ * - Complaint Types from Column K ('Complaint Type')
+ * - DISCOMs from Column L ('DISCOM')
+ */
 function refreshDashboard() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let dashSheet = ss.getSheetByName('Dashboard');
+  if (!dashSheet) {
+    dashSheet = ss.insertSheet('Dashboard');
+  }
+
+  // Column map discovery from 'Twitter Complaint List' to ensure formulas always use correct column letters
+  const mainSheet = ss.getSheetByName('Twitter Complaint List') || ss.getActiveSheet();
+  const colMap = getSheetColumnMap(mainSheet);
+  
+  function getColLetter(zeroIdx, fallbackLetter) {
+    if (zeroIdx === undefined || zeroIdx === null || zeroIdx < 0) return fallbackLetter;
+    let col = zeroIdx + 1;
+    let letter = '';
+    while (col > 0) {
+      let rem = (col - 1) % 26;
+      letter = String.fromCharCode(65 + rem) + letter;
+      col = Math.floor((col - 1) / 26);
+    }
+    return letter;
+  }
+
+  const urlLtr = getColLetter(colMap.linkUrl, 'E');
+  const uppclLtr = getColLetter(colMap.uppclReplied, 'J');
+  const typeLtr = getColLetter(colMap.complaintType, 'K');
+  const discomLtr = getColLetter(colMap.discom, 'L');
+
+  // Clear existing content to avoid stale rows
+  dashSheet.clear();
+
+  const dashData = [
+    ['UPPCL X COMPLAINT MONITORING DASHBOARD', '', '', ''],
+    ['Metric', 'Value', 'Source / Formula', 'Notes'],
+    // 1. Overall Volume
+    ['Total Complaints Recorded', `=COUNTA('Twitter Complaint List'!${urlLtr}3:${urlLtr})`, `Column ${urlLtr} (LINK URL)`, 'Active qualifying post links count'],
+    // 2. UPPCLLKO Reply Status (Strictly from Col J: UPPCLLKO Replied (YES/NO))
+    ['UPPCLLKO Replied', `=COUNTIF('Twitter Complaint List'!${uppclLtr}3:${uppclLtr}, "YES")`, `Column ${uppclLtr} = 'YES'`, 'UPPCLLKO Replied (YES/NO) = YES'],
+    ['UPPCLLKO Not Replied', `=COUNTIFS('Twitter Complaint List'!${urlLtr}3:${urlLtr}, "<>", 'Twitter Complaint List'!${uppclLtr}3:${uppclLtr}, "<>YES")`, `Column ${uppclLtr} <> 'YES'`, 'Active complaints where UPPCLLKO has not replied'],
+    ['UPPCLLKO Explicit NO', `=COUNTIF('Twitter Complaint List'!${uppclLtr}3:${uppclLtr}, "NO")`, `Column ${uppclLtr} = 'NO'`, 'Explicitly marked NO in dropdown'],
+    ['UPPCLLKO Unmarked / Pending', `=COUNTIFS('Twitter Complaint List'!${urlLtr}3:${urlLtr}, "<>", 'Twitter Complaint List'!${uppclLtr}3:${uppclLtr}, "")`, `Column ${uppclLtr} is Blank`, 'Awaiting reply or verification'],
+    // 3. Category Breakdown (From Col K: Complaint Type)
+    ['Supply Outages', `=COUNTIF('Twitter Complaint List'!${typeLtr}3:${typeLtr}, "SUPPLY_OUTAGE")`, `Column ${typeLtr} (Complaint Type)`, 'SUPPLY_OUTAGE'],
+    ['Transformer Damage', `=COUNTIF('Twitter Complaint List'!${typeLtr}3:${typeLtr}, "TRANSFORMER_DAMAGE")`, `Column ${typeLtr} (Complaint Type)`, 'TRANSFORMER_DAMAGE'],
+    ['Billing Issues', `=COUNTIF('Twitter Complaint List'!${typeLtr}3:${typeLtr}, "BILL_RELATED")`, `Column ${typeLtr} (Complaint Type)`, 'BILL_RELATED'],
+    ['Voltage Fluctuations', `=COUNTIF('Twitter Complaint List'!${typeLtr}3:${typeLtr}, "SUPPLY_VOLTAGE")`, `Column ${typeLtr} (Complaint Type)`, 'SUPPLY_VOLTAGE'],
+    ['New Connection Issues', `=COUNTIF('Twitter Complaint List'!${typeLtr}3:${typeLtr}, "CONNECTION_NEW")`, `Column ${typeLtr} (Complaint Type)`, 'CONNECTION_NEW'],
+    // 4. DISCOM Breakdown (From Col L: DISCOM)
+    ['MVVNL Complaints', `=COUNTIF('Twitter Complaint List'!${discomLtr}3:${discomLtr}, "MVVNL")`, `Column ${discomLtr} (DISCOM)`, 'Central UP'],
+    ['PVVNL Complaints', `=COUNTIF('Twitter Complaint List'!${discomLtr}3:${discomLtr}, "PVVNL")`, `Column ${discomLtr} (DISCOM)`, 'Western UP'],
+    ['PuVVNL Complaints', `=COUNTIF('Twitter Complaint List'!${discomLtr}3:${discomLtr}, "PuVVNL")`, `Column ${discomLtr} (DISCOM)`, 'Eastern UP'],
+    ['DVVNL Complaints', `=COUNTIF('Twitter Complaint List'!${discomLtr}3:${discomLtr}, "DVVNL")`, `Column ${discomLtr} (DISCOM)`, 'Southern UP'],
+    ['KESCo Complaints', `=COUNTIF('Twitter Complaint List'!${discomLtr}3:${discomLtr}, "KESCO")`, `Column ${discomLtr} (DISCOM)`, 'Kanpur City']
+  ];
+
+  dashSheet.getRange(1, 1, dashData.length, 4).setValues(dashData);
+
+  // Formatting Title Banner
+  dashSheet.getRange(1, 1, 1, 4).merge()
+    .setFontFamily('Verdana').setFontWeight('bold').setFontSize(14)
+    .setBackground('#4DD0E1').setFontColor('#1A2F40').setHorizontalAlignment('center').setVerticalAlignment('middle');
+  dashSheet.setRowHeight(1, 45);
+
+  // Formatting Header Row
+  dashSheet.getRange(2, 1, 1, 4)
+    .setFontFamily('Verdana').setFontWeight('bold').setFontSize(11)
+    .setBackground('#4DD0E1').setFontColor('#1A2F40').setHorizontalAlignment('center').setVerticalAlignment('middle');
+  dashSheet.setRowHeight(2, 32);
+
+  // Data rows base format
+  dashSheet.getRange(3, 1, dashData.length - 2, 4)
+    .setFontFamily('Verdana').setFontSize(10).setVerticalAlignment('middle');
+  
+  // Highlight UPPCLLKO Replied rows
+  dashSheet.getRange(4, 1, 1, 4).setBackground('#E8F5E9').setFontWeight('bold'); // Green tint for YES
+  dashSheet.getRange(5, 1, 1, 4).setBackground('#FFF3E0').setFontWeight('bold'); // Amber/Orange tint for Not Replied
+
+  for (let r = 3; r <= dashData.length; r++) {
+    dashSheet.setRowHeight(r, 28);
+  }
+
+  // Center align Values column (Col B)
+  dashSheet.getRange(3, 2, dashData.length - 2, 1).setHorizontalAlignment('center').setFontWeight('bold');
+
+  dashSheet.getRange(1, 1, dashData.length, 4)
+    .setBorder(true, true, true, true, true, true, '#000000', SpreadsheetApp.BorderStyle.SOLID);
+  dashSheet.autoResizeColumns(1, 4);
+
   SpreadsheetApp.flush();
-  SpreadsheetApp.getUi().alert('Dashboard metrics refreshed.');
+  const msg = 'Dashboard KPIs Refreshed Successfully!
+
+' +
+    '• UPPCLLKO Replied: Linked to Column ' + uppclLtr + ' = "YES"
+' +
+    '• UPPCLLKO Not Replied: Linked to Column ' + uppclLtr + ' <> "YES"
+' +
+    '• All formulas and category breakdowns updated.';
+  try {
+    SpreadsheetApp.getUi().alert(msg);
+  } catch(e) {
+    Logger.log(msg);
+  }
 }
 
 function setupSupportingTabs() {
@@ -982,6 +1088,7 @@ function setupSupportingTabs() {
     settingsSheet.getRange(1, 1, 1, 3).setFontWeight('bold').setBackground('#4DD0E1').setFontColor('#1A2F40');
     settingsSheet.autoResizeColumns(1, 3);
   }
+  refreshDashboard();
 }
 
 function highlightPendingDrafts() {
@@ -1304,7 +1411,7 @@ function runCloudSyncCycle() {
       if (colMap.pickedStatus !== undefined) row[colMap.pickedStatus] = c.pickedStatus;
       if (colMap.head !== undefined) row[colMap.head] = headCode;
       if (colMap.untagged !== undefined) row[colMap.untagged] = 'NO';
-      if (colMap.uppclReplied !== undefined) row[colMap.uppclReplied] = (c && c.pickedStatus === 'YES') ? 'YES' : 'NO';
+      if (colMap.uppclReplied !== undefined) row[colMap.uppclReplied] = '';
       if (colMap.complaintType !== undefined) row[colMap.complaintType] = c.complaintType;
       if (colMap.discom !== undefined) row[colMap.discom] = c.discom;
       if (colMap.zone !== undefined) row[colMap.zone] = c.zone;
@@ -1895,7 +2002,7 @@ function repairMisalignedRowsInSheet() {
     if (colMap.pickedStatus !== undefined) cleanRow[colMap.pickedStatus] = c.pickedStatus;
     if (colMap.head !== undefined) cleanRow[colMap.head] = recoveredHead;
     if (colMap.untagged !== undefined) cleanRow[colMap.untagged] = 'NO';
-    if (colMap.uppclReplied !== undefined) cleanRow[colMap.uppclReplied] = 'NO';
+    if (colMap.uppclReplied !== undefined) cleanRow[colMap.uppclReplied] = '';
     if (colMap.complaintType !== undefined) cleanRow[colMap.complaintType] = c.complaintType;
     if (colMap.discom !== undefined) cleanRow[colMap.discom] = c.discom;
     if (colMap.zone !== undefined) cleanRow[colMap.zone] = c.zone;
@@ -2363,243 +2470,4 @@ function reconcileFiveApprovedHandles() {
   } catch(e) {
     Logger.log(msg);
   }
-}
-
-
-/**
- * Authoritative Master List of 160 Verified Historical @UPPCLLKO Reply Tweet IDs
- * Derived from complete conversation reconstruction and multi-tiered audit trail.
- */
-const VERIFIED_UPPCL_REPLIED_TWEET_IDS = new Set([
-  "2111604765486707028",
-  "2111617408557568279",
-  "2111631974771360067",
-  "2111891117310661096",
-  "2111914423871062483",
-  "2111920321758724325",
-  "2111961871502942324",
-  "2111971385157554369",
-  "2111973752116498606",
-  "2111983536450457802",
-  "2111991753486237823",
-  "2111992959256367117",
-  "2112008355359461442",
-  "2112008869203574948",
-  "2112009033611968929",
-  "2112009487364366416",
-  "2112011516354728379",
-  "2112013175168389365",
-  "2112017269048156384",
-  "2112018088489357384",
-  "2112019450853835087",
-  "2112020724038959510",
-  "2112024098792685745",
-  "2112037363321053518",
-  "2112042897948422562",
-  "2112043922537255004",
-  "2112049810836725943",
-  "2112050013086056846",
-  "2112051917904081014",
-  "2112052188168257654",
-  "2112053721492509158",
-  "2112054873856283022",
-  "2112059204274200993",
-  "2112060601686233204",
-  "2112063969028719082",
-  "2112064906258501767",
-  "2112065097569009744",
-  "2112066666414969344",
-  "2112070435626201198",
-  "2112085097721778522",
-  "2112088024003866705",
-  "2112091248114971025",
-  "2112095759743201565",
-  "2112101743974826245",
-  "2112108436251152519",
-  "2112109456226222309",
-  "2112110537861411003",
-  "2112110586540728589",
-  "2112111966856556977",
-  "2112113957909737551",
-  "2112114162000363907",
-  "2112123332317663356",
-  "2112123954215211377",
-  "2112125787709325673",
-  "2112130204466590045",
-  "2112134410384363635",
-  "2112136014760448402",
-  "2112138587705892912",
-  "2112138645683445760",
-  "2112139420237492416",
-  "2112141928490013122",
-  "2112146074735616497",
-  "2112152362811072555",
-  "2112159986923237528",
-  "2112161402341486657",
-  "2112161752280670707",
-  "2112163533509251541",
-  "2112167183912702222",
-  "2112168252235206929",
-  "2112168757347193012",
-  "2112169144087187794",
-  "2112174533553922442",
-  "2112178888306786508",
-  "2112184765151682799",
-  "2112190323120325116",
-  "2112192276718051645",
-  "2112192724791415254",
-  "2112192989221282247",
-  "2112193377617997914",
-  "2112198594833101120",
-  "2112199621980340330",
-  "2112200183752831029",
-  "2112200320407462235",
-  "2112202297350693042",
-  "2112205469876187327",
-  "2112209719012229125",
-  "2112209824369016884",
-  "2112210806435934661",
-  "2112215192759361722",
-  "2112217252049424418",
-  "2112221480914391069",
-  "2112235082593571096",
-  "2112235834279891234",
-  "2112237835516514598",
-  "2112238057957253228",
-  "2112349691413406007",
-  "2112359967877726601",
-  "2112361448114720813",
-  "2112364897858408643",
-  "2112369153852187019",
-  "2112369378000007430",
-  "2112370304471466090",
-  "2112374826530943042",
-  "2112375055070179562",
-  "2112376337709310144",
-  "2112376768795689021",
-  "2112378869202448853",
-  "2112381066157928596",
-  "2112384160707035370",
-  "2112398766812889265",
-  "2112403502211514486",
-  "2112404499176554739",
-  "2112404983186616735",
-  "2112406956426318201",
-  "2112410753038987401",
-  "2112413471698813401",
-  "2112413931067376063",
-  "2112416294649942044",
-  "2112419414293327973",
-  "2112422974116843654",
-  "2112423862130602240",
-  "2112427528577237115",
-  "2112438916200755362",
-  "2112439185261085025",
-  "2112439500026896747",
-  "2112449935505604835",
-  "2112450167186346284",
-  "2112466533331124377",
-  "2112469847158514049",
-  "2112478797979328823",
-  "2112482037932372316",
-  "2112486084336898134",
-  "2112492454121480193",
-  "2112496914596020438",
-  "2112499356616310939",
-  "2112501489889689611",
-  "2112506180086239417",
-  "2112511821731250592",
-  "2112512166616265095",
-  "2112512682784092434",
-  "2112513042596708472",
-  "2112521388628320434",
-  "2112521967865860344",
-  "2112523535721930785",
-  "2112526559030473024",
-  "2112530159899402414",
-  "2112534199785975847",
-  "2112540697220071882",
-  "2112540698012688554",
-  "2112540788601328090",
-  "2112543129006170200",
-  "2112546133029626305",
-  "2112546408981283020",
-  "2112559578441261416",
-  "2112563326958067757",
-  "2112563401625051437",
-  "2112567087491420186",
-  "2112571567523901584",
-  "2112573506114494926",
-  "2112573939608436768"
-]);
-
-/**
- * Fills the 'UPPCLLKO Replied (YES/NO)' column (Column J) across all data rows in 'Twitter Complaint List'.
- * Rule:
- *  - YES: If UPPCLLKO ever replied to that post (in present or anywhere in historical conversation trail).
- *  - NO:  If UPPCLLKO never replied to that post.
- */
-function populateUppclRepliedColumn() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  let sheet = ss.getSheetByName('Twitter Complaint List');
-  if (!sheet) sheet = ss.getActiveSheet();
-
-  const lastRow = sheet.getLastRow();
-  if (lastRow < 3) return { total: 0, yesCount: 0, noCount: 0 };
-
-  const numRows = lastRow - 2;
-  const colMap = getSheetColumnMap(sheet);
-  const uppclCol = (colMap.uppclReplied !== undefined) ? colMap.uppclReplied + 1 : 10;
-  const linkCol = (colMap.linkUrl !== undefined) ? colMap.linkUrl + 1 : 5;
-  const pidCol = (colMap.postId !== undefined) ? colMap.postId + 1 : null;
-
-  const urlValues = sheet.getRange(3, linkCol, numRows, 1).getValues();
-  const pidValues = pidCol ? sheet.getRange(3, pidCol, numRows, 1).getValues() : null;
-
-  const outputValues = [];
-  let yesCount = 0;
-  let noCount = 0;
-
-  for (let i = 0; i < numRows; i++) {
-    const rawUrl = String(urlValues[i][0] || '').trim();
-    let tid = '';
-    const m = rawUrl.match(/status\/(\d+)/i);
-    if (m) {
-      tid = m[1];
-    } else if (pidValues && /^\d{15,25}$/.test(String(pidValues[i][0] || '').trim())) {
-      tid = String(pidValues[i][0] || '').trim();
-    }
-
-    if (tid && VERIFIED_UPPCL_REPLIED_TWEET_IDS.has(tid)) {
-      outputValues.push(['YES']);
-      yesCount++;
-    } else {
-      outputValues.push(['NO']);
-      noCount++;
-    }
-  }
-
-  // Fast single-batch write (updates all rows in 1 second)
-  sheet.getRange(3, uppclCol, numRows, 1).setValues(outputValues);
-
-  // Apply in-cell dropdown chips
-  const rule = SpreadsheetApp.newDataValidation()
-    .requireValueInList(['YES', 'NO'], true)
-    .setAllowInvalid(true)
-    .build();
-  sheet.getRange(3, uppclCol, numRows, 1).setDataValidation(rule);
-
-  SpreadsheetApp.flush();
-
-  const colName = sheet.getRange(1, uppclCol).getValue() || 'UPPCLLKO Replied (YES/NO)';
-  const msg = 'Successfully populated \'' + colName + '\' (Column ' + uppclCol + ') across all ' + numRows + ' rows:\n\n' +
-              '• YES (Verified UPPCLLKO Replied): ' + yesCount + '\n' +
-              '• NO (Never Replied): ' + noCount;
-  try {
-    SpreadsheetApp.getUi().alert('UPPCLLKO Reply Status Populated\n\n' + msg);
-  } catch (e) {
-    Logger.log(msg);
-  }
-
-  return { total: numRows, yesCount, noCount };
 }
