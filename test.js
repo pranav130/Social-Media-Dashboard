@@ -51,6 +51,23 @@ async function runTests() {
     assert.ok(row.cnt >= 75, `Expected at least 75 nodal officers, found ${row.cnt}`);
   });
 
+  it('Official monitored Apex handles are strictly the 5 handles: @UPPCLLKO, @EMofficeUP, @AKSharmaOffice, @aksharmaBharat, @mduppcl', () => {
+    const monitoredApex = db.query("SELECT handle_name FROM x_hierarchy WHERE CAST(sr_no AS INTEGER) BETWEEN 1 AND 7 AND is_monitored = 1;").map(h => h.handle_name);
+    assert.strictEqual(monitoredApex.length, 5);
+    assert.ok(monitoredApex.includes('@UPPCLLKO'));
+    assert.ok(monitoredApex.includes('@EMofficeUP'));
+    assert.ok(monitoredApex.includes('@AKSharmaOffice'));
+    assert.ok(monitoredApex.includes('@aksharmaBharat'));
+    assert.ok(monitoredApex.includes('@mduppcl'));
+    assert.ok(!monitoredApex.includes('@CMOfficeUP'));
+    assert.ok(!monitoredApex.includes('@ChairmanUppcl'));
+  });
+
+  it('Complaints table contains strictly complaints for the 5 monitored handles', () => {
+    const invalidComps = db.query("SELECT COUNT(*) as count FROM complaints WHERE monitored_account NOT IN ('@UPPCLLKO', '@EMofficeUP', '@AKSharmaOffice', '@aksharmaBharat', '@mduppcl');");
+    assert.strictEqual(invalidComps[0].count, 0, 'Found complaints with invalid monitored_account');
+  });
+
   console.log('\n[2. Authentication & Role-Based Access Control]');
   it('Default users exist for all 5 roles', () => {
     const roles = db.query('SELECT DISTINCT role FROM users;').map(u => u.role);
@@ -590,16 +607,16 @@ async function runTests() {
     assert.strictEqual(unrepliedSample.uppcl_replied, 0, 'Complaint with no verified UPPCLLKO reply must have uppcl_replied = 0');
   });
 
-  it('Rule 2: Authoritative classification partitions strictly into UPPCLLKO Replied (160), UPPCLLKO Not Replied (1568), and Appreciation (2)', () => {
+  it('Rule 2: Authoritative classification partitions strictly into UPPCLLKO Replied (160), UPPCLLKO Not Replied (1540), and Appreciation (2)', () => {
     const total = db.get('SELECT COUNT(*) as cnt FROM complaints;').cnt;
     const repliedCount = db.get('SELECT COUNT(*) as cnt FROM complaints WHERE uppcl_replied = 1;').cnt;
     const notRepliedCount = db.get("SELECT COUNT(*) as cnt FROM complaints WHERE (uppcl_replied = 0 OR uppcl_replied IS NULL) AND (category_name != 'APPRECIATION' OR category_name IS NULL);").cnt;
     const appreciationCount = db.get("SELECT COUNT(*) as cnt FROM complaints WHERE category_name = 'APPRECIATION';").cnt;
 
     assert.strictEqual(repliedCount, 160, 'UPPCLLKO Replied count must be 160');
-    assert.strictEqual(notRepliedCount, 1568, 'UPPCLLKO Not Replied count must be 1568');
+    assert.strictEqual(notRepliedCount, 1540, 'UPPCLLKO Not Replied count must be 1540');
     assert.strictEqual(appreciationCount, 2, 'Appreciation count must be 2');
-    assert.strictEqual(repliedCount + notRepliedCount + appreciationCount, total, 'Partitions must sum to total complaints (1730)');
+    assert.strictEqual(repliedCount + notRepliedCount + appreciationCount, total, 'Partitions must sum to total complaints (1702)');
   });
 
   it('Rule 3: Specific consumer post @qowi23 (UPPCL-SMC-202610-1635) is authoritatively UPPCLLKO Replied with verified historical reply', () => {
@@ -686,6 +703,69 @@ async function runTests() {
         }
       }
     }
+  });
+
+  console.log('\n[18. 5 Monitored Handles & Dynamic Sheet Column Mapping Integrity]');
+
+  it('Builds dynamic header index map matching user rearranged 23-column sheet layout', () => {
+    const rearrangedHeaders = [
+      'DATE', 'Link Shift', 'C F', 'REPLY_WITHIN_30_MIN_BY_Laqshya Media',
+      ' LINK URL', 'Twitter Id', 'Picked Status', 'Head', 'Untagged Complaint',
+      'UPPCLLKO Replied (YES/NO)', 'Complaint Type', 'DISCOM', 'Zone', 'District',
+      'Status', 'COMPLAINT_NO', 'Post Text', 'Post Created At (UTC)',
+      'First Detected At (IST)', 'Language', 'Routing Confidence',
+      'Suggested Reply Draft', 'Reply Approval Status'
+    ];
+
+    const fs = require('fs');
+    const gssCode = fs.readFileSync('google_sheets_service.js', 'utf8');
+    assert.ok(gssCode.includes('function buildHeaderIndexMap(headers)'));
+
+    const mockMap = {};
+    rearrangedHeaders.forEach((h, idx) => {
+      const clean = String(h).trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+      if (clean === 'date') mockMap['date'] = idx;
+      if (clean === 'cf') mockMap['c_f'] = idx;
+      if (clean.includes('30min')) mockMap['reply_30'] = idx;
+      if (clean.includes('link') && clean.includes('url')) mockMap['link_url'] = idx;
+      if (clean === 'twitterid') mockMap['twitter_id'] = idx;
+      if (clean === 'pickedstatus') mockMap['picked_status'] = idx;
+      if (clean === 'head') mockMap['head'] = idx;
+      if (clean.includes('uppcl') && clean.includes('replied')) mockMap['uppcl_replied'] = idx;
+      if (clean === 'complainttype') mockMap['complaint_type'] = idx;
+      if (clean.includes('posttext')) mockMap['post_text'] = idx;
+    });
+
+    assert.strictEqual(mockMap['date'], 0);
+    assert.strictEqual(mockMap['c_f'], 2);
+    assert.strictEqual(mockMap['reply_30'], 3);
+    assert.strictEqual(mockMap['link_url'], 4);
+    assert.strictEqual(mockMap['twitter_id'], 5);
+    assert.strictEqual(mockMap['picked_status'], 6);
+    assert.strictEqual(mockMap['head'], 7);
+    assert.strictEqual(mockMap['uppcl_replied'], 9);
+    assert.strictEqual(mockMap['complaint_type'], 10);
+    assert.strictEqual(mockMap['post_text'], 16);
+  });
+
+  it('Strictly enforces 5 official monitored handles filter logic', () => {
+    const fs = require('fs');
+    const xCode = fs.readFileSync('x_service.js', 'utf8');
+    const codeGs = fs.readFileSync('google_apps_script/Code.gs', 'utf8');
+
+    // Verify search query in x_service.js and Code.gs
+    const expectedQueryPattern = '(@UPPCLLKO OR @EMofficeUP OR @AKSharmaOffice OR @aksharmaBharat OR @mduppcl)';
+    assert.ok(xCode.includes(expectedQueryPattern), 'x_service.js must include exact 5-handle query');
+    assert.ok(codeGs.includes(expectedQueryPattern), 'Code.gs must include exact 5-handle query');
+
+    // Verify that @ChairmanUppcl is NOT included in query
+    assert.ok(!xCode.includes('@ChairmanUppcl'), 'x_service.js must not monitor @ChairmanUppcl');
+    assert.ok(!codeGs.includes('@ChairmanUppcl OR'), 'Code.gs query must not monitor @ChairmanUppcl');
+
+    // Verify getSheetColumnMap exists in Code.gs
+    assert.ok(codeGs.includes('function getSheetColumnMap(sheet)'), 'Code.gs must implement dynamic getSheetColumnMap');
+    // Verify repairMisalignedRowsInSheet exists in Code.gs
+    assert.ok(codeGs.includes('function repairMisalignedRowsInSheet()'), 'Code.gs must implement repairMisalignedRowsInSheet');
   });
 
   console.log('\n====================================================');

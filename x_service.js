@@ -8,6 +8,7 @@ const https = require('https');
 const crypto = require('crypto');
 const db = require('./db');
 const { Classifier } = require('./classifier');
+const { isPostEligible, resolvePrimaryMonitoredAccount, getMatchedTargetHandles } = require('./eligibility');
 
 class XService {
   /**
@@ -133,8 +134,7 @@ class XService {
       incoming_posts_count: incomingCount,
       outgoing_replies_count: outgoingCount,
       monitored_handles: [
-        '@UPPCLLKO', '@PuVVNLHQ', '@MVVNLHQ', '@dvvnlhq', '@PVVNLHQ', '@KESCoHQ',
-        '@CMOfficeUP', '@EMofficeUP', '@AKSharmaOffice'
+        '@UPPCLLKO', '@EMofficeUP', '@AKSharmaOffice', '@aksharmaBharat', '@mduppcl'
       ]
     };
   }
@@ -359,7 +359,8 @@ class XService {
     }
 
     try {
-      const query = '(@UPPCLLKO OR @PuVVNLHQ OR @MVVNLHQ OR @dvvnlhq OR @PVVNLHQ OR @KESCoHQ OR (UPPCL (बिजली OR power OR "light cut" OR outage OR transformer))) -is:retweet -from:UPPCLLKO -from:PuVVNLHQ -from:MVVNLHQ -from:dvvnlhq -from:PVVNLHQ -from:KESCoHQ';
+      // Focused query covering strictly the 5 Monitored Official Handles: @UPPCLLKO, @EMofficeUP, @AKSharmaOffice, @aksharmaBharat, @mduppcl
+      const query = '(@UPPCLLKO OR @EMofficeUP OR @AKSharmaOffice OR @aksharmaBharat OR @mduppcl) -is:retweet -from:UPPCLLKO -from:EMofficeUP -from:AKSharmaOffice -from:aksharmaBharat -from:mduppcl';
       let path = `/2/tweets/search/recent?query=${encodeURIComponent(query)}&tweet.fields=created_at,author_id,conversation_id,in_reply_to_user_id,public_metrics,lang&expansions=author_id&user.fields=name,username,profile_image_url&max_results=50`;
       if (cfg.sinceId) {
         path += `&since_id=${encodeURIComponent(cfg.sinceId)}`;
@@ -405,10 +406,16 @@ class XService {
             continue;
           }
 
+          // Strictly enforce that incoming post mentions at least one of the 5 official monitored handles
+          if (!isPostEligible(t.text, t.entities)) {
+            continue;
+          }
+
+          const matchedHandle = resolvePrimaryMonitoredAccount(t.text, t.entities) || '@UPPCLLKO';
+
           const postUrl = `https://x.com/${author.username}/status/${t.id}`;
           const mentioned = this.findMentionedHierarchyHandle(t.text);
-          const matchedHandle = mentioned ? mentioned.handle_name : (t.text.toLowerCase().includes('uppcl') ? '@UPPCLLKO' : 'Untagged Monitoring');
-          const isTagged = mentioned ? 1 : 0;
+          const isTagged = 1;
 
           const res = await this.ingestPostRecord({
             postId: t.id,

@@ -10,6 +10,7 @@ const db = require('./db');
 const classifier = require('./classifier');
 const XService = require('./x_service');
 const googleSheetsService = require('./google_sheets_service');
+const { TARGET_HANDLES, TARGET_HANDLES_CANONICAL, isPostEligible, getMatchedTargetHandles, resolvePrimaryMonitoredAccount } = require('./eligibility');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -424,9 +425,10 @@ app.get('/api/complaints', authMiddleware, (req, res) => {
     params.push(platform);
   }
 
-  if (x_handle && x_handle !== 'All') {
-    whereClauses.push('(monitored_account = ? OR hierarchy_handle_name = ?)');
-    params.push(x_handle, x_handle);
+  const handleFilter = req.query.monitored_account || x_handle;
+  if (handleFilter && handleFilter !== 'All') {
+    whereClauses.push('(monitored_account = ? OR hierarchy_handle_name = ? OR target_mentions LIKE ? OR complaint_text LIKE ?)');
+    params.push(handleFilter, handleFilter, `%${handleFilter}%`, `%${handleFilter}%`);
   }
 
   if (category && category !== 'All') {
@@ -543,9 +545,12 @@ app.get('/api/complaints', authMiddleware, (req, res) => {
       division_name LIKE ? OR
       consumer_account_no LIKE ? OR
       assigned_nodal_officer_name LIKE ? OR
+      monitored_account LIKE ? OR
+      hierarchy_handle_name LIKE ? OR
+      target_mentions LIKE ? OR
       forwarding_ref_no LIKE ?
     )`);
-    params.push(term, term, term, term, term, term, term, term, term);
+    params.push(term, term, term, term, term, term, term, term, term, term, term, term);
   }
 
   const whereSql = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
@@ -1397,6 +1402,12 @@ app.get('/api/dashboard/kpis', authMiddleware, (req, res) => {
     params.push(req.query.platform);
   }
 
+  const handleFilter = req.query.monitored_account || req.query.x_handle;
+  if (handleFilter && handleFilter !== 'All') {
+    whereClauses.push('(monitored_account = ? OR hierarchy_handle_name = ? OR target_mentions LIKE ? OR complaint_text LIKE ?)');
+    params.push(handleFilter, handleFilter, `%${handleFilter}%`, `%${handleFilter}%`);
+  }
+
   if (req.query.from_date) {
     whereClauses.push('received_at >= ?');
     params.push(req.query.from_date + ' 00:00:00');
@@ -1532,6 +1543,12 @@ app.get('/api/dashboard/charts', authMiddleware, (req, res) => {
   if (req.query.platform && req.query.platform !== 'All') {
     whereClauses.push('platform = ?');
     params.push(req.query.platform);
+  }
+
+  const handleFilter = req.query.monitored_account || req.query.x_handle;
+  if (handleFilter && handleFilter !== 'All') {
+    whereClauses.push('(monitored_account = ? OR hierarchy_handle_name = ? OR target_mentions LIKE ? OR complaint_text LIKE ?)');
+    params.push(handleFilter, handleFilter, `%${handleFilter}%`, `%${handleFilter}%`);
   }
 
   if (req.query.from_date) {
@@ -2047,9 +2064,10 @@ function handleDashboardTableExcelExport(req, res) {
     params.push(platform);
   }
 
-  if (x_handle && x_handle !== 'All') {
-    whereClauses.push('(monitored_account = ? OR hierarchy_handle_name = ?)');
-    params.push(x_handle, x_handle);
+  const handleFilter = req.query.monitored_account || x_handle;
+  if (handleFilter && handleFilter !== 'All') {
+    whereClauses.push('(monitored_account = ? OR hierarchy_handle_name = ? OR target_mentions LIKE ? OR complaint_text LIKE ?)');
+    params.push(handleFilter, handleFilter, `%${handleFilter}%`, `%${handleFilter}%`);
   }
 
   if (category && category !== 'All') {
@@ -2161,9 +2179,12 @@ function handleDashboardTableExcelExport(req, res) {
       division_name LIKE ? OR
       consumer_account_no LIKE ? OR
       assigned_nodal_officer_name LIKE ? OR
+      monitored_account LIKE ? OR
+      hierarchy_handle_name LIKE ? OR
+      target_mentions LIKE ? OR
       forwarding_ref_no LIKE ?
     )`);
-    params.push(term, term, term, term, term, term, term, term, term);
+    params.push(term, term, term, term, term, term, term, term, term, term, term, term);
   }
 
   const whereSql = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
@@ -2581,7 +2602,7 @@ app.post('/api/master/x-hierarchy/set-all-monitored', authMiddleware, requireRol
   } else {
     // Reset to default intake: Apex handles + DISCOM Corporate HQs
     db.run("UPDATE x_hierarchy SET is_monitored = 0, updated_at = ?;", [istTime]);
-    db.run("UPDATE x_hierarchy SET is_monitored = 1, updated_at = ? WHERE CAST(sr_no AS INTEGER) BETWEEN 1 AND 7 OR CAST(sr_no AS INTEGER) BETWEEN 86 AND 90;", [istTime]);
+    db.run("UPDATE x_hierarchy SET is_monitored = 1, updated_at = ? WHERE sr_no IN ('1', '3', '4', '5', '7') OR CAST(sr_no AS INTEGER) BETWEEN 86 AND 90;", [istTime]);
   }
   logAudit(req, req.user, 'X_HIERARCHY_BULK_MONITOR', 'X_HIERARCHY', 0, `Updated monitored status for all handles (all=${all})`);
   res.json({ message: 'Hierarchy monitoring updated successfully' });

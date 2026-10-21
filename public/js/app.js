@@ -753,6 +753,14 @@ const App = {
             <option value="PVVNL">PVVNL (Pashchimanchal)</option>
             <option value="KESCo">KESCo (Kanpur)</option>
           </select>
+          <select id="dash-filter-handle" class="form-control" onchange="App.reloadDashboard()" style="min-width: 175px;">
+            <option value="All">All Monitored Handles (5)</option>
+            <option value="@UPPCLLKO">@UPPCLLKO (UPPCL Official HQ)</option>
+            <option value="@EMofficeUP">@EMofficeUP (Energy Minister Office)</option>
+            <option value="@AKSharmaOffice">@AKSharmaOffice (Cabinet Minister Office)</option>
+            <option value="@aksharmaBharat">@aksharmaBharat (Minister Personal)</option>
+            <option value="@mduppcl">@mduppcl (Managing Director, UPPCL)</option>
+          </select>
           <select id="dash-filter-range" class="form-control" onchange="App.reloadDashboard()">
             <option value="all">All Time</option>
             <option value="today">Today</option>
@@ -835,7 +843,7 @@ const App = {
         <div class="chart-card">
           <div class="chart-header">
             <div class="chart-title"><i class="fa-brands fa-x-twitter"></i> Official Monitored Handles List</div>
-            <span style="font-size: 11px; color: var(--text-muted); font-weight: 600;"><i class="fa-solid fa-satellite-dish" style="color: #10b981;"></i> 7 Monitored Handles</span>
+            <span style="font-size: 11px; color: var(--text-muted); font-weight: 600;"><i class="fa-solid fa-satellite-dish" style="color: #10b981;"></i> 5 Monitored Handles</span>
           </div>
           <div class="chart-body" id="official-monitored-handles-container" style="overflow-y: auto; display: flex; flex-direction: column; gap: 5px; height: 260px; padding: 2px;">
           </div>
@@ -876,6 +884,7 @@ const App = {
 
   async reloadDashboard() {
     const discomVal = document.getElementById('dash-filter-discom') ? document.getElementById('dash-filter-discom').value : 'All';
+    const handleVal = document.getElementById('dash-filter-handle') ? document.getElementById('dash-filter-handle').value : 'All';
     const rangeVal = document.getElementById('dash-filter-range') ? document.getElementById('dash-filter-range').value : 'all';
 
     let fromDate = '';
@@ -892,6 +901,7 @@ const App = {
 
     const queryParams = new URLSearchParams();
     if (discomVal !== 'All') queryParams.append('discom', discomVal);
+    if (handleVal !== 'All') queryParams.append('monitored_account', handleVal);
     if (fromDate) queryParams.append('from_date', fromDate);
 
     try {
@@ -902,6 +912,7 @@ const App = {
 
       this.renderKPIs(kpis);
       this.renderCharts(charts);
+      this.renderMonitoredHandlesList();
       this.loadDashboardComplaints();
     } catch (e) {
       console.error('Error reloading dashboard:', e);
@@ -1645,11 +1656,9 @@ const App = {
 
     const monitoredHandles = [
       { handle: '@UPPCLLKO', title: 'UPPCL Official HQ', role: 'Central Social Media Cell & Corporate HQ' },
-      { handle: '@CMOfficeUP', title: 'Chief Minister Office UP', role: 'Hon. CM Office (Apex Escalation)' },
       { handle: '@EMofficeUP', title: 'Energy Minister Office UP', role: 'Office of Hon. Energy Minister' },
       { handle: '@AKSharmaOffice', title: 'A.K. Sharma Office', role: 'Cabinet Minister Official Office' },
       { handle: '@aksharmaBharat', title: 'A.K. Sharma', role: 'Hon. Minister (Personal/Public)' },
-      { handle: '@ChairmanUppcl', title: 'Chairman, UPPCL', role: 'Executive Leadership & Governance' },
       { handle: '@mduppcl', title: 'Managing Director, UPPCL', role: 'DISCOM Operational Oversight' }
     ];
 
@@ -2319,11 +2328,9 @@ const App = {
               <label>Monitored Official Account *</label>
               <select id="add-monitored-account" class="form-control" required>
                 <option value="@UPPCLLKO">@UPPCLLKO (UPPCL HQ Official)</option>
-                <option value="@CMOfficeUP">@CMOfficeUP (Chief Minister Office)</option>
                 <option value="@EMofficeUP">@EMofficeUP (Energy Minister Office)</option>
                 <option value="@AKSharmaOffice">@AKSharmaOffice (Hon. Energy Minister Sir)</option>
                 <option value="@aksharmaBharat">@aksharmaBharat (Hon. Energy Minister Personal)</option>
-                <option value="@ChairmanUppcl">@ChairmanUppcl (Chairman UPPCL)</option>
                 <option value="@mduppcl">@mduppcl (MD UPPCL)</option>
                 <option value="@PuVVNLHQ">@PuVVNLHQ (PuVVNL Corporate HQ)</option>
                 <option value="@MVVNLHQ">@MVVNLHQ (MVVNL Corporate HQ)</option>

@@ -7,6 +7,55 @@
  */
 
 /**
+ * Dynamically resolves header names in Row 1 of the sheet to 0-based column indices.
+ * Maps by header name, not column position, ensuring resilience to column rearrangements.
+ */
+function getSheetColumnMap(sheet) {
+  const lastCol = sheet.getLastColumn();
+  if (lastCol < 1) return {};
+  const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+  const colMap = {};
+
+  for (let c = 0; c < headers.length; c++) {
+    const raw = String(headers[c] || '').trim();
+    const clean = raw.toLowerCase().replace(/[^a-z0-9]/g, '');
+    if (!clean) continue;
+
+    if (clean === 'date' || clean === 'receiveddate') colMap.date = c;
+    else if (clean === 'linkshift') colMap.linkShift = c;
+    else if (clean === 'replyshift') colMap.replyShift = c;
+    else if (clean === 'cf' || clean === 'cfstatus') colMap.cf = c;
+    else if (clean.includes('30min') || clean.includes('reply30') || (clean.includes('replywithin') && clean.includes('30'))) colMap.reply30 = c;
+    else if (clean.includes('60min') || clean.includes('reply60') || (clean.includes('replywithin') && clean.includes('60'))) colMap.reply60 = c;
+    else if (clean === 'linkurl' || clean === 'posturl' || clean === 'tweeturl' || (clean.includes('link') && clean.includes('url')) || clean === 'url') colMap.linkUrl = c;
+    else if (clean === 'twitterid' || clean === 'twitterhandle' || clean === 'consumerhandle' || clean === 'handle' || clean === 'author' || clean === 'account') colMap.twitterId = c;
+    else if (clean === 'pickedstatus' || clean === 'picked') colMap.pickedStatus = c;
+    else if (clean === 'head') colMap.head = c;
+    else if (clean === 'untaggedcomplaint' || clean.includes('untagged')) colMap.untagged = c;
+    else if ((clean.includes('uppcl') || clean.includes('replied')) && (clean.includes('yesno') || clean.includes('replied'))) colMap.uppclReplied = c;
+    else if (clean === 'complainttype' || clean === 'category' || clean === 'complainttypename') colMap.complaintType = c;
+    else if (clean === 'discom') colMap.discom = c;
+    else if (clean === 'zone') colMap.zone = c;
+    else if (clean === 'district') colMap.district = c;
+    else if (clean === 'status') colMap.status = c;
+    else if (clean.includes('complaintno') || clean === 'cno') colMap.complaintNo = c;
+    else if (clean === 'remark' || clean === 'remarks') colMap.remark = c;
+    else if (clean === 'sts') colMap.sts = c;
+    else if (clean === 'postid' || clean === 'tweetid' || (clean.includes('postid') && !clean.includes('reply'))) colMap.postId = c;
+    else if (clean.includes('posttext') || clean.includes('tweettext') || clean === 'complaintdetail' || clean === 'text') colMap.postText = c;
+    else if (clean.includes('postcreated') || clean.includes('createdat')) colMap.postCreatedAt = c;
+    else if (clean.includes('firstdetected') || clean.includes('detectedat')) colMap.firstDetectedAt = c;
+    else if (clean === 'language' || clean === 'lang') colMap.language = c;
+    else if (clean.includes('routingconfidence') || clean.includes('confidence')) colMap.routingConfidence = c;
+    else if (clean.includes('suggestedreplydraft') || clean.includes('draftreply') || clean.includes('draft')) colMap.draftReply = c;
+    else if (clean.includes('replyapprovalstatus') || clean.includes('approvalstatus') || clean.includes('approval')) colMap.approvalStatus = c;
+    else if (clean.includes('replyposturl')) colMap.replyPostUrl = c;
+    else if (clean.includes('replypostid')) colMap.replyPostId = c;
+  }
+  return colMap;
+}
+
+/**
  * Creates custom menu when spreadsheet is opened.
  */
 function onOpen() {
@@ -17,6 +66,7 @@ function onOpen() {
     .addItem('⏹ Disable 24/7 Cloud Sync', 'disable247CloudSync')
     .addItem('⚡ Run Cloud Sync Once Now', 'runCloudSyncCycle')
     .addSeparator()
+    .addItem('🛠 Repair Misaligned Rows (2715-2722)', 'repairMisalignedRowsInSheet')
     .addItem('🗑 Delete Selected Row as Frivolous', 'deleteSelectedRowAsFrivolous')
     .addItem('🧹 Remove Duplicate Rows from Sheet', 'removeDuplicateRowsFromSheet')
     .addItem('🧹 Remove Official Initiated Posts', 'removeOfficialPostsFromSheet')
@@ -52,7 +102,8 @@ function applyOriginalFormatting() {
   const lastRow = sheet.getLastRow();
   if (lastRow < 3) return;
   const numDataRows = lastRow - 2;
-  const lastCol = Math.max(sheet.getLastColumn(), 32);
+  const lastCol = sheet.getLastColumn();
+  const colMap = getSheetColumnMap(sheet);
 
   // 1. Row 1 Header (66px, #4DD0E1 Cyan, Verdana 13pt bold)
   sheet.setRowHeight(1, 66);
@@ -86,17 +137,18 @@ function applyOriginalFormatting() {
     .setVerticalAlignment('middle')
     .setHorizontalAlignment('center')
     .setWrapStrategy(SpreadsheetApp.WrapStrategy.WRAP)
-    .setBorder(true, true, true, true, true, true, '#000000', SpreadsheetApp.BorderStyle.SOLID);
+    .setBorder(true, true, true, true, true, true, '#000000', SpreadsheetApp.BorderStyle.SOLID)
+    .setFontColor('#000000');
 
-  // Set standard columns font color to black
-  sheet.getRange(3, 1, numDataRows, 4).setFontColor('#000000');
-  sheet.getRange(3, 6, numDataRows, lastCol - 5).setFontColor('#000000');
-
-  // 4. Restore Column E (LINK URL) as native blue (#1155cc) underlined clickable links
-  const urlRange = sheet.getRange(3, 5, numDataRows, 1);
+  // 4. Restore Link URL as native blue (#1155cc) underlined clickable links
+  const linkCol = (colMap.linkUrl !== undefined) ? colMap.linkUrl + 1 : 5;
+  const urlRange = sheet.getRange(3, linkCol, numDataRows, 1);
   const urlValues = urlRange.getValues();
-  const handleValues = (lastCol >= 6) ? sheet.getRange(3, 6, numDataRows, 1).getValues() : null;
-  const tweetIdValues = (lastCol >= 20) ? sheet.getRange(3, 20, numDataRows, 1).getValues() : null;
+  const handleCol = (colMap.twitterId !== undefined) ? colMap.twitterId + 1 : 6;
+  const handleValues = sheet.getRange(3, handleCol, numDataRows, 1).getValues();
+  const tidCol = (colMap.postId !== undefined) ? colMap.postId + 1 : ((colMap.postCreatedAt !== undefined) ? colMap.postCreatedAt + 1 : null);
+  const tweetIdValues = tidCol ? sheet.getRange(3, tidCol, numDataRows, 1).getValues() : null;
+
   const linkStyle = SpreadsheetApp.newTextStyle()
     .setForegroundColor('#1155cc')
     .setUnderline(true)
@@ -131,11 +183,11 @@ function applyOriginalFormatting() {
   urlRange.setHorizontalAlignment('left');
 
   // Left-align text columns
-  if (lastCol >= 21) {
-    sheet.getRange(3, 21, numDataRows, 1).setHorizontalAlignment('left');
+  if (colMap.postText !== undefined) {
+    sheet.getRange(3, colMap.postText + 1, numDataRows, 1).setHorizontalAlignment('left');
   }
-  if (lastCol >= 27) {
-    sheet.getRange(3, 27, numDataRows, 1).setHorizontalAlignment('left');
+  if (colMap.draftReply !== undefined) {
+    sheet.getRange(3, colMap.draftReply + 1, numDataRows, 1).setHorizontalAlignment('left');
   }
 
   SpreadsheetApp.flush();
@@ -362,17 +414,21 @@ function removeOfficialPostsFromSheet() {
   if (lastRow < 3) return 0;
 
   const numRows = lastRow - 2;
-  const lastCol = Math.max(sheet.getLastColumn(), 32);
+  const lastCol = sheet.getLastColumn();
+  const colMap = getSheetColumnMap(sheet);
   const dataRange = sheet.getRange(3, 1, numRows, lastCol);
   const allValues = dataRange.getValues();
 
   const cleanRows = [];
   let removedCount = 0;
 
+  const twitterIdCol = (colMap.twitterId !== undefined) ? colMap.twitterId : 5;
+  const linkUrlCol = (colMap.linkUrl !== undefined) ? colMap.linkUrl : 4;
+
   for (let i = 0; i < allValues.length; i++) {
     const row = allValues[i];
-    const twitterId = String(row[5] || '').toLowerCase().replace('@', '').trim();
-    const linkUrl = String(row[4] || '').toLowerCase().trim();
+    const twitterId = String(row[twitterIdCol] || '').toLowerCase().replace('@', '').trim();
+    const linkUrl = String(row[linkUrlCol] || '').toLowerCase().trim();
 
     let isOfficial = isOfficialAccountInScript(twitterId);
     if (!isOfficial && linkUrl) {
@@ -395,8 +451,10 @@ function removeOfficialPostsFromSheet() {
     return 0;
   }
 
-  for (let i = 0; i < cleanRows.length; i++) {
-    cleanRows[i][0] = i + 1;
+  if (colMap.cf !== undefined) {
+    for (let i = 0; i < cleanRows.length; i++) {
+      cleanRows[i][colMap.cf] = i + 1;
+    }
   }
 
   sheet.getRange(3, 1, numRows, lastCol).clearContent();
@@ -419,18 +477,18 @@ function removeOfficialPostsFromSheet() {
     .setForegroundColor('#1155cc').setUnderline(true).setFontFamily('Verdana').setFontSize(10).build();
   const richTexts = [];
   for (let i = 0; i < cleanRows.length; i++) {
-    const u = String(cleanRows[i][4] || '').trim();
+    const u = String(cleanRows[i][linkUrlCol] || '').trim();
     if (u.startsWith('http')) {
       richTexts.push([SpreadsheetApp.newRichTextValue().setText(u).setLinkUrl(u).setTextStyle(linkStyle).build()]);
     } else {
       richTexts.push([SpreadsheetApp.newRichTextValue().setText(u).build()]);
     }
   }
-  sheet.getRange(3, 5, cleanRows.length, 1).setRichTextValues(richTexts);
-  sheet.getRange(3, 5, cleanRows.length, 1).setHorizontalAlignment('left');
+  sheet.getRange(3, linkUrlCol + 1, cleanRows.length, 1).setRichTextValues(richTexts);
+  sheet.getRange(3, linkUrlCol + 1, cleanRows.length, 1).setHorizontalAlignment('left');
 
-  if (lastCol >= 21) sheet.getRange(3, 21, cleanRows.length, 1).setHorizontalAlignment('left');
-  if (lastCol >= 27) sheet.getRange(3, 27, cleanRows.length, 1).setHorizontalAlignment('left');
+  if (colMap.postText !== undefined) sheet.getRange(3, colMap.postText + 1, cleanRows.length, 1).setHorizontalAlignment('left');
+  if (colMap.draftReply !== undefined) sheet.getRange(3, colMap.draftReply + 1, cleanRows.length, 1).setHorizontalAlignment('left');
 
   SpreadsheetApp.flush();
 
@@ -452,7 +510,8 @@ function removeDuplicateRowsFromSheet() {
   if (lastRow < 3) return 0;
 
   const numRows = lastRow - 2;
-  const lastCol = Math.max(sheet.getLastColumn(), 32);
+  const lastCol = sheet.getLastColumn();
+  const colMap = getSheetColumnMap(sheet);
   const dataRange = sheet.getRange(3, 1, numRows, lastCol);
   const allValues = dataRange.getValues();
 
@@ -460,11 +519,15 @@ function removeDuplicateRowsFromSheet() {
   const cleanRows = [];
   let duplicatesCount = 0;
 
+  const linkUrlCol = (colMap.linkUrl !== undefined) ? colMap.linkUrl : 4;
+  const twitterIdCol = (colMap.twitterId !== undefined) ? colMap.twitterId : 5;
+  const postTextCol = (colMap.postText !== undefined) ? colMap.postText : 16;
+
   for (let i = 0; i < allValues.length; i++) {
     const row = allValues[i];
-    const url = String(row[4] || '').trim();
+    const url = String(row[linkUrlCol] || '').trim();
 
-    if (!url && !row[5] && !row[20]) continue;
+    if (!url && !row[twitterIdCol] && !row[postTextCol]) continue;
 
     const m = url.match(/status\/(\d+)/i);
     const id = m ? m[1] : (url ? url.toLowerCase() : null);
@@ -483,8 +546,10 @@ function removeDuplicateRowsFromSheet() {
     return 0;
   }
 
-  for (let i = 0; i < cleanRows.length; i++) {
-    cleanRows[i][0] = i + 1;
+  if (colMap.cf !== undefined) {
+    for (let i = 0; i < cleanRows.length; i++) {
+      cleanRows[i][colMap.cf] = i + 1;
+    }
   }
 
   sheet.getRange(3, 1, numRows, lastCol).clearContent();
@@ -507,18 +572,18 @@ function removeDuplicateRowsFromSheet() {
     .setForegroundColor('#1155cc').setUnderline(true).setFontFamily('Verdana').setFontSize(10).build();
   const richTexts = [];
   for (let i = 0; i < cleanRows.length; i++) {
-    const u = String(cleanRows[i][4] || '').trim();
+    const u = String(cleanRows[i][linkUrlCol] || '').trim();
     if (u.startsWith('http')) {
       richTexts.push([SpreadsheetApp.newRichTextValue().setText(u).setLinkUrl(u).setTextStyle(linkStyle).build()]);
     } else {
       richTexts.push([SpreadsheetApp.newRichTextValue().setText(u).build()]);
     }
   }
-  sheet.getRange(3, 5, cleanRows.length, 1).setRichTextValues(richTexts);
-  sheet.getRange(3, 5, cleanRows.length, 1).setHorizontalAlignment('left');
+  sheet.getRange(3, linkUrlCol + 1, cleanRows.length, 1).setRichTextValues(richTexts);
+  sheet.getRange(3, linkUrlCol + 1, cleanRows.length, 1).setHorizontalAlignment('left');
 
-  if (lastCol >= 21) sheet.getRange(3, 21, cleanRows.length, 1).setHorizontalAlignment('left');
-  if (lastCol >= 27) sheet.getRange(3, 27, cleanRows.length, 1).setHorizontalAlignment('left');
+  if (colMap.postText !== undefined) sheet.getRange(3, colMap.postText + 1, cleanRows.length, 1).setHorizontalAlignment('left');
+  if (colMap.draftReply !== undefined) sheet.getRange(3, colMap.draftReply + 1, cleanRows.length, 1).setHorizontalAlignment('left');
 
   SpreadsheetApp.flush();
 
@@ -543,32 +608,45 @@ function fixMisclassifiedComplaints() {
   if (lastRow < 3) return 0;
 
   const numRows = lastRow - 2;
-  const lastCol = Math.max(sheet.getLastColumn(), 32);
+  const lastCol = sheet.getLastColumn();
+  const colMap = getSheetColumnMap(sheet);
   const dataRange = sheet.getRange(3, 1, numRows, lastCol);
   const values = dataRange.getValues();
 
   let correctedCount = 0;
 
+  const twitterIdCol = (colMap.twitterId !== undefined) ? colMap.twitterId : 5;
+  const pickedStatusCol = (colMap.pickedStatus !== undefined) ? colMap.pickedStatus : 6;
+  const postTextCol = (colMap.postText !== undefined) ? colMap.postText : 16;
+  const linkUrlCol = (colMap.linkUrl !== undefined) ? colMap.linkUrl : 4;
+  const complaintTypeCol = (colMap.complaintType !== undefined) ? colMap.complaintType : 10;
+  const statusCol = (colMap.status !== undefined) ? colMap.status : 14;
+  const reply30Col = (colMap.reply30 !== undefined) ? colMap.reply30 : 3;
+
   for (let i = 0; i < values.length; i++) {
     const row = values[i];
-    const twitterId = String(row[5] || '').toLowerCase().replace('@', '').trim();
-    const pickedStatus = String(row[8] || '').trim().toUpperCase();
-    const fullText = (String(row[20] || '') + ' ' + String(row[4] || '')).toLowerCase();
+    const twitterId = String(row[twitterIdCol] || '').toLowerCase().replace('@', '').trim();
+    const pickedStatus = String(row[pickedStatusCol] || '').trim().toUpperCase();
+    const fullText = (String(row[postTextCol] || '') + ' ' + String(row[linkUrlCol] || '')).toLowerCase();
 
     const isOfficial = isOfficialAccountInScript(twitterId);
-    const endsWithOfficial = endsWithOfficialHandleInScript(String(row[20] || ''));
+    const endsWithOfficial = endsWithOfficialHandleInScript(String(row[postTextCol] || ''));
     const hasReplyOrComplaintMarkers = /प्रिय\s*उपभोक्ता|प्रिय\s*ग्राहक|काम\s*चल\s*रहा|पूर्व\s*में\s*दर्ज|शिकायत\s*संख्या|1912|संबंधित\s*अधिकारी|समाधान\s*कर\s*दिया|previously\s*lodged|work\s*is\s*going|update\s*you\s*soon|we\s*will\s*update|status\s*of\s*the\s*complaint|contact\s*number\s*1912|dear\s*consumer|concerned\s*officer|please\s*take\s*action|inform\s*the\s*consumer|अनुरोध|ots|बकाया|तार|पोल|खंभा/i.test(fullText);
 
     // If marked APPRECIATION but is an official handle, ends with official handles, or is official reply:
     if (pickedStatus === 'APPRECIATION' && (isOfficial || endsWithOfficial || hasReplyOrComplaintMarkers)) {
       const rowIndex = i + 3;
-      sheet.getRange(rowIndex, 9).setValue('YES'); // Picked Status
-      if (!row[9] || String(row[9]).trim() === '') {
+      sheet.getRange(rowIndex, pickedStatusCol + 1).setValue('YES');
+      if (!row[complaintTypeCol] || String(row[complaintTypeCol]).trim() === '') {
         const compType = (fullText.includes('ots') || fullText.includes('बकाया')) ? 'BILL_RELATED' : 'DISSATISFIED_CONSUMER';
-        sheet.getRange(rowIndex, 10).setValue(compType); // Complaint Type
+        sheet.getRange(rowIndex, complaintTypeCol + 1).setValue(compType);
       }
-      sheet.getRange(rowIndex, 15).setValue('Forwarded to Discom'); // Status
-      sheet.getRange(rowIndex, 16).setValue('YES'); // Reply within 30 min
+      if (colMap.status !== undefined) {
+        sheet.getRange(rowIndex, statusCol + 1).setValue('Forwarded to Discom');
+      }
+      if (colMap.reply30 !== undefined) {
+        sheet.getRange(rowIndex, reply30Col + 1).setValue('YES');
+      }
       correctedCount++;
     }
   }
@@ -576,6 +654,11 @@ function fixMisclassifiedComplaints() {
   SpreadsheetApp.flush();
   try {
     SpreadsheetApp.getUi().alert(`Completed: Corrected ${correctedCount} misclassified complaint rows to 'Picked Status: YES' and 'DISSATISFIED_CONSUMER'.`);
+  } catch (e) {
+    // Webhook execution context without active UI
+  }
+  return correctedCount;
+}
   } catch (e) {
     // Webhook execution context without active UI
   }
@@ -602,7 +685,7 @@ function doGet(e) {
     if (!sheet) sheet = ss.getActiveSheet();
 
     const lastRow = sheet.getLastRow();
-    const lastCol = Math.max(sheet.getLastColumn(), 32);
+    const lastCol = sheet.getLastColumn();
 
     if (lastRow < 3) {
       return ContentService.createTextOutput(JSON.stringify({
@@ -647,6 +730,11 @@ function doPost(e) {
       return ContentService.createTextOutput(JSON.stringify({ status: 'ok', action: contents.action }))
         .setMimeType(ContentService.MimeType.JSON);
     }
+    if (contents.action === 'repair_misaligned' || contents.action === 'repair_columns') {
+      const fixed = repairMisalignedRowsInSheet();
+      return ContentService.createTextOutput(JSON.stringify({ status: 'ok', action: contents.action, repairedCount: fixed }))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
     if (contents.action === 'fix_dates' || contents.action === 'correct_dates') {
       const fixed = fixDateColumnInSheet();
       return ContentService.createTextOutput(JSON.stringify({ status: 'ok', action: contents.action, fixedCount: fixed }))
@@ -675,6 +763,8 @@ function doPost(e) {
       sheet = ss.getActiveSheet();
     }
 
+    const colMap = getSheetColumnMap(sheet);
+    const linkUrlCol = (colMap.linkUrl !== undefined) ? colMap.linkUrl : 4;
     const startRow = Math.max(sheet.getLastRow() + 1, 3);
     const range = sheet.getRange(startRow, 1, rows.length, rows[0].length);
     range.setValues(rows);
@@ -690,7 +780,7 @@ function doPost(e) {
       sheet.setRowHeight(startRow + i, 45);
     }
 
-    // Set Column E as blue clickable link
+    // Set Link URL as blue clickable link
     const linkStyle = SpreadsheetApp.newTextStyle()
       .setForegroundColor('#1155cc')
       .setUnderline(true)
@@ -700,22 +790,22 @@ function doPost(e) {
 
     const linkRichText = [];
     for (let i = 0; i < rows.length; i++) {
-      const urlStr = String(rows[i][4] || '').trim();
+      const urlStr = String(rows[i][linkUrlCol] || rows[i][4] || '').trim();
       if (urlStr.startsWith('http')) {
         linkRichText.push([SpreadsheetApp.newRichTextValue().setText(urlStr).setLinkUrl(urlStr).setTextStyle(linkStyle).build()]);
       } else {
         linkRichText.push([SpreadsheetApp.newRichTextValue().setText(urlStr).build()]);
       }
     }
-    const linkRange = sheet.getRange(startRow, 5, rows.length, 1);
+    const linkRange = sheet.getRange(startRow, linkUrlCol + 1, rows.length, 1);
     linkRange.setRichTextValues(linkRichText);
     linkRange.setHorizontalAlignment('left');
 
-    if (rows[0].length >= 21) {
-      sheet.getRange(startRow, 21, rows.length, 1).setHorizontalAlignment('left');
+    if (colMap.postText !== undefined) {
+      sheet.getRange(startRow, colMap.postText + 1, rows.length, 1).setHorizontalAlignment('left');
     }
-    if (rows[0].length >= 27) {
-      sheet.getRange(startRow, 27, rows.length, 1).setHorizontalAlignment('left');
+    if (colMap.draftReply !== undefined) {
+      sheet.getRange(startRow, colMap.draftReply + 1, rows.length, 1).setHorizontalAlignment('left');
     }
 
     SpreadsheetApp.flush();
@@ -762,7 +852,7 @@ function setupSupportingTabs() {
       ['DAILY_POST_CAP', '50', 'Maximum automated replies permitted per calendar day.'],
       ['POLLING_INTERVAL_MINS', '5', 'Frequency of background post monitoring cycles.'],
       ['ALLOWED_DISCOMS', '@PVVNLHQ, @dvvnlhq, @PuVVNLHQ, @KESCoHQ, @MVVNLHQ', 'Safety allowlist of receiving handles.'],
-      ['MONITORED_APEX', '@UPPCLLKO, @EMofficeUP, @AKSharmaOffice, @aksharmaBharat, @ChairmanUppcl, @mduppcl', 'Monitored accounts.']
+      ['MONITORED_APEX', '@UPPCLLKO, @EMofficeUP, @AKSharmaOffice, @aksharmaBharat, @mduppcl', 'Monitored accounts.']
     ];
     settingsSheet.getRange(1, 1, settingsData.length, 3).setValues(settingsData);
     settingsSheet.getRange(1, 1, 1, 3).setFontWeight('bold').setBackground('#4DD0E1').setFontColor('#1A2F40');
@@ -900,10 +990,8 @@ function resumeXSync() {
  * Fetches recent tweets from X API v2, classifies them, and appends them to the sheet.
  */
 /**
- * Detect Head based on the 6 Apex & Ministerial admin handles mentioned in the tweet.
- * Matches operational sheet distribution:
+ * Detect Head based on the 5 Monitored Official Handles mentioned in the tweet:
  * - @mduppcl -> 'upm'
- * - @ChairmanUppcl -> 'upc'
  * - @AKSharmaOffice -> 'akm'
  * - @aksharmaBharat -> 'akc'
  * - @EMofficeUP -> 'emm'
@@ -912,18 +1000,17 @@ function resumeXSync() {
 function detectApexHead(tweetText) {
   const t = (tweetText || '').toLowerCase();
   if (t.includes('mduppcl')) return 'upm';
-  if (t.includes('chairmanuppcl')) return 'upc';
   if (t.includes('aksharmaoffice')) return 'akm';
   if (t.includes('aksharmabharat')) return 'akc';
   if (t.includes('emofficeup')) return 'emm';
   if (t.includes('uppcllko')) return 'upl';
-  return 'upm';
+  return 'upl';
 }
 
 /**
  * Core 24/7 cloud sync function executed by the Google Cloud time-based trigger.
  * Fetches recent tweets from X API v2 across the 6 Apex & Ministerial Admin Handles:
- * @UPPCLLKO, @EMofficeUP, @AKSharmaOffice, @aksharmaBharat, @ChairmanUppcl, @mduppcl
+ * @UPPCLLKO, @EMofficeUP, @AKSharmaOffice, @aksharmaBharat, @mduppcl
  *
  * Fully paginates through meta.next_token (up to 10 pages / 1,000 tweets per cycle)
  * so that ZERO citizen complaints are ever missed.
@@ -957,14 +1044,18 @@ function runCloudSyncCycle() {
     }
   }
 
-  // 1. Collect all existing Tweet IDs and URLs from Column E (LINK URL) to prevent duplicates
+  // 1. Collect all existing Tweet IDs and URLs from LINK URL column to prevent duplicates
+  const colMap = getSheetColumnMap(sheet);
+  const totalCols = sheet.getLastColumn();
+  const linkUrlCol = (colMap.linkUrl !== undefined) ? colMap.linkUrl + 1 : 5;
+
   const lastRow = sheet.getLastRow();
   const existingTids = new Set();
   const existingUrls = new Set();
   if (lastRow >= 3) {
     const checkStart = Math.max(3, lastRow - 3000);
     const numRows = lastRow - checkStart + 1;
-    const urlValues = sheet.getRange(checkStart, 5, numRows, 1).getValues();
+    const urlValues = sheet.getRange(checkStart, linkUrlCol, numRows, 1).getValues();
     for (let i = 0; i < urlValues.length; i++) {
       const u = String(urlValues[i][0] || '').trim();
       if (u) {
@@ -975,8 +1066,8 @@ function runCloudSyncCycle() {
     }
   }
 
-  // 2. Focused query covering strictly the 6 Apex & Ministerial Admin Handles
-  const query = '(@UPPCLLKO OR @EMofficeUP OR @AKSharmaOffice OR @aksharmaBharat OR @ChairmanUppcl OR @mduppcl) -is:retweet';
+  // 2. Focused query covering strictly the 5 Monitored Handles
+  const query = '(@UPPCLLKO OR @EMofficeUP OR @AKSharmaOffice OR @aksharmaBharat OR @mduppcl) -is:retweet';
   const sinceId = props.getProperty('LAST_SEEN_POST_ID');
 
   const rowsToInsert = [];
@@ -1062,37 +1153,42 @@ function runCloudSyncCycle() {
       else if (hour >= 16) shift = 'EVENING';
 
       const text = tweet.text || '';
+
+      // Enforce strict 5-handle inclusion rule: must mention at least 1 of the 5 handles
+      const hasAllowedMention = ['@uppcllko', '@emofficeup', '@aksharmaoffice', '@aksharmabharat', '@mduppcl'].some(h => new RegExp(h + '(?![a-zA-Z0-9_])', 'i').test(text));
+      if (!hasAllowedMention) continue;
+
       const c = classifyTweetInScript(text, username);
       const headCode = detectApexHead(text);
 
-      // Canonical columns matching the authoritative sheet:
-      // A: DATE | B: Link Shift | C: Reply Shift | D: C F | E: LINK URL | F: Twitter Id
-      // G: Head | H: Untagged Complaint | I: Picked Status | J: Complaint Type | K: DISCOM
-      // L: Zone | M: District | N: Remark | O: Status | P: REPLY_30_MIN | Q: REPLY_60_MIN
-      // R: COMPLAINT_NO | S: STS | U (Col 20): Original Tweet Text | AA (Col 26): Draft Reply | AB (Col 27): Approval Status
-      const row = new Array(32).fill('');
-      row[0] = dStr;
-      row[1] = shift;
-      row[2] = shift;
-      row[3] = ''; // C F (filled on append)
-      row[4] = tweetUrl;
-      row[5] = username;
-      row[6] = headCode;
-      row[7] = 'NO';
-      row[8] = c.pickedStatus;
-      row[9] = c.complaintType;
-      row[10] = c.discom;
-      row[11] = c.zone;
-      row[12] = c.district;
-      row[13] = ''; // Remark
-      row[14] = (c.pickedStatus === 'APPRECIATION') ? 'Appreciation' : (c.pickedStatus === 'YES' ? 'Forwarded to Discom' : 'Pending Review');
-      row[15] = c.replyWithin30Min;
-      row[16] = '';
-      row[17] = tweetId;
-      row[18] = '';
-      row[20] = text;
-      row[26] = c.draftReply;
-      row[27] = 'DRAFT_READY';
+      // Build row array dynamically using colMap (matches exact sheet headers)
+      const row = new Array(totalCols).fill('');
+      if (colMap.date !== undefined) row[colMap.date] = dStr;
+      if (colMap.linkShift !== undefined) row[colMap.linkShift] = shift;
+      if (colMap.replyShift !== undefined) row[colMap.replyShift] = shift;
+      if (colMap.cf !== undefined) row[colMap.cf] = '';
+      if (colMap.reply30 !== undefined) row[colMap.reply30] = c.replyWithin30Min;
+      if (colMap.linkUrl !== undefined) row[colMap.linkUrl] = tweetUrl;
+      if (colMap.twitterId !== undefined) row[colMap.twitterId] = username;
+      if (colMap.pickedStatus !== undefined) row[colMap.pickedStatus] = c.pickedStatus;
+      if (colMap.head !== undefined) row[colMap.head] = headCode;
+      if (colMap.untagged !== undefined) row[colMap.untagged] = 'NO';
+      if (colMap.uppclReplied !== undefined) row[colMap.uppclReplied] = '';
+      if (colMap.complaintType !== undefined) row[colMap.complaintType] = c.complaintType;
+      if (colMap.discom !== undefined) row[colMap.discom] = c.discom;
+      if (colMap.zone !== undefined) row[colMap.zone] = c.zone;
+      if (colMap.district !== undefined) row[colMap.district] = c.district;
+      if (colMap.remark !== undefined) row[colMap.remark] = '';
+      if (colMap.status !== undefined) row[colMap.status] = (c.pickedStatus === 'APPRECIATION') ? 'Appreciation' : (c.pickedStatus === 'YES' ? 'Forwarded to Discom' : 'Pending Review');
+      if (colMap.complaintNo !== undefined) row[colMap.complaintNo] = '';
+      if (colMap.postId !== undefined) row[colMap.postId] = tweetId;
+      if (colMap.postText !== undefined) row[colMap.postText] = text;
+      if (colMap.postCreatedAt !== undefined) row[colMap.postCreatedAt] = tweet.created_at || '';
+      if (colMap.firstDetectedAt !== undefined) row[colMap.firstDetectedAt] = dStr + ' ' + timeStr;
+      if (colMap.language !== undefined) row[colMap.language] = (/[\u0900-\u097F]/.test(text)) ? 'hi' : 'en';
+      if (colMap.routingConfidence !== undefined) row[colMap.routingConfidence] = 'HIGH';
+      if (colMap.draftReply !== undefined) row[colMap.draftReply] = c.draftReply;
+      if (colMap.approvalStatus !== undefined) row[colMap.approvalStatus] = 'DRAFT_READY';
 
       rowsToInsert.push(row);
       existingTids.add(tweetId);
@@ -1104,17 +1200,18 @@ function runCloudSyncCycle() {
 
   // 3. Batch Append and Format All New Rows (reversed so oldest inserted first)
   if (rowsToInsert.length > 0) {
-    // Reverse rows so they are appended in chronological order (oldest to newest)
     rowsToInsert.reverse();
 
     const insertStartRow = Math.max(sheet.getLastRow() + 1, 3);
     const startCount = insertStartRow - 2;
 
-    for (let r = 0; r < rowsToInsert.length; r++) {
-      rowsToInsert[r][3] = startCount + r; // Column D: C F sequential counter
+    if (colMap.cf !== undefined) {
+      for (let r = 0; r < rowsToInsert.length; r++) {
+        rowsToInsert[r][colMap.cf] = startCount + r;
+      }
     }
 
-    const range = sheet.getRange(insertStartRow, 1, rowsToInsert.length, 32);
+    const range = sheet.getRange(insertStartRow, 1, rowsToInsert.length, totalCols);
     range.setValues(rowsToInsert);
     range.setFontFamily('Verdana');
     range.setFontSize(10);
@@ -1128,30 +1225,36 @@ function runCloudSyncCycle() {
       sheet.setRowHeight(insertStartRow + r, 45);
     }
 
-    // Restore Column E as blue clickable link (#1155cc)
-    const linkStyle = SpreadsheetApp.newTextStyle()
-      .setForegroundColor('#1155cc')
-      .setUnderline(true)
-      .setFontFamily('Verdana')
-      .setFontSize(10)
-      .build();
+    // Restore Link URL as blue clickable link (#1155cc)
+    if (colMap.linkUrl !== undefined) {
+      const linkStyle = SpreadsheetApp.newTextStyle()
+        .setForegroundColor('#1155cc')
+        .setUnderline(true)
+        .setFontFamily('Verdana')
+        .setFontSize(10)
+        .build();
 
-    const linkRichText = [];
-    for (let r = 0; r < rowsToInsert.length; r++) {
-      const u = rowsToInsert[r][4];
-      linkRichText.push([SpreadsheetApp.newRichTextValue().setText(u).setLinkUrl(u).setTextStyle(linkStyle).build()]);
+      const linkRichText = [];
+      for (let r = 0; r < rowsToInsert.length; r++) {
+        const u = rowsToInsert[r][colMap.linkUrl];
+        linkRichText.push([SpreadsheetApp.newRichTextValue().setText(u).setLinkUrl(u).setTextStyle(linkStyle).build()]);
+      }
+      const linkRange = sheet.getRange(insertStartRow, colMap.linkUrl + 1, rowsToInsert.length, 1);
+      linkRange.setRichTextValues(linkRichText);
+      linkRange.setHorizontalAlignment('left');
     }
-    const linkRange = sheet.getRange(insertStartRow, 5, rowsToInsert.length, 1);
-    linkRange.setRichTextValues(linkRichText);
-    linkRange.setHorizontalAlignment('left');
 
-    sheet.getRange(insertStartRow, 21, rowsToInsert.length, 1).setHorizontalAlignment('left');
-    sheet.getRange(insertStartRow, 27, rowsToInsert.length, 1).setHorizontalAlignment('left');
+    if (colMap.postText !== undefined) {
+      sheet.getRange(insertStartRow, colMap.postText + 1, rowsToInsert.length, 1).setHorizontalAlignment('left');
+    }
+    if (colMap.draftReply !== undefined) {
+      sheet.getRange(insertStartRow, colMap.draftReply + 1, rowsToInsert.length, 1).setHorizontalAlignment('left');
+    }
 
     SpreadsheetApp.flush();
-    Logger.log('Successfully appended ' + rowsToInsert.length + ' new complaints from the 6 Apex handles.');
+    Logger.log('Successfully appended ' + rowsToInsert.length + ' new complaints from the 5 Monitored Handles.');
   } else {
-    Logger.log('Sync cycle complete: No new complaints found for the 6 Apex handles.');
+    Logger.log('Sync cycle complete: No new complaints found for the 5 Monitored Handles.');
   }
 
   // ONLY advance since_id after ALL pages are completely fetched and saved to the sheet
@@ -1262,19 +1365,23 @@ function deleteComplaintFromSheet(contents) {
     return { status: 'not_found', deleted: false, message: 'Sheet has no complaint rows.' };
   }
 
+  const colMap = getSheetColumnMap(sheet);
+  const linkUrlCol = (colMap.linkUrl !== undefined) ? colMap.linkUrl + 1 : 5;
+  const complaintNoCol = (colMap.complaintNo !== undefined) ? colMap.complaintNo + 1 : 16;
+
   let deletedRow = -1;
 
   // 1. Check hinted row index first
   if (!isNaN(hintedRowIndex) && hintedRowIndex >= 3 && hintedRowIndex <= lastRow) {
-    const urlAtHint = String(sheet.getRange(hintedRowIndex, 5).getValue() || '').trim();
+    const urlAtHint = String(sheet.getRange(hintedRowIndex, linkUrlCol).getValue() || '').trim();
     if ((targetUrl && urlAtHint === targetUrl) || (targetTweetId && urlAtHint.includes(targetTweetId))) {
       deletedRow = hintedRowIndex;
     }
   }
 
-  // 2. Scan Column E (Link URL) for exact URL or Tweet ID
+  // 2. Scan Column for exact URL or Tweet ID
   if (deletedRow === -1 && (targetUrl || targetTweetId)) {
-    const urlValues = sheet.getRange(3, 5, lastRow - 2, 1).getValues();
+    const urlValues = sheet.getRange(3, linkUrlCol, lastRow - 2, 1).getValues();
     for (let i = 0; i < urlValues.length; i++) {
       const val = String(urlValues[i][0] || '').trim();
       if ((targetUrl && val === targetUrl) || (targetTweetId && val.includes(targetTweetId))) {
@@ -1284,9 +1391,9 @@ function deleteComplaintFromSheet(contents) {
     }
   }
 
-  // 3. Scan Column R (Complaint No)
-  if (deletedRow === -1 && targetComplaintNo) {
-    const compValues = sheet.getRange(3, 18, lastRow - 2, 1).getValues();
+  // 3. Scan Complaint No
+  if (deletedRow === -1 && targetComplaintNo && colMap.complaintNo !== undefined) {
+    const compValues = sheet.getRange(3, complaintNoCol, lastRow - 2, 1).getValues();
     for (let i = 0; i < compValues.length; i++) {
       const val = String(compValues[i][0] || '').trim();
       if (val && val.toLowerCase() === targetComplaintNo.toLowerCase()) {
@@ -1349,7 +1456,11 @@ function deleteSelectedRowAsFrivolous() {
     SpreadsheetApp.getUi().alert('Please select a complaint row (Row 3 or below).');
     return;
   }
-  const complaintUrl = String(sheet.getRange(row, 5).getValue() || '').trim();
+  const colMap = getSheetColumnMap(sheet);
+  const linkUrlCol = (colMap.linkUrl !== undefined) ? colMap.linkUrl + 1 : 5;
+  const complaintNoCol = (colMap.complaintNo !== undefined) ? colMap.complaintNo + 1 : 16;
+
+  const complaintUrl = String(sheet.getRange(row, linkUrlCol).getValue() || '').trim();
   const prompt = SpreadsheetApp.getUi().alert(
     'Delete Frivolous Complaint',
     'Are you sure you want to delete Row ' + row + ' (' + complaintUrl + ') as Frivolous from this sheet?\n\nIt will be permanently moved to the Frivolous_Archive tab and prevented from being re-fetched.',
@@ -1358,7 +1469,7 @@ function deleteSelectedRowAsFrivolous() {
   if (prompt === SpreadsheetApp.getUi().Button.YES) {
     const m = complaintUrl.match(/status\/(\d+)/i);
     const tid = m ? m[1] : '';
-    const cno = String(sheet.getRange(row, 18).getValue() || '').trim();
+    const cno = colMap.complaintNo !== undefined ? String(sheet.getRange(row, complaintNoCol).getValue() || '').trim() : '';
     archiveFrivolousInSheet(tid, complaintUrl, cno);
     sheet.deleteRow(row);
     SpreadsheetApp.flush();
@@ -1367,8 +1478,8 @@ function deleteSelectedRowAsFrivolous() {
 }
 
 /**
- * Scans Column E for any missing, malformed, or non-URL entries (such as "2")
- * and reconstructs the valid, canonical https://x.com link using the Tweet ID in Column T.
+ * Scans Link URL column for any missing, malformed, or non-URL entries
+ * and reconstructs the valid, canonical https://x.com link using the Tweet ID.
  */
 function fixMalformedUrlsInSheet() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -1378,8 +1489,14 @@ function fixMalformedUrlsInSheet() {
   const lastRow = sheet.getLastRow();
   if (lastRow < 3) return 0;
 
-  const data = sheet.getRange(3, 1, lastRow - 2, Math.max(sheet.getLastColumn(), 20)).getValues();
+  const colMap = getSheetColumnMap(sheet);
+  const lastCol = sheet.getLastColumn();
+  const data = sheet.getRange(3, 1, lastRow - 2, lastCol).getValues();
   let fixCount = 0;
+
+  const linkUrlCol = (colMap.linkUrl !== undefined) ? colMap.linkUrl : 4;
+  const twitterIdCol = (colMap.twitterId !== undefined) ? colMap.twitterId : 5;
+  const postIdCol = (colMap.postId !== undefined) ? colMap.postId : ((colMap.postCreatedAt !== undefined) ? colMap.postCreatedAt : -1);
 
   const linkStyle = SpreadsheetApp.newTextStyle()
     .setForegroundColor('#1155cc')
@@ -1390,9 +1507,9 @@ function fixMalformedUrlsInSheet() {
 
   for (let i = 0; i < data.length; i++) {
     const rowIdx = i + 3;
-    const url = String(data[i][4] || '').trim();
-    const handle = String(data[i][5] || '').trim().replace(/^@/, '');
-    const tweetId = String(data[i][19] || '').trim();
+    const url = String(data[i][linkUrlCol] || '').trim();
+    const handle = String(data[i][twitterIdCol] || '').trim().replace(/^@/, '');
+    const tweetId = (postIdCol !== -1) ? String(data[i][postIdCol] || '').trim() : '';
 
     if (!url.startsWith('http') && /^\d{15,25}$/.test(tweetId)) {
       const canonicalUrl = 'https://x.com/' + (handle || 'i') + '/status/' + tweetId;
@@ -1401,22 +1518,22 @@ function fixMalformedUrlsInSheet() {
         .setLinkUrl(canonicalUrl)
         .setTextStyle(linkStyle)
         .build();
-      sheet.getRange(rowIdx, 5).setRichTextValue(richText);
+      sheet.getRange(rowIdx, linkUrlCol + 1).setRichTextValue(richText);
       fixCount++;
     }
   }
 
   if (fixCount > 0) {
     SpreadsheetApp.flush();
-    SpreadsheetApp.getUi().alert('Fixed ' + fixCount + ' malformed/missing post link(s) in Column E.');
+    SpreadsheetApp.getUi().alert('Fixed ' + fixCount + ' malformed/missing post link(s) in Link URL column.');
   } else {
-    SpreadsheetApp.getUi().alert('All post links in Column E are already valid URLs.');
+    SpreadsheetApp.getUi().alert('All post links in Link URL column are already valid URLs.');
   }
   return fixCount;
 }
 
 /**
- * Automatically fixes and normalizes the DATE column (Column A) across all rows in 'Twitter Complaint List'.
+ * Automatically fixes and normalizes the DATE column across all rows in 'Twitter Complaint List'.
  * Replaces 1900/1901/1902/1903/1904 numbers, long GMT timestamp strings (e.g. "Tue Oct 20 2026 12:30:00 GMT+0530"),
  * and raw Date objects with strictly normalized "DD-MM-YYYY" strings (e.g. 18-10-2026, 19-10-2026, 20-10-2026, 21-10-2026).
  */
@@ -1429,19 +1546,24 @@ function fixDateColumnInSheet() {
   if (lastRow < 3) return 0;
   const numRows = lastRow - 2;
 
-  // Read Column A (Date), Column E (Link URL), Column T (Tweet ID), Column V (First Detected IST)
-  const maxCol = Math.max(sheet.getLastColumn(), 23);
-  const data = sheet.getRange(3, 1, numRows, maxCol).getValues();
+  const colMap = getSheetColumnMap(sheet);
+  const lastCol = sheet.getLastColumn();
+  const data = sheet.getRange(3, 1, numRows, lastCol).getValues();
   const dateValues = [];
   let fixCount = 0;
 
+  const dateCol = (colMap.date !== undefined) ? colMap.date : 0;
+  const linkUrlCol = (colMap.linkUrl !== undefined) ? colMap.linkUrl : 4;
+  const postIdCol = (colMap.postId !== undefined) ? colMap.postId : -1;
+  const detectedCol = (colMap.firstDetectedAt !== undefined) ? colMap.firstDetectedAt : -1;
+
   for (let i = 0; i < data.length; i++) {
     const row = data[i];
-    const rawCell = row[0];
+    const rawCell = row[dateCol];
     const curDate = String(rawCell || '').trim();
-    const url = String(row[4] || '').trim();
-    const tidCol = (maxCol >= 20) ? String(row[19] || '').trim() : '';
-    const colV = (maxCol >= 23) ? String(row[22] || '').trim() : '';
+    const url = String(row[linkUrlCol] || '').trim();
+    const tidCol = (postIdCol !== -1) ? String(row[postIdCol] || '').trim() : '';
+    const colDetected = (detectedCol !== -1) ? String(row[detectedCol] || '').trim() : '';
 
     let resolvedDate = null;
 
@@ -1475,7 +1597,7 @@ function fixDateColumnInSheet() {
     }
 
     // 5. If still not resolved or corrupted (1900-1904, plain integer counter like "1", "2"):
-    // Derive from Twitter Snowflake ID in Col E (Link URL) or Col T (Tweet ID)
+    // Derive from Twitter Snowflake ID in Link URL or Tweet ID column
     if (!resolvedDate || resolvedDate.includes('190') || !resolvedDate.includes('202')) {
       const m = url.match(/status\/(\d+)/i);
       const tid = m ? m[1] : (tidCol && /^\d{15,25}$/.test(tidCol) ? tidCol : null);
@@ -1491,9 +1613,9 @@ function fixDateColumnInSheet() {
         } catch (e) {}
       }
 
-      // Secondary fallback to Col V (First Detected At IST)
-      if (!resolvedDate && colV) {
-        const dMatch = colV.match(/(\d{1,2})[-\/](\d{1,2})[-\/](\d{4})/);
+      // Secondary fallback to First Detected At IST
+      if (!resolvedDate && colDetected) {
+        const dMatch = colDetected.match(/(\d{1,2})[-\/](\d{1,2})[-\/](\d{4})/);
         if (dMatch) {
           resolvedDate = ('0' + dMatch[1]).slice(-2) + '-' + ('0' + dMatch[2]).slice(-2) + '-' + dMatch[3];
         }
@@ -1511,8 +1633,8 @@ function fixDateColumnInSheet() {
     dateValues.push([resolvedDate]);
   }
 
-  // Write batch values back into Column A with text format to prevent Google Sheets from re-converting to 1900 serials or Date objects
-  const dateRange = sheet.getRange(3, 1, numRows, 1);
+  // Write batch values back into DATE column with text format to prevent Google Sheets from re-converting to 1900 serials
+  const dateRange = sheet.getRange(3, dateCol + 1, numRows, 1);
   dateRange.setNumberFormat('@');
   dateRange.setValues(dateValues);
   dateRange.setHorizontalAlignment('center');
@@ -1523,13 +1645,167 @@ function fixDateColumnInSheet() {
 
   SpreadsheetApp.flush();
 
-  const msg = 'Successfully normalized ' + fixCount + ' date entries in Column A (DATE) to uniform DD-MM-YYYY format!';
+  const msg = 'Successfully normalized ' + fixCount + ' date entries in DATE column to uniform DD-MM-YYYY format!';
   try {
     SpreadsheetApp.getUi().alert('Date Column Normalization\n\n' + msg);
   } catch (e) {
     Logger.log(msg);
   }
   return fixCount;
+}
+
+/**
+ * Scans all rows in 'Twitter Complaint List' and repairs misaligned rows
+ * caused by previous hardcoded-column writes after the user manually rearranged the sheet layout.
+ * Accurately recovers Post Text, Tweet ID, Link URL, Head, Picked Status, and classification,
+ * then writes each field to its dynamically resolved column according to Row 1 headers.
+ */
+function repairMisalignedRowsInSheet() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sheet = ss.getSheetByName('Twitter Complaint List');
+  if (!sheet) sheet = ss.getActiveSheet();
+
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 3) return 0;
+  const numRows = lastRow - 2;
+  const colMap = getSheetColumnMap(sheet);
+  const totalCols = sheet.getLastColumn();
+  const data = sheet.getRange(3, 1, numRows, totalCols).getValues();
+
+  let repairedCount = 0;
+
+  for (let i = 0; i < data.length; i++) {
+    const row = data[i];
+    const sheetRowNumber = i + 3;
+
+    const curText = (colMap.postText !== undefined) ? String(row[colMap.postText] || '').trim() : '';
+    const curReply30 = (colMap.reply30 !== undefined) ? String(row[colMap.reply30] || '').trim() : '';
+    const curPicked = (colMap.pickedStatus !== undefined) ? String(row[colMap.pickedStatus] || '').trim() : '';
+    const curRouting = (colMap.routingConfidence !== undefined) ? String(row[colMap.routingConfidence] || '').trim() : '';
+    const curHead = (colMap.head !== undefined) ? String(row[colMap.head] || '').trim() : '';
+
+    // Check misalignment indicators
+    const isMisaligned = (
+      (!curText && (curRouting.length > 20 || /^\d{4,5}$/.test(curReply30))) ||
+      /^(upm|upl|emm|akc|akm|upc)$/i.test(curPicked) ||
+      curHead === 'NO' ||
+      /^\d{4,5}$/.test(curReply30)
+    );
+
+    if (!isMisaligned) continue;
+
+    // 1. Recover Tweet Text: check curRouting, or scan all cells for the longest string containing @ or Hindi
+    let recoveredText = curRouting;
+    if (!recoveredText || recoveredText.length < 15) {
+      for (let c = 0; c < row.length; c++) {
+        const val = String(row[c] || '').trim();
+        if (val.length > recoveredText.length && (val.includes('@') || /[\u0900-\u097F]/.test(val))) {
+          recoveredText = val;
+        }
+      }
+    }
+
+    // 2. Recover URL and Handle
+    let recoveredUrl = (colMap.linkUrl !== undefined) ? String(row[colMap.linkUrl] || '').trim() : '';
+    let recoveredHandle = (colMap.twitterId !== undefined) ? String(row[colMap.twitterId] || '').trim().replace(/^@/, '') : '';
+    let recoveredTweetId = '';
+
+    const tidMatch = recoveredUrl.match(/status\/(\d+)/i);
+    if (tidMatch) {
+      recoveredTweetId = tidMatch[1];
+    } else {
+      for (let c = 0; c < row.length; c++) {
+        const val = String(row[c] || '').trim();
+        if (/^\d{17,20}$/.test(val)) {
+          recoveredTweetId = val;
+          break;
+        }
+      }
+      if (recoveredTweetId) {
+        recoveredUrl = 'https://x.com/' + (recoveredHandle || 'i') + '/status/' + recoveredTweetId;
+      }
+    }
+
+    // 3. Recover Head
+    const recoveredHead = detectApexHead(recoveredText);
+
+    // 4. Classification
+    const c = classifyTweetInScript(recoveredText, recoveredHandle);
+
+    // 5. Shift & Date
+    const curDate = (colMap.date !== undefined) ? String(row[colMap.date] || '').trim() : '21-10-2026';
+    const curShift = (colMap.linkShift !== undefined) ? String(row[colMap.linkShift] || '').trim() : 'MORNING';
+
+    // 6. CF counter (sequential number)
+    let cfVal = i + 1;
+    if (/^\d+$/.test(curReply30)) {
+      cfVal = curReply30;
+    } else if (colMap.cf !== undefined && /^\d+$/.test(String(row[colMap.cf] || ''))) {
+      cfVal = row[colMap.cf];
+    }
+
+    // Reconstruct clean row array matching totalCols
+    const cleanRow = new Array(totalCols).fill('');
+    if (colMap.date !== undefined) cleanRow[colMap.date] = curDate;
+    if (colMap.linkShift !== undefined) cleanRow[colMap.linkShift] = curShift;
+    if (colMap.replyShift !== undefined) cleanRow[colMap.replyShift] = curShift;
+    if (colMap.cf !== undefined) cleanRow[colMap.cf] = cfVal;
+    if (colMap.reply30 !== undefined) cleanRow[colMap.reply30] = c.replyWithin30Min;
+    if (colMap.linkUrl !== undefined) cleanRow[colMap.linkUrl] = recoveredUrl;
+    if (colMap.twitterId !== undefined) cleanRow[colMap.twitterId] = recoveredHandle;
+    if (colMap.pickedStatus !== undefined) cleanRow[colMap.pickedStatus] = c.pickedStatus;
+    if (colMap.head !== undefined) cleanRow[colMap.head] = recoveredHead;
+    if (colMap.untagged !== undefined) cleanRow[colMap.untagged] = 'NO';
+    if (colMap.uppclReplied !== undefined) cleanRow[colMap.uppclReplied] = '';
+    if (colMap.complaintType !== undefined) cleanRow[colMap.complaintType] = c.complaintType;
+    if (colMap.discom !== undefined) cleanRow[colMap.discom] = c.discom;
+    if (colMap.zone !== undefined) cleanRow[colMap.zone] = c.zone;
+    if (colMap.district !== undefined) cleanRow[colMap.district] = c.district;
+    if (colMap.remark !== undefined) cleanRow[colMap.remark] = '';
+    if (colMap.status !== undefined) cleanRow[colMap.status] = (c.pickedStatus === 'APPRECIATION') ? 'Appreciation' : (c.pickedStatus === 'YES' ? 'Forwarded to Discom' : 'Pending Review');
+    if (colMap.complaintNo !== undefined) cleanRow[colMap.complaintNo] = '';
+    if (colMap.postId !== undefined && recoveredTweetId) cleanRow[colMap.postId] = recoveredTweetId;
+    if (colMap.postText !== undefined) cleanRow[colMap.postText] = recoveredText;
+    if (colMap.postCreatedAt !== undefined) cleanRow[colMap.postCreatedAt] = '';
+    if (colMap.firstDetectedAt !== undefined) cleanRow[colMap.firstDetectedAt] = curDate + ' ' + (curShift === 'EVENING' ? '18:00:00' : '10:00:00');
+    if (colMap.language !== undefined) cleanRow[colMap.language] = (/[\u0900-\u097F]/.test(recoveredText)) ? 'hi' : 'en';
+    if (colMap.routingConfidence !== undefined) cleanRow[colMap.routingConfidence] = 'HIGH';
+    if (colMap.draftReply !== undefined) cleanRow[colMap.draftReply] = c.draftReply;
+    if (colMap.approvalStatus !== undefined) cleanRow[colMap.approvalStatus] = 'DRAFT_READY';
+
+    // Write aligned row back to sheet
+    sheet.getRange(sheetRowNumber, 1, 1, totalCols).setValues([cleanRow]);
+
+    // Restore hyperlink formatting
+    if (colMap.linkUrl !== undefined && recoveredUrl.startsWith('http')) {
+      const linkStyle = SpreadsheetApp.newTextStyle()
+        .setForegroundColor('#1155cc')
+        .setUnderline(true)
+        .setFontFamily('Verdana')
+        .setFontSize(10)
+        .build();
+      const rich = SpreadsheetApp.newRichTextValue()
+        .setText(recoveredUrl)
+        .setLinkUrl(recoveredUrl)
+        .setTextStyle(linkStyle)
+        .build();
+      sheet.getRange(sheetRowNumber, colMap.linkUrl + 1).setRichTextValue(rich);
+    }
+
+    if (colMap.postText !== undefined) {
+      sheet.getRange(sheetRowNumber, colMap.postText + 1).setHorizontalAlignment('left');
+    }
+    if (colMap.draftReply !== undefined) {
+      sheet.getRange(sheetRowNumber, colMap.draftReply + 1).setHorizontalAlignment('left');
+    }
+
+    repairedCount++;
+  }
+
+  SpreadsheetApp.flush();
+  const alertMsg = 'Repair Complete!\n\nRealigned ' + repairedCount + ' misaligned row(s) to match the new 23-column sheet layout perfectly.';
+  try { SpreadsheetApp.getUi().alert(alertMsg); } catch (e) { Logger.log(alertMsg); }
+  return repairedCount;
 }
 
 

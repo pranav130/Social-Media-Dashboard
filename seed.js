@@ -72,13 +72,17 @@ async function runSeed() {
     let isMonitored = 0;
     const num = parseInt(srNo, 10);
 
-    if (num >= 1 && num <= 7) {
+    if (['1', '3', '4', '5', '7'].includes(srNo)) {
       level = 'Apex / Government / Corporate HQ';
       isMonitored = 1;
       districtName = '';
       if (num === 4 || num === 5) {
         districtName = 'Energy Minister Sir';
       }
+    } else if (srNo === '2' || srNo === '6') {
+      level = 'Apex / Government / Corporate HQ';
+      isMonitored = 0;
+      districtName = '';
     } else if (num >= 86 && num <= 90) {
       level = 'DISCOM Corporate HQ';
       isMonitored = 1;
