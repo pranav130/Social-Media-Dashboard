@@ -487,14 +487,18 @@ app.get('/api/complaints', authMiddleware, (req, res) => {
     whereClauses.push('is_overdue = 1');
   }
 
-  // Google Sheets Specific Filters
+  // Google Sheets Specific Filters (Reply & Picked Status)
   const picked_status = req.query.picked_status;
   if (picked_status && picked_status !== 'All') {
     const ps = picked_status.toUpperCase();
-    if (ps === 'YES') {
-      whereClauses.push("(picked_status = 'YES' OR uppcl_replied = 1)");
-    } else if (ps === 'NO') {
-      whereClauses.push("(picked_status = 'NO' AND (uppcl_replied = 0 OR uppcl_replied IS NULL))");
+    if (ps === 'YES' || ps === 'UPPCLLKO REPLIED') {
+      whereClauses.push('uppcl_replied = 1');
+    } else if (ps === 'NO' || ps === 'UPPCLLKO NOT REPLIED') {
+      whereClauses.push('(uppcl_replied = 0 OR uppcl_replied IS NULL) AND (category_name != "APPRECIATION" OR category_name IS NULL)');
+    } else if (ps === 'APPRECIATION') {
+      whereClauses.push('(category_name = "APPRECIATION" OR complaint_type = "APPRECIATION")');
+    } else if (ps === 'DISCOM REPLIED') {
+      whereClauses.push('discom_replied = 1');
     } else {
       whereClauses.push('picked_status = ?');
       params.push(ps);
@@ -1441,13 +1445,12 @@ app.get('/api/dashboard/kpis', authMiddleware, (req, res) => {
 
   const resolvedRate = total > 0 ? (((closedCount + resolvedPendingVerification) / total) * 100).toFixed(1) : 0;
 
-  // Google Sheets Specific KPI aggregations
-  // Authoritative logic: Picked = Existing_Valid_Pickup_Event OR UPPCLLKO_Replied
+  // Reply-Status KPI aggregations
   const pickedRows = db.query(`
     SELECT 
       CASE 
-        WHEN picked_status = 'APPRECIATION' THEN 'APPRECIATION'
-        WHEN picked_status = 'YES' OR uppcl_replied = 1 THEN 'YES'
+        WHEN category_name = 'APPRECIATION' OR complaint_type = 'APPRECIATION' THEN 'APPRECIATION'
+        WHEN uppcl_replied = 1 THEN 'YES'
         ELSE 'NO'
       END as effective_picked,
       COUNT(*) as c 
@@ -1461,8 +1464,9 @@ app.get('/api/dashboard/kpis', authMiddleware, (req, res) => {
     else if (r.effective_picked === 'APPRECIATION') pickedAppreciation = r.c;
   }
 
-  const uppclRepliedRow = db.get(`SELECT COUNT(*) as c FROM complaints ${whereSql ? (whereSql + " AND uppcl_replied = 1") : "WHERE uppcl_replied = 1"}`, params);
-  const uppclRepliedCount = uppclRepliedRow ? uppclRepliedRow.c : 0;
+  const uppclRepliedCount = pickedYes;
+  const uppclNotRepliedCount = pickedNo;
+  const appreciationCount = pickedAppreciation;
 
   const reply30Row = db.get(`SELECT COUNT(*) as c FROM complaints ${whereSql ? (whereSql + " AND reply_within_30_min = 'YES'") : "WHERE reply_within_30_min = 'YES'"}`, params);
   const replyWithin30MinCount = reply30Row ? reply30Row.c : 0;
@@ -1491,6 +1495,8 @@ app.get('/api/dashboard/kpis', authMiddleware, (req, res) => {
     pickedNo,
     pickedAppreciation,
     uppclRepliedCount,
+    uppclNotRepliedCount,
+    appreciationCount,
     replyWithin30MinCount,
     replyWithin30MinRate,
     dataQualityIssues,
@@ -1652,13 +1658,14 @@ app.get('/api/dashboard/charts', authMiddleware, (req, res) => {
     ORDER BY count DESC;
   `, params);
 
-  // 9. Picked Status Distribution (YES, NO, APPRECIATION)
-  const pickedRows = db.query(`
+  // 9. UPPCLLKO Reply Status Distribution (UPPCLLKO Replied, UPPCLLKO Not Replied, DISCOM Replied, Appreciation)
+  const replyRows = db.query(`
     SELECT 
       CASE 
-        WHEN picked_status = 'APPRECIATION' THEN 'APPRECIATION'
-        WHEN picked_status = 'YES' OR uppcl_replied = 1 THEN 'YES'
-        ELSE 'NO'
+        WHEN category_name = 'APPRECIATION' OR complaint_type = 'APPRECIATION' THEN 'Appreciation'
+        WHEN uppcl_replied = 1 THEN 'UPPCLLKO Replied'
+        WHEN discom_replied = 1 THEN 'DISCOM Replied'
+        ELSE 'UPPCLLKO Not Replied'
       END as status,
       COUNT(*) as count
     FROM complaints
@@ -2103,13 +2110,17 @@ function handleDashboardTableExcelExport(req, res) {
     whereClauses.push('is_overdue = 1');
   }
 
-  // Google Sheets Specific Filters (Picked Status & Reply SLA)
+  // Google Sheets Specific Filters (Picked & Reply Status)
   if (picked_status && picked_status !== 'All') {
     const ps = picked_status.toUpperCase();
-    if (ps === 'YES') {
-      whereClauses.push("(picked_status = 'YES' OR uppcl_replied = 1)");
-    } else if (ps === 'NO') {
-      whereClauses.push("(picked_status = 'NO' AND (uppcl_replied = 0 OR uppcl_replied IS NULL))");
+    if (ps === 'YES' || ps === 'UPPCLLKO REPLIED') {
+      whereClauses.push('uppcl_replied = 1');
+    } else if (ps === 'NO' || ps === 'UPPCLLKO NOT REPLIED') {
+      whereClauses.push('(uppcl_replied = 0 OR uppcl_replied IS NULL) AND (category_name != "APPRECIATION" OR category_name IS NULL)');
+    } else if (ps === 'APPRECIATION') {
+      whereClauses.push('(category_name = "APPRECIATION" OR complaint_type = "APPRECIATION")');
+    } else if (ps === 'DISCOM REPLIED') {
+      whereClauses.push('discom_replied = 1');
     } else {
       whereClauses.push('picked_status = ?');
       params.push(ps);

@@ -619,7 +619,7 @@ const App = {
             <div class="sidebar-logo"><i class="fa-solid fa-bolt"></i></div>
             <div class="sidebar-title">
               <h1>UPPCL SMC</h1>
-              <p>Social Media Grievance</p>
+              <p>Consumer Grievance Management System</p>
             </div>
           </div>
 
@@ -741,7 +741,7 @@ const App = {
     container.innerHTML = `
       <div class="page-header">
         <div class="page-title">
-          <h2>Centralized Social Media Grievance Dashboard</h2>
+          <h2>Consumer Grievance Management Dashboard</h2>
           <p>24×7 Monitoring, DISCOM Routing, SLA Tracking, and Redressal Intelligence</p>
         </div>
         <div class="page-actions">
@@ -932,15 +932,15 @@ const App = {
 
       <div class="kpi-card ${activeKpi === 'picked_yes' ? 'active-card' : ''}" data-kpi="picked_yes" style="border-top: 3px solid #059669;" onclick="App.selectDashKPI('picked_yes')" title="If UPPCLLKO replied in that post">
         ${activeKpi === 'picked_yes' ? '<span class="kpi-active-pill" style="color: #059669; background: rgba(5, 150, 105, 0.12);"><i class="fa-solid fa-check"></i> Active</span>' : ''}
-        <div class="kpi-label" style="color: #059669;">Picked: YES</div>
-        <div class="kpi-value" style="color: #059669;">${k.pickedYes || 0}</div>
+        <div class="kpi-label" style="color: #059669;">UPPCLLKO Replied</div>
+        <div class="kpi-value" style="color: #059669;">${k.uppclRepliedCount !== undefined ? k.uppclRepliedCount : (k.pickedYes || 0)}</div>
         <div class="kpi-sub">If UPPCLLKO replied in that post</div>
       </div>
 
       <div class="kpi-card ${activeKpi === 'picked_no' ? 'active-card' : ''}" data-kpi="picked_no" style="border-top: 3px solid #64748b;" onclick="App.selectDashKPI('picked_no')" title="If UPPCLLKO not replied in that post">
         ${activeKpi === 'picked_no' ? '<span class="kpi-active-pill" style="color: #64748b; background: rgba(100, 116, 139, 0.15);"><i class="fa-solid fa-check"></i> Active</span>' : ''}
-        <div class="kpi-label" style="color: #64748b;">Picked: NO</div>
-        <div class="kpi-value" style="color: #64748b;">${k.pickedNo || 0}</div>
+        <div class="kpi-label" style="color: #64748b;">UPPCLLKO Not Replied</div>
+        <div class="kpi-value" style="color: #64748b;">${k.uppclNotRepliedCount !== undefined ? k.uppclNotRepliedCount : (k.pickedNo || 0)}</div>
         <div class="kpi-sub">If UPPCLLKO not replied in that post</div>
       </div>
 
@@ -1173,12 +1173,12 @@ const App = {
       iconClass = 'fa-solid fa-calendar-day';
     } else if (kpi === 'picked_yes') {
       q.append('picked_status', 'YES');
-      titleText = 'Picked: YES';
+      titleText = 'UPPCLLKO Replied';
       subText = 'If UPPCLLKO replied in that post';
       iconClass = 'fa-solid fa-circle-check';
     } else if (kpi === 'picked_no') {
       q.append('picked_status', 'NO');
-      titleText = 'Picked: NO';
+      titleText = 'UPPCLLKO Not Replied';
       subText = 'If UPPCLLKO not replied in that post';
       iconClass = 'fa-solid fa-circle-xmark';
     } else if (kpi === 'appreciation') {
@@ -1254,7 +1254,7 @@ const App = {
         if (isAppreciation) {
           pickedCell = `
             <div style="font-weight: 700; font-size: 11px;">
-              <span class="badge-picked appreciation" title="Consumer appreciation & gratitude posts">
+              <span class="badge-reply appreciation" title="Consumer appreciation & gratitude posts">
                 <i class="fa-solid fa-heart" style="font-size: 10px;"></i> Appreciation
               </span>
             </div>
@@ -1265,34 +1265,34 @@ const App = {
         } else if (hasUppclReplied) {
           pickedCell = `
             <div style="font-weight: 700; font-size: 11px;">
-              <span class="badge-picked yes" title="Verified UPPCLLKO Reply on record: Picked: YES">
-                <i class="fa-solid fa-circle-check" style="font-size: 10px;"></i> Picked: YES
+              <span class="badge-reply yes" title="Verified UPPCLLKO Reply on record">
+                <i class="fa-solid fa-circle-check" style="font-size: 10px;"></i> UPPCLLKO Replied
               </span>
             </div>
-            <div style="font-size: 10px; color: #059669; margin-top: 2px; font-weight: 600;" title="Verified genuine reply authored by UPPCLLKO">
+            <div class="reply-sub yes" title="Verified genuine reply authored by UPPCLLKO">
               <i class="fa-solid fa-reply"></i> UPPCLLKO Replied
             </div>
           `;
-        } else if (isPicked) {
+        } else if (c.discom_replied === 1 || c.current_status === 'DISCOM Follow Up') {
           pickedCell = `
             <div style="font-weight: 700; font-size: 11px;">
-              <span class="badge-picked yes" style="background: rgba(3, 105, 161, 0.12); color: #0284c7; border: 1px solid rgba(3, 105, 161, 0.25);" title="Picked by cell / operator, awaiting reply">
-                <i class="fa-solid fa-circle-check" style="font-size: 10px;"></i> Picked: YES
+              <span class="badge-reply discom" title="Responded by registered DISCOM / division handle">
+                <i class="fa-solid fa-arrows-split-up-and-left" style="font-size: 10px;"></i> DISCOM Replied
               </span>
             </div>
-            <div style="font-size: 10px; color: #0284c7; margin-top: 2px; font-weight: 600;" title="Awaiting UPPCLLKO reply">
-              <i class="fa-solid fa-clock"></i> Awaiting Reply
+            <div class="reply-sub discom" title="DISCOM Redressal Response Recorded">
+              <i class="fa-solid fa-building"></i> Registered Action
             </div>
           `;
         } else {
           pickedCell = `
             <div style="font-weight: 700; font-size: 11px;">
-              <span class="badge-picked no" title="Complaints: Picked: NO — UPPCLLKO not replied in that post">
-                <i class="fa-solid fa-circle-xmark" style="font-size: 10px;"></i> Picked: NO
+              <span class="badge-reply no" title="Complaints: UPPCLLKO not replied in that post">
+                <i class="fa-solid fa-circle-xmark" style="font-size: 10px;"></i> UPPCLLKO Not Replied
               </span>
             </div>
-            <div style="font-size: 10px; color: #64748b; margin-top: 2px; font-weight: 600;" title="UPPCLLKO not replied in that post">
-              UPPCLLKO Not Replied
+            <div class="reply-sub no" title="UPPCLLKO not replied in that post">
+              Awaiting Reply
             </div>
           `;
         }
@@ -1753,12 +1753,12 @@ const App = {
           </div>
 
           <div class="filter-group" style="min-width: 140px;">
-            <label>Picked Status</label>
+            <label>Reply Status</label>
             <select id="reg-picked-status" class="form-control">
               <option value="All" ${this.currentFilters.picked_status === 'All' ? 'selected' : ''}>All Posts</option>
-              <option value="YES" ${this.currentFilters.picked_status === 'YES' ? 'selected' : ''}>YES (UPPCLLKO Replied)</option>
-              <option value="NO" ${this.currentFilters.picked_status === 'NO' ? 'selected' : ''}>NO (UPPCLLKO Not Replied)</option>
-              <option value="APPRECIATION" ${this.currentFilters.picked_status === 'APPRECIATION' ? 'selected' : ''}>APPRECIATION (Gratitude)</option>
+              <option value="YES" ${this.currentFilters.picked_status === 'YES' ? 'selected' : ''}>UPPCLLKO Replied</option>
+              <option value="NO" ${this.currentFilters.picked_status === 'NO' ? 'selected' : ''}>UPPCLLKO Not Replied</option>
+              <option value="APPRECIATION" ${this.currentFilters.picked_status === 'APPRECIATION' ? 'selected' : ''}>Appreciation (Gratitude)</option>
             </select>
           </div>
 
@@ -2151,21 +2151,18 @@ const App = {
 
                 let pickedMarkup = '';
                 if (isAppreciation) {
-                  pickedMarkup = `<span class="badge-picked appreciation" title="Consumer appreciation & gratitude post">Appreciation</span>`;
+                  pickedMarkup = `<span class="badge-reply appreciation" title="Consumer appreciation & gratitude post"><i class="fa-solid fa-heart" style="font-size: 9px;"></i> Appreciation</span>`;
                 } else if (hasUppclReplied) {
                   pickedMarkup = `
-                    <span class="badge-picked yes" title="Verified UPPCLLKO reply on record: Picked: YES">Picked: YES</span>
-                    <div style="font-size: 9.5px; color: #059669; font-weight: 600; margin-top: 1px;"><i class="fa-solid fa-reply"></i> UPPCLLKO Replied</div>
+                    <span class="badge-reply yes" title="Verified UPPCLLKO reply on record"><i class="fa-solid fa-circle-check" style="font-size: 9px;"></i> UPPCLLKO Replied</span>
                   `;
-                } else if (isPicked) {
+                } else if (c.discom_replied === 1 || c.current_status === 'DISCOM Follow Up') {
                   pickedMarkup = `
-                    <span class="badge-picked yes" style="background: rgba(3, 105, 161, 0.12); color: #0284c7; border: 1px solid rgba(3, 105, 161, 0.25);" title="Picked by cell / operator, awaiting reply">Picked: YES</span>
-                    <div style="font-size: 9.5px; color: #0284c7; font-weight: 600; margin-top: 1px;"><i class="fa-solid fa-clock"></i> Awaiting Reply</div>
+                    <span class="badge-reply discom" title="Responded by registered DISCOM / division handle"><i class="fa-solid fa-arrows-split-up-and-left" style="font-size: 9px;"></i> DISCOM Replied</span>
                   `;
                 } else {
                   pickedMarkup = `
-                    <span class="badge-picked no" title="Complaints: Picked: NO — UPPCLLKO not replied in that post">Picked: NO</span>
-                    <div style="font-size: 9.5px; color: #64748b; font-weight: 600; margin-top: 1px;">UPPCLLKO Not Replied</div>
+                    <span class="badge-reply no" title="UPPCLLKO not replied in that post"><i class="fa-solid fa-circle-xmark" style="font-size: 9px;"></i> UPPCLLKO Not Replied</span>
                   `;
                 }
 
@@ -2866,26 +2863,6 @@ const App = {
                         : `<b style="color: #64748b;"><i class="fa-solid fa-circle-xmark"></i> NO</b> <small style="color: var(--text-muted);">(No UPPCLLKO reply on record)</small>`;
                     })()}</span></div>
                     ${c.reply_evidence ? `<div class="info-row"><span class="info-label">Reply Evidence:</span><span class="info-value" style="font-size: 11px; color: #0284c7;"><i class="fa-solid fa-shield-halved"></i> ${c.reply_evidence}</span></div>` : ''}
-                    <div class="info-row"><span class="info-label">Picked Status:</span><span class="info-value">${(() => {
-                      const isApprec = c.picked_status === 'APPRECIATION' || c.current_status === 'Appreciation' || c.category_name === 'APPRECIATION';
-                      const hasReplied = !isApprec && Boolean(
-                        c.uppcl_replied === 1 ||
-                        c.uppcl_replied === '1' ||
-                        c.has_historical_reply === 1 ||
-                        c.reply_within_30_min === 'YES' ||
-                        Boolean(c.published_reply_id)
-                      );
-                      const isPicked = !isApprec && (
-                        hasReplied ||
-                        c.picked_status === 'YES' ||
-                        (c.current_status && !['New', 'Pending Review', 'Unassigned'].includes(c.current_status)) ||
-                        Boolean(c.forwarding_ref_no)
-                      );
-                      if (isApprec) return `<b>APPRECIATION</b> <small style="color: var(--text-muted);">(Consumer gratitude post)</small>`;
-                      if (isPicked && hasReplied) return `<b style="color: #059669;">YES</b> <small style="color: var(--text-muted);">(UPPCLLKO replied in thread)</small>`;
-                      if (isPicked && !hasReplied) return `<b style="color: #0284c7;">YES</b> <small style="color: var(--text-muted);">(Picked by cell / Assigned to DISCOM, awaiting reply)</small>`;
-                      return `<b style="color: #64748b;">NO</b> <small style="color: var(--text-muted);">(Unpicked / No reply)</small>`;
-                    })()}</span></div>
                     ${c.discom_tagged_in_reply ? `<div class="info-row"><span class="info-label">Tagged DISCOM Handle:</span><span class="info-value" style="color: var(--primary); font-weight: 700;"><i class="fa-brands fa-x-twitter"></i> ${c.discom_tagged_in_reply}</span></div>` : ''}
                     <div class="info-row"><span class="info-label">Shift:</span><span class="info-value">${c.link_shift || '-'}</span></div>
                     ${c.sheet_row_index ? `<div class="info-row"><span class="info-label">Sheet Row:</span><span class="info-value"><span class="badge-sheet-row">Row #${c.sheet_row_index}</span></span></div>` : ''}
@@ -4004,7 +3981,7 @@ const App = {
                       <td><b style="font-size: 14px; color: var(--primary);">${d.discom_name}</b></td>
                       <td><b>${d.total}</b></td>
                       <td><span class="badge-reply yes">${d.uppcl_replied || d.picked_yes || 0}</span></td>
-                      <td><span class="badge-picked appreciation">${d.appreciation}</span></td>
+                      <td><span class="badge-reply appreciation">${d.appreciation}</span></td>
                       <td><b style="color: #059669;">${d.closed}</b></td>
                       <td>
                         <div>
