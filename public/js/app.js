@@ -5687,42 +5687,42 @@ const App = {
         <div id="ws-toast-area" style="padding: 0 16px;"></div>
 
         <!-- Table View -->
-        <div class="table-responsive" style="margin-top: 8px;">
-          <table class="data-table" id="ws-data-table">
+        <div class="table-responsive" id="ws-table-responsive" style="margin-top: 8px; width: 100%; overflow-x: hidden;">
+          <table class="data-table ws-fit-table" id="ws-data-table" style="width: 100%; table-layout: fixed;">
             <thead>
               <tr>
-                <th class="sortable" onclick="App.handleWorkingSheetSort('DATE')" style="white-space: nowrap; cursor: pointer;">
+                <th class="sortable ws-col-date" onclick="App.handleWorkingSheetSort('DATE')" style="cursor: pointer;" title="Sort by Date">
                   <div class="sort-header-inner">
                     <span>DATE</span>
                     <i class="fa-solid ${this.workingSheetFilter.sortBy === 'DATE' ? (this.workingSheetFilter.sortOrder === 'DESC' ? 'fa-sort-down active-sort' : 'fa-sort-up active-sort') : 'fa-sort sort-icon'}"></i>
                   </div>
                 </th>
-                <th class="sortable" onclick="App.handleWorkingSheetSort('C F')" style="white-space: nowrap; cursor: pointer; text-align: center;">
+                <th class="sortable ws-col-cf" onclick="App.handleWorkingSheetSort('C F')" style="cursor: pointer; text-align: center;" title="Sort by CF Count">
                   <div class="sort-header-inner" style="justify-content: center;">
                     <span>C F</span>
                     <i class="fa-solid ${this.workingSheetFilter.sortBy === 'C F' ? (this.workingSheetFilter.sortOrder === 'DESC' ? 'fa-sort-down active-sort' : 'fa-sort-up active-sort') : 'fa-sort sort-icon'}"></i>
                   </div>
                 </th>
-                <th style="white-space: nowrap;">LINK URL</th>
-                <th style="white-space: nowrap;">Twitter Id</th>
-                <th style="white-space: nowrap;">
-                  <span>Picked Status</span> <i class="fa-solid fa-pen-to-square" style="font-size: 10px; color: #008080;" title="Editable Dropdown"></i>
+                <th class="ws-col-link" style="text-align: center;" title="Source Post on X">LINK</th>
+                <th class="ws-col-twitter" title="Twitter Handle">Twitter Id</th>
+                <th class="ws-col-picked">
+                  <span>Picked</span> <i class="fa-solid fa-pen" style="font-size: 9px; color: #008080;" title="Editable Dropdown"></i>
                 </th>
-                <th style="white-space: nowrap;">
-                  <span>Head</span> <i class="fa-solid fa-pen-to-square" style="font-size: 10px; color: #008080;" title="Editable Dropdown"></i>
+                <th class="ws-col-head">
+                  <span>Head</span> <i class="fa-solid fa-pen" style="font-size: 9px; color: #008080;" title="Editable Dropdown"></i>
                 </th>
-                <th style="white-space: nowrap;">
-                  <span>Untagged Complaint</span> <i class="fa-solid fa-pen-to-square" style="font-size: 10px; color: #008080;" title="Editable Dropdown"></i>
+                <th class="ws-col-untagged">
+                  <span>Untagged</span> <i class="fa-solid fa-pen" style="font-size: 9px; color: #008080;" title="Editable Dropdown"></i>
                 </th>
-                <th style="white-space: nowrap;">UPPCLLKO Replied (YES/NO)</th>
-                <th style="white-space: nowrap;">
-                  <span>Complaint Type</span> <i class="fa-solid fa-pen-to-square" style="font-size: 10px; color: #008080;" title="Editable Dropdown"></i>
+                <th class="ws-col-replied" style="text-align: center;" title="UPPCLLKO Replied Status">UPPCLLKO Replied</th>
+                <th class="ws-col-type">
+                  <span>Complaint Type</span> <i class="fa-solid fa-pen" style="font-size: 9px; color: #008080;" title="Editable Dropdown"></i>
                 </th>
-                <th style="white-space: nowrap;">
-                  <span>District</span> <i class="fa-solid fa-pen-to-square" style="font-size: 10px; color: #008080;" title="Editable Dropdown (Discom_District_List)"></i>
+                <th class="ws-col-district">
+                  <span>District</span> <i class="fa-solid fa-pen" style="font-size: 9px; color: #008080;" title="Editable Dropdown (Discom_District_List)"></i>
                 </th>
-                <th style="white-space: nowrap;">
-                  <span>Status</span> <i class="fa-solid fa-pen-to-square" style="font-size: 10px; color: #008080;" title="Editable Dropdown"></i>
+                <th class="ws-col-status">
+                  <span>Status</span> <i class="fa-solid fa-pen" style="font-size: 9px; color: #008080;" title="Editable Dropdown"></i>
                 </th>
               </tr>
             </thead>
@@ -5923,46 +5923,45 @@ const App = {
         `<option value="${st}" ${statusVal === st ? 'selected' : ''}>${st}</option>`
       ).join('');
 
-      // UPPCLLKO Replied Badge
+      // UPPCLLKO Replied Badge (Enhanced Font Size)
       const repliedMarkup = repliedVal === 'YES'
-        ? `<span class="badge" style="background-color: #d1fae5; color: #065f46; font-weight: 700; padding: 3px 8px; border-radius: 4px;"><i class="fa-solid fa-check"></i> YES</span>`
+        ? `<span class="badge ws-replied-badge" style="background-color: #d1fae5; color: #065f46;"><i class="fa-solid fa-check"></i> YES</span>`
         : (repliedVal === 'NO'
-            ? `<span class="badge" style="background-color: #f1f5f9; color: #475569; font-weight: 600; padding: 3px 8px; border-radius: 4px;">NO</span>`
-            : `<span style="color: #94a3b8; font-size: 11px;">-</span>`);
+            ? `<span class="badge ws-replied-badge" style="background-color: #f1f5f9; color: #475569;">NO</span>`
+            : `<span style="color: #94a3b8; font-size: 13px;">-</span>`);
 
-      // Link URL Button
+      // Link URL Button (Enhanced Font Size)
       const linkMarkup = r['LINK URL']
         ? `<a href="${r['LINK URL']}" target="_blank" rel="noopener noreferrer" class="ws-link-btn" title="Open source post on X">
              <i class="fa-brands fa-x-twitter"></i>
              <span>View</span>
-             <i class="fa-solid fa-arrow-up-right-from-square" style="font-size: 10px;"></i>
            </a>`
         : `<span style="color: #94a3b8;">-</span>`;
 
       return `
         <tr data-row-index="${sheetRowIdx}">
           <!-- 1. DATE -->
-          <td style="white-space: nowrap; font-size: 12px; font-weight: 600;">
+          <td class="ws-col-date" style="white-space: nowrap; font-size: 13px; font-weight: 600;">
             ${r['DATE'] || '-'}
           </td>
 
           <!-- 2. C F -->
-          <td style="text-align: center; white-space: nowrap;">
+          <td class="ws-col-cf" style="text-align: center;">
             <span class="ws-cf-badge" title="Formula-controlled dynamic count in Google Sheet">${r['C F'] || '-'}</span>
           </td>
 
           <!-- 3. LINK URL -->
-          <td style="white-space: nowrap;">
+          <td class="ws-col-link" style="text-align: center;">
             ${linkMarkup}
           </td>
 
           <!-- 4. Twitter Id -->
-          <td style="white-space: nowrap;">
-            <span class="ws-twitter-id">@${r['Twitter Id'] || '-'}</span>
+          <td class="ws-col-twitter">
+            <span class="ws-twitter-id" title="@${r['Twitter Id'] || '-'}">@${r['Twitter Id'] || '-'}</span>
           </td>
 
           <!-- 5. Picked Status -->
-          <td style="min-width: 110px;">
+          <td class="ws-col-picked">
             <select class="ws-select" data-col="Picked Status" data-orig="${pickedVal}"
                     onchange="App.handleWorkingSheetCellChange(this, ${sheetRowIdx}, 'Picked Status', '${tweetId}', '${rawPostUrl}')">
               <option value="" disabled ${!pickedVal ? 'selected' : ''}>Select...</option>
@@ -5971,7 +5970,7 @@ const App = {
           </td>
 
           <!-- 6. Head -->
-          <td style="min-width: 100px;">
+          <td class="ws-col-head">
             <select class="ws-select" data-col="Head" data-orig="${headVal}"
                     onchange="App.handleWorkingSheetCellChange(this, ${sheetRowIdx}, 'Head', '${tweetId}', '${rawPostUrl}')">
               <option value="" disabled ${!headVal ? 'selected' : ''}>Select...</option>
@@ -5980,7 +5979,7 @@ const App = {
           </td>
 
           <!-- 7. Untagged Complaint -->
-          <td style="min-width: 90px;">
+          <td class="ws-col-untagged">
             <select class="ws-select" data-col="Untagged Complaint" data-orig="${untaggedVal}"
                     onchange="App.handleWorkingSheetCellChange(this, ${sheetRowIdx}, 'Untagged Complaint', '${tweetId}', '${rawPostUrl}')">
               <option value="" disabled ${!untaggedVal ? 'selected' : ''}>Select...</option>
@@ -5989,12 +5988,12 @@ const App = {
           </td>
 
           <!-- 8. UPPCLLKO Replied (YES/NO) -->
-          <td style="white-space: nowrap; text-align: center;">
+          <td class="ws-col-replied" style="text-align: center;">
             ${repliedMarkup}
           </td>
 
           <!-- 9. Complaint Type -->
-          <td style="min-width: 160px;">
+          <td class="ws-col-type">
             <select class="ws-select" data-col="Complaint Type" data-orig="${compTypeVal}"
                     onchange="App.handleWorkingSheetCellChange(this, ${sheetRowIdx}, 'Complaint Type', '${tweetId}', '${rawPostUrl}')">
               <option value="" disabled ${!compTypeVal ? 'selected' : ''}>Select Category...</option>
@@ -6003,7 +6002,7 @@ const App = {
           </td>
 
           <!-- 10. District -->
-          <td style="min-width: 150px;">
+          <td class="ws-col-district">
             <select class="ws-select" data-col="District" data-orig="${distVal}"
                     onchange="App.handleWorkingSheetCellChange(this, ${sheetRowIdx}, 'District', '${tweetId}', '${rawPostUrl}')">
               <option value="" disabled ${!distVal ? 'selected' : ''}>Select District...</option>
@@ -6012,7 +6011,7 @@ const App = {
           </td>
 
           <!-- 11. Status -->
-          <td style="min-width: 150px;">
+          <td class="ws-col-status">
             <select class="ws-select" data-col="Status" data-orig="${statusVal}"
                     onchange="App.handleWorkingSheetCellChange(this, ${sheetRowIdx}, 'Status', '${tweetId}', '${rawPostUrl}')">
               <option value="" disabled ${!statusVal ? 'selected' : ''}>Select Status...</option>

@@ -1645,7 +1645,7 @@ body {
 
 
 /* ==============================================================================
-   WORKING SHEET MODULE STYLES
+   WORKING SHEET MODULE STYLES (FIT-TO-PAGE & ENHANCED TYPOGRAPHY)
    ============================================================================== */
 .ws-table-container {
   background: var(--bg-card, #ffffff);
@@ -1654,19 +1654,75 @@ body {
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
   margin-top: 16px;
   overflow: hidden;
+  width: 100%;
 }
 
+#ws-table-responsive {
+  width: 100%;
+  overflow-x: hidden; /* Fits entirely on page without horizontal scrolling */
+}
+
+@media (max-width: 1100px) {
+  #ws-table-responsive {
+    overflow-x: auto; /* Fallback for very narrow mobile screens */
+  }
+}
+
+.ws-fit-table {
+  width: 100% !important;
+  table-layout: fixed !important;
+  border-collapse: collapse;
+}
+
+.ws-fit-table th,
+.ws-fit-table td {
+  padding: 8px 4px !important;
+  box-sizing: border-box;
+  vertical-align: middle;
+}
+
+.ws-fit-table th {
+  font-size: 13px !important;
+  font-weight: 700 !important;
+  color: var(--text-muted, #475569);
+  background-color: var(--bg-hover, #f8fafc);
+  border-bottom: 2px solid var(--border-color, #cbd5e1);
+  letter-spacing: -0.2px;
+}
+
+.ws-fit-table td {
+  font-size: 13.5px !important;
+  border-bottom: 1px solid var(--border-light, #e2e8f0);
+}
+
+/* Proportional Column Widths for Perfect Page Fit */
+.ws-col-date { width: 9%; }
+.ws-col-cf { width: 4.5%; text-align: center; }
+.ws-col-link { width: 5.5%; text-align: center; }
+.ws-col-twitter { width: 10.5%; }
+.ws-col-picked { width: 9%; }
+.ws-col-head { width: 7.5%; }
+.ws-col-untagged { width: 7%; }
+.ws-col-replied { width: 9%; text-align: center; }
+.ws-col-type { width: 15%; }
+.ws-col-district { width: 11%; }
+.ws-col-status { width: 12%; }
+
 .ws-select {
-  font-size: 11px;
+  font-size: 13px !important;
   font-weight: 500;
-  padding: 4px 6px;
+  padding: 5px 4px !important;
   border-radius: 4px;
   border: 1px solid var(--border-color, #d1d5db);
   background-color: var(--bg-card, #ffffff);
   color: var(--text-main, #1f2937);
   cursor: pointer;
-  max-width: 170px;
-  width: 100%;
+  width: 100% !important;
+  max-width: 100% !important;
+  box-sizing: border-box;
+  text-overflow: ellipsis;
+  overflow: hidden;
+  white-space: nowrap;
   transition: all 0.2s ease;
 }
 
@@ -1702,35 +1758,40 @@ body {
 .ws-cf-badge {
   display: inline-block;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-size: 11px;
+  font-size: 12.5px !important;
   font-weight: 700;
   color: #374151;
   background-color: #f3f4f6;
   border: 1px solid #e5e7eb;
-  padding: 2px 7px;
+  padding: 2px 6px;
   border-radius: 4px;
-  min-width: 32px;
+  min-width: 28px;
   text-align: center;
 }
 
 .ws-twitter-id {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-size: 11px;
-  color: #4b5563;
-  background-color: rgba(0, 0, 0, 0.03);
-  padding: 2px 5px;
-  border-radius: 3px;
+  font-size: 12.5px !important;
+  font-weight: 600;
+  color: #334155;
+  background-color: rgba(0, 0, 0, 0.04);
+  padding: 3px 6px;
+  border-radius: 4px;
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .ws-link-btn {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  justify-content: center;
+  gap: 4px;
   color: #008080;
   text-decoration: none;
   font-weight: 600;
-  font-size: 12px;
+  font-size: 12.5px !important;
   padding: 3px 6px;
   border-radius: 4px;
   transition: background 0.15s ease;
@@ -1742,8 +1803,16 @@ body {
   text-decoration: none;
 }
 
+.ws-replied-badge {
+  font-size: 12.5px !important;
+  font-weight: 700 !important;
+  padding: 3px 8px !important;
+  border-radius: 4px !important;
+  display: inline-block;
+}
+
 .ws-readonly-badge {
-  font-size: 10px;
+  font-size: 11px;
   color: #6b7280;
   text-transform: uppercase;
   letter-spacing: 0.5px;
