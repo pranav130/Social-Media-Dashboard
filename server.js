@@ -198,6 +198,7 @@ function authMiddleware(req, res, next) {
         '/api/auth/me',
         '/api/auth/logout',
         '/api/auth/change-password',
+        '/api/dashboard/kpis',
         '/api/working-sheet/data',
         '/api/working-sheet/districts',
         '/api/working-sheet/update-cell'

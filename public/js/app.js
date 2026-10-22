@@ -5650,7 +5650,24 @@ const App = {
     document.getElementById('login-password').value = p;
   },
 
-    getWorkingSheetMetrics() {
+    updateWorkingSheetMetricCards() {
+    const m = this.getWorkingSheetMetrics();
+    const setVal = (id, val) => {
+      const el = document.getElementById(id);
+      if (el && val !== undefined && val !== null && val !== '') {
+        el.textContent = val;
+      }
+    };
+    setVal('ws-val-total', m.total);
+    setVal('ws-val-today', m.receivedToday);
+    setVal('ws-val-replied', m.uppclReplied);
+    setVal('ws-val-not-replied', m.uppclNotReplied);
+    setVal('ws-val-appreciation', m.appreciation);
+    setVal('ws-val-reply-30', m.reply30);
+    setVal('ws-val-followup', m.followup);
+  },
+
+  getWorkingSheetMetrics() {
     let k = this.latestKpis;
     if (!k) {
       try {
@@ -5895,6 +5912,20 @@ const App = {
         </div>
       </div>
     `;
+
+    // Fetch and populate KPI metric values for display-only cards
+    this.api('/api/dashboard/kpis').then(kpis => {
+      if (kpis) {
+        this.latestKpis = kpis;
+        try {
+          sessionStorage.setItem('uppcl_smc_kpis', JSON.stringify(kpis));
+          localStorage.setItem('uppcl_smc_kpis', JSON.stringify(kpis));
+        } catch (e) {}
+        this.updateWorkingSheetMetricCards();
+      }
+    }).catch(err => {
+      console.warn('Working Sheet metrics notice:', err.message);
+    });
 
     await this.loadWorkingSheetData();
   },
@@ -6351,6 +6382,16 @@ const App = {
   },
 
   async refreshWorkingSheet() {
+    this.api('/api/dashboard/kpis').then(kpis => {
+      if (kpis) {
+        this.latestKpis = kpis;
+        try {
+          sessionStorage.setItem('uppcl_smc_kpis', JSON.stringify(kpis));
+          localStorage.setItem('uppcl_smc_kpis', JSON.stringify(kpis));
+        } catch (e) {}
+        this.updateWorkingSheetMetricCards();
+      }
+    }).catch(() => {});
     await this.loadWorkingSheetData(true);
     App.showWorkingSheetToast('Google Sheet data refreshed from source.', 'success');
   },
