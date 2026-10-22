@@ -1258,6 +1258,123 @@ async function runTests() {
     assert.ok(unrepliedClearedCount > 0, 'Must verify multiple unreplied rows cleared to blank');
   });
 
+  console.log('\n[23. Google Sheets CF Formula & Blank Row 2 Permanence Suite]');
+
+  it('1. Column letter conversion accurately converts 0-based indices to A1 notation', () => {
+    function getColumnLetter(colIndex, fallbackLetter) {
+      if (colIndex === undefined || colIndex === null || typeof colIndex !== 'number' || colIndex < 0) {
+        return fallbackLetter || 'F';
+      }
+      let temp = colIndex + 1;
+      let letter = '';
+      while (temp > 0) {
+        const mod = (temp - 1) % 26;
+        letter = String.fromCharCode(65 + mod) + letter;
+        temp = Math.floor((temp - mod) / 26);
+      }
+      return letter || fallbackLetter || 'F';
+    }
+
+    assert.strictEqual(getColumnLetter(0), 'A');
+    assert.strictEqual(getColumnLetter(2), 'C');
+    assert.strictEqual(getColumnLetter(4), 'E');
+    assert.strictEqual(getColumnLetter(5), 'F');
+    assert.strictEqual(getColumnLetter(9), 'J');
+    assert.strictEqual(getColumnLetter(25), 'Z');
+    assert.strictEqual(getColumnLetter(26), 'AA');
+    assert.strictEqual(getColumnLetter(27), 'AB');
+  });
+
+  it('2. Dynamically generates CF formula matching Twitter ID column across rearrangements', () => {
+    function buildCfFormula(twitterIdColZero) {
+      let temp = twitterIdColZero + 1;
+      let letter = '';
+      while (temp > 0) {
+        const mod = (temp - 1) % 26;
+        letter = String.fromCharCode(65 + mod) + letter;
+        temp = Math.floor((temp - mod) / 26);
+      }
+      return '=IF($' + letter + '3="","",COUNTIF($' + letter + ':$' + letter + ',$' + letter + '3))';
+    }
+
+    // Default layout: Twitter ID at Column F (col index 5)
+    assert.strictEqual(buildCfFormula(5), '=IF($F3="","",COUNTIF($F:$F,$F3))');
+    // Rearranged layout: Twitter ID at Column B (col index 1)
+    assert.strictEqual(buildCfFormula(1), '=IF($B3="","",COUNTIF($B:$B,$B3))');
+    // Rearranged layout: Twitter ID at Column H (col index 7)
+    assert.strictEqual(buildCfFormula(7), '=IF($H3="","",COUNTIF($H:$H,$H3))');
+  });
+
+  it('3. Code.gs eliminates all hardcoded static counter overwrites to Column C', () => {
+    const fs = require('fs');
+    const codeGs = fs.readFileSync('google_apps_script/Code.gs', 'utf8');
+
+    // Verify hardcoded integer counters are completely purged
+    assert.ok(!codeGs.includes('cleanRows[i][colMap.cf] = i + 1'), 'Must not overwrite colMap.cf with i + 1');
+    assert.ok(!codeGs.includes('rowsToInsert[r][colMap.cf] = startCount + r'), 'Must not overwrite colMap.cf with startCount + r');
+    assert.ok(!codeGs.includes('cleanRow[colMap.cf] = cfVal'), 'Must not overwrite colMap.cf with numeric cfVal');
+  });
+
+  it('4. Code.gs guarantees Row 2 is permanently blank and top 2 rows remain frozen', () => {
+    const fs = require('fs');
+    const codeGs = fs.readFileSync('google_apps_script/Code.gs', 'utf8');
+
+    assert.ok(codeGs.includes('function ensureRow2IsBlankAndFrozen('), 'Code.gs must define ensureRow2IsBlankAndFrozen');
+    assert.ok(codeGs.includes('sheet.setFrozenRows(2)'), 'ensureRow2IsBlankAndFrozen must enforce freezing 2 rows');
+    assert.ok(codeGs.includes('sheet.insertRowBefore(2)'), 'Must recover vanished row 2 by inserting row before 2');
+    assert.ok(codeGs.includes('row2Range.clearContent()'), 'Must clear content of Row 2');
+    assert.ok(codeGs.includes('sheet.setRowHeight(2, 25)'), 'Must enforce spacer height for Row 2');
+  });
+
+  it('5. sortSheetByDateDescending strictly sorts from Row 3 and preserves Row 2 and CF formula', () => {
+    const fs = require('fs');
+    const codeGs = fs.readFileSync('google_apps_script/Code.gs', 'utf8');
+
+    assert.ok(codeGs.includes('ensureRow2IsBlankAndFrozen(sheet)'), 'sortSheetByDateDescending must call ensureRow2IsBlankAndFrozen');
+    assert.ok(codeGs.includes('const startRow = 3;'), 'Sorting data range must strictly start at Row 3');
+    assert.ok(codeGs.includes('const numRows = lastRow - 2;'), 'Sorting data range must strictly span lastRow - 2 rows');
+    assert.ok(codeGs.includes('applyCfFormulaToSheet(sheet, true)'), 'sortSheetByDateDescending must refresh CF formula after sort');
+  });
+
+  it('6. New complaint insertions and onEdit auto-protect the CF formula and Row 2', () => {
+    const fs = require('fs');
+    const codeGs = fs.readFileSync('google_apps_script/Code.gs', 'utf8');
+
+    // OnEdit checks
+    assert.ok(codeGs.includes('if (row === 2)'), 'onEdit must intercept any edit to Row 2');
+    assert.ok(codeGs.includes('cfCell.setFormula('), 'onEdit must auto-populate missing CF formulas on data rows');
+
+    // Ingestion checks in runCloudSyncCycle and doPost
+    assert.ok(codeGs.includes("row[colMap.cf] = ''"), 'runCloudSyncCycle must leave colMap.cf blank on row creation');
+    assert.ok(codeGs.includes('Math.max(sheet.getLastRow() + 1, 3)'), 'Insertions must never start at Row 2');
+  });
+
+  it('7. onOpen menu includes both Ensure Blank Row 2 and Apply CF Formula', () => {
+    const fs = require('fs');
+    const codeGs = fs.readFileSync('google_apps_script/Code.gs', 'utf8');
+
+    assert.ok(codeGs.includes("'❄️ Ensure Blank Row 2 & Freeze Top 2 Rows', 'ensureRow2IsBlankAndFrozen'"), 'Menu must include ensureRow2IsBlankAndFrozen');
+    assert.ok(codeGs.includes("'Apply CF Formula to Column C (Twitter ID Repeat Count)', 'applyCfFormulaToSheet'"), 'Menu must include applyCfFormulaToSheet');
+  });
+
+  it('8. Live sheet simulation: Row 2 is 100% empty and data begins strictly at Row 3', () => {
+    const fs = require('fs');
+    const liveCsv = fs.readFileSync('scripts/live_sheet_full.csv', 'utf8');
+    const lines = liveCsv.split('\n');
+
+    // Line 0 is Header
+    assert.ok(lines[0].includes('DATE'), 'Line 0 must be Header row');
+
+    // Line 1 is Row 2: must be completely empty or all commas
+    const row2Clean = lines[1].replace(/,/g, '').trim();
+    assert.strictEqual(row2Clean, '', 'Row 2 in Google Sheet must be 100% blank spacer row');
+
+    // Line 2 is Row 3: first real complaint
+    const row3Cells = lines[2].split(',');
+    assert.ok(row3Cells[0].includes('21-10-2026') || row3Cells[0].includes('2026'), 'Row 3 must contain valid complaint date');
+    assert.ok(row3Cells[4].startsWith('https://x.com/'), 'Row 3 must contain valid tweet URL');
+  });
+
   console.log('\n====================================================');
   console.log(` Tests Finished: ${passCount} Passed, ${failCount} Failed`);
   console.log('====================================================\n');

@@ -57,6 +57,73 @@ function getSheetColumnMap(sheet) {
 }
 
 /**
+ * Converts a 0-based column index to an A1-notation column letter (e.g., 0 -> 'A', 2 -> 'C', 5 -> 'F', 26 -> 'AA').
+ *
+ * @param {number} colIndex - 0-based column index.
+ * @param {string} [fallbackLetter='F'] - Fallback column letter if colIndex is invalid.
+ * @returns {string} The column letter.
+ */
+function getColumnLetter(colIndex, fallbackLetter) {
+  if (colIndex === undefined || colIndex === null || typeof colIndex !== 'number' || colIndex < 0) {
+    return fallbackLetter || 'F';
+  }
+  let temp = colIndex + 1;
+  let letter = '';
+  while (temp > 0) {
+    const mod = (temp - 1) % 26;
+    letter = String.fromCharCode(65 + mod) + letter;
+    temp = Math.floor((temp - mod) / 26);
+  }
+  return letter || fallbackLetter || 'F';
+}
+
+/**
+ * Permanently locks Row 2 as a blank spacer row and freezes the top 2 rows (Row 1 Header + Row 2 Blank).
+ * If Row 2 currently contains complaint data (e.g. because the blank row vanished or was sorted away),
+ * a new row is inserted before Row 2, pushing complaint data down to Row 3 without losing any records.
+ * All formatting, dropdowns, borders, notes, and formulas in Row 2 are completely cleared.
+ *
+ * @param {Sheet} [targetSheet] - Optional sheet instance.
+ */
+function ensureRow2IsBlankAndFrozen(targetSheet) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sheet = targetSheet || (ss ? ss.getSheetByName('Twitter Complaint List') : null);
+  if (!sheet && ss) sheet = ss.getActiveSheet();
+  if (!sheet) return;
+
+  const lastCol = Math.max(sheet.getLastColumn(), 23);
+  const lastRow = sheet.getLastRow();
+
+  if (lastRow >= 2) {
+    const row2Values = sheet.getRange(2, 1, 1, lastCol).getValues()[0];
+    const isRow2Empty = row2Values.every(val => String(val || '').trim() === '');
+
+    if (!isRow2Empty) {
+      // Row 2 contains complaint data! The blank row vanished.
+      // Insert a blank row before Row 2 to push complaint data safely to Row 3.
+      sheet.insertRowBefore(2);
+      Logger.log('Inserted missing blank Row 2 before existing complaint data.');
+    }
+  } else if (lastRow === 1) {
+    // Only header row exists; add blank Row 2
+    sheet.insertRowAfter(1);
+  }
+
+  // Clear Row 2 completely so it is 100% clean and blank
+  const row2Range = sheet.getRange(2, 1, 1, lastCol);
+  row2Range.clearContent();
+  row2Range.clearFormat();
+  row2Range.clearDataValidations();
+  row2Range.clearNote();
+  sheet.setRowHeight(2, 25);
+
+  // Permanently freeze the top 2 rows
+  if (sheet.getFrozenRows() !== 2) {
+    sheet.setFrozenRows(2);
+  }
+}
+
+/**
  * ==============================================================================
  * AUTOMATIC REPLY_WITHIN_30_MIN_BY_Laqshya Media SLA CALCULATION ENGINE
  * ==============================================================================
@@ -897,14 +964,30 @@ function onEdit(e) {
   }
 
   const row = range.getRow();
-  if (row < 3) return; // Ignore headers / metadata / counter row
-  const frozenRows = Math.max(sheet.getFrozenRows(), 1);
-  if (row <= frozenRows) return;
+  if (row < 3) {
+    if (row === 2) {
+      // Row 2 must remain strictly a blank spacer row!
+      ensureRow2IsBlankAndFrozen(sheet);
+    }
+    return; // Ignore headers / metadata / blank row 2
+  }
 
   const col = range.getColumn();
   const colIndex = col - 1; // 0-based
   const colMap = getSheetColumnMap(sheet);
   const ss = sheet.getParent();
+
+  // If an edit occurs on any complaint row (row >= 3), guarantee Column C contains the dynamic CF formula
+  if (colMap.cf !== undefined) {
+    const cfCol = colMap.cf + 1;
+    const cfCell = sheet.getRange(row, cfCol);
+    const existingFormula = cfCell.getFormula();
+    if (!existingFormula || !existingFormula.toUpperCase().includes('COUNTIF')) {
+      const twitterLetter = getColumnLetter(colMap.twitterId !== undefined ? colMap.twitterId : 5, 'F');
+      cfCell.setFormula('=IF($' + twitterLetter + row + '="","",COUNTIF($' + twitterLetter + ':$' + twitterLetter + ',$' + twitterLetter + row + '))');
+      cfCell.setHorizontalAlignment('center').setVerticalAlignment('middle');
+    }
+  }
 
   // 0. DATE COLUMN EDITED: normalize to genuine Date and sort descending
   if (colIndex === colMap.date) {
@@ -1154,6 +1237,8 @@ function onOpen() {
   const ui = SpreadsheetApp.getUi();
   ui.createMenu('UPPCL Automation')
     .addItem('⚡ Sort Sheet by Date: Newest First (Z–A)', 'sortSheetByDateDescending')
+    .addItem('❄️ Ensure Blank Row 2 & Freeze Top 2 Rows', 'ensureRow2IsBlankAndFrozen')
+    .addItem('Apply CF Formula to Column C (Twitter ID Repeat Count)', 'applyCfFormulaToSheet')
     .addItem('📅 Convert & Fix All Date Types (True Dates)', 'fixDateColumnInSheet')
     .addItem('⏱ Recalculate 30-Min SLA Column (REPLY_WITHIN_30_MIN)', 'recalculateReplyWithin30MinInSheet')
     .addSeparator()
@@ -1221,16 +1306,8 @@ function applyOriginalFormatting() {
     .setWrap(true)
     .setBorder(true, true, true, true, true, true, '#000000', SpreadsheetApp.BorderStyle.SOLID);
 
-  // 2. Row 2 Counter (33px, #4DD0E1 Cyan, Verdana 11pt bold)
-  sheet.setRowHeight(2, 33);
-  sheet.getRange(2, 1, 1, lastCol)
-    .setFontFamily('Verdana').setFontSize(11).setFontWeight('bold')
-    .setBackground('#4DD0E1').setFontColor('#1A2F40')
-    .setHorizontalAlignment('center').setVerticalAlignment('middle')
-    .setWrap(false)
-    .setBorder(true, true, true, true, true, true, '#000000', SpreadsheetApp.BorderStyle.SOLID);
-
-  sheet.setFrozenRows(2);
+  // 2. Row 2 Blank Spacer Row (25px, clean/blank, permanently frozen)
+  ensureRow2IsBlankAndFrozen(sheet);
 
   // 3. Set all data rows to 45px height with text wrapping
   for (let r = 3; r <= lastRow; r++) {
@@ -1304,6 +1381,9 @@ function applyOriginalFormatting() {
   if (colMap.draftReply !== undefined) {
     sheet.getRange(3, colMap.draftReply + 1, numDataRows, 1).setHorizontalAlignment('left');
   }
+
+  // Ensure CF formula is applied dynamically across all data rows (Row 3 to lastRow)
+  applyCfFormulaToSheet(sheet, true);
 
   SpreadsheetApp.flush();
 }
@@ -1613,7 +1693,7 @@ function syncFromWorkingSheet() {
     return;
   }
 
-  const startAppendRow = sheet.getLastRow() + 1;
+  const startAppendRow = Math.max(sheet.getLastRow() + 1, 3);
   const numToAppend = rowsToAppend.length;
   const rawValues = rowsToAppend.map(r => r.values);
 
@@ -1657,6 +1737,10 @@ function syncFromWorkingSheet() {
   // Apply dropdown data validations to newly appended rows
   const colMap = getSheetColumnMap(sheet);
   setupRowDropdowns(sheet, startAppendRow, numToAppend, colMap, ss);
+
+  ensureRow2IsBlankAndFrozen(sheet);
+  applyCfFormulaToSheet(sheet, true);
+  sortSheetByDateDescending();
 
   SpreadsheetApp.flush();
   SpreadsheetApp.getUi().alert('Success!\n\nSynchronized ' + numToAppend + ' complaints from working sheet (19-10-26).\nTotal complaints now in sheet: ' + totalCount);
@@ -1715,7 +1799,7 @@ function removeOfficialPostsFromSheet() {
 
   if (colMap.cf !== undefined) {
     for (let i = 0; i < cleanRows.length; i++) {
-      cleanRows[i][colMap.cf] = i + 1;
+      cleanRows[i][colMap.cf] = ''; // Will be populated dynamically by CF formula
     }
   }
 
@@ -1751,6 +1835,9 @@ function removeOfficialPostsFromSheet() {
 
   if (colMap.postText !== undefined) sheet.getRange(3, colMap.postText + 1, cleanRows.length, 1).setHorizontalAlignment('left');
   if (colMap.draftReply !== undefined) sheet.getRange(3, colMap.draftReply + 1, cleanRows.length, 1).setHorizontalAlignment('left');
+
+  ensureRow2IsBlankAndFrozen(sheet);
+  applyCfFormulaToSheet(sheet, true);
 
   SpreadsheetApp.flush();
 
@@ -1810,7 +1897,7 @@ function removeDuplicateRowsFromSheet() {
 
   if (colMap.cf !== undefined) {
     for (let i = 0; i < cleanRows.length; i++) {
-      cleanRows[i][colMap.cf] = i + 1;
+      cleanRows[i][colMap.cf] = ''; // Will be populated dynamically by CF formula
     }
   }
 
@@ -1846,6 +1933,9 @@ function removeDuplicateRowsFromSheet() {
 
   if (colMap.postText !== undefined) sheet.getRange(3, colMap.postText + 1, cleanRows.length, 1).setHorizontalAlignment('left');
   if (colMap.draftReply !== undefined) sheet.getRange(3, colMap.draftReply + 1, cleanRows.length, 1).setHorizontalAlignment('left');
+
+  ensureRow2IsBlankAndFrozen(sheet);
+  applyCfFormulaToSheet(sheet, true);
 
   SpreadsheetApp.flush();
 
@@ -1959,7 +2049,7 @@ function doGet(e) {
     const lastRow = sheet.getLastRow();
     const lastCol = sheet.getLastColumn();
 
-    if (lastRow < 2) {
+    if (lastRow < 3) {
       return ContentService.createTextOutput(JSON.stringify({
         status: 'ok',
         sheetTitle: sheet.getName(),
@@ -1972,7 +2062,7 @@ function doGet(e) {
     }
 
     const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
-    const data = sheet.getRange(2, 1, lastRow - 1, lastCol).getValues();
+    const data = sheet.getRange(3, 1, lastRow - 2, lastCol).getValues();
 
     return ContentService.createTextOutput(JSON.stringify({
       status: 'ok',
@@ -2084,7 +2174,8 @@ function doPost(e) {
       }
     }
 
-    const startRow = Math.max(sheet.getLastRow() + 1, 2);
+    ensureRow2IsBlankAndFrozen(sheet);
+    const startRow = Math.max(sheet.getLastRow() + 1, 3);
     const range = sheet.getRange(startRow, 1, rows.length, rows[0].length);
     range.setValues(rows);
     range.setFontFamily('Verdana');
@@ -2139,7 +2230,16 @@ function doPost(e) {
       sheet.getRange(startRow, colMap.draftReply + 1, rows.length, 1).setHorizontalAlignment('left');
     }
 
+    // Apply dynamic CF formula across all data rows (Row 3 to lastRow)
+    applyCfFormulaToSheet(sheet, true);
+
     SpreadsheetApp.flush();
+
+    // Guarantee Row 2 is blank and top 2 rows remain frozen
+    ensureRow2IsBlankAndFrozen(sheet);
+
+    // Apply dynamic CF formula across all data rows (Row 3 to lastRow)
+    applyCfFormulaToSheet(sheet, true);
 
     // Automatically sort entire sheet by DATE descending (Z-A, latest complaints at top)
     sortSheetByDateDescending();
@@ -2711,13 +2811,6 @@ function runCloudSyncCycle() {
     rowsToInsert.reverse();
 
     const insertStartRow = Math.max(sheet.getLastRow() + 1, 3);
-    const startCount = insertStartRow - 2;
-
-    if (colMap.cf !== undefined) {
-      for (let r = 0; r < rowsToInsert.length; r++) {
-        rowsToInsert[r][colMap.cf] = startCount + r;
-      }
-    }
 
     const range = sheet.getRange(insertStartRow, 1, rowsToInsert.length, totalCols);
     range.setValues(rowsToInsert);
@@ -2775,6 +2868,12 @@ function runCloudSyncCycle() {
       .setAllowInvalid(true)
       .build();
     sheet.getRange(insertStartRow, uppclColCycle, rowsToInsert.length, 1).setDataValidation(dropdownRuleCycle);
+
+    // Guarantee Row 2 is blank and top 2 rows remain frozen
+    ensureRow2IsBlankAndFrozen(sheet);
+
+    // Apply dynamic CF formula across all data rows (Row 3 to lastRow)
+    applyCfFormulaToSheet(sheet, true);
 
     // Automatically sort entire sheet by DATE descending (Z-A, latest complaints at top)
     sortSheetByDateDescending();
@@ -3115,18 +3214,15 @@ function sortSheetByDateDescending() {
   let sheet = ss.getSheetByName('Twitter Complaint List');
   if (!sheet) sheet = ss.getActiveSheet();
 
+  // Guarantee Row 2 is blank and top 2 rows are permanently frozen
+  ensureRow2IsBlankAndFrozen(sheet);
+
   const lastRow = sheet.getLastRow();
   const lastCol = sheet.getLastColumn();
-  if (lastRow < 2) return;
+  if (lastRow < 3) return; // Only Header (Row 1) and Blank (Row 2) exist
 
-  // Pin Row 1 header row permanently
-  if (sheet.getFrozenRows() < 1) {
-    sheet.setFrozenRows(1);
-  }
-
-  const frozenRows = Math.max(sheet.getFrozenRows(), 1);
-  const startRow = frozenRows >= 2 ? 3 : 2;
-  const numRows = lastRow - startRow + 1;
+  const startRow = 3;
+  const numRows = lastRow - 2;
   if (numRows <= 0) return;
 
   const colMap = getSheetColumnMap(sheet);
@@ -3146,8 +3242,12 @@ function sortSheetByDateDescending() {
   }
 
   dataRange.sort(sortCriteria);
+
+  // Automatically refresh and lock CF formula across Column C (Row 3 to lastRow)
+  applyCfFormulaToSheet(sheet, true);
+
   SpreadsheetApp.flush();
-  Logger.log('Successfully sorted ' + numRows + ' rows by DATE (Z-A, newest first).');
+  Logger.log('Successfully sorted ' + numRows + ' rows by DATE (Z-A, newest first) starting at Row 3.');
 }
 
 /**
@@ -3161,19 +3261,16 @@ function fixDateColumnInSheet() {
   let sheet = ss.getSheetByName('Twitter Complaint List');
   if (!sheet) sheet = ss.getActiveSheet();
 
-  // Pin Row 1 header permanently
-  if (sheet.getFrozenRows() < 1) {
-    sheet.setFrozenRows(1);
-  }
+  // Guarantee Row 2 is blank and top 2 rows are permanently frozen
+  ensureRow2IsBlankAndFrozen(sheet);
 
   const lastRow = sheet.getLastRow();
-  if (lastRow < 2) return 0;
+  if (lastRow < 3) return 0;
 
   const colMap = getSheetColumnMap(sheet);
   const lastCol = sheet.getLastColumn();
-  const frozenRows = Math.max(sheet.getFrozenRows(), 1);
-  const startRow = frozenRows >= 2 ? 3 : 2;
-  const numRows = lastRow - startRow + 1;
+  const startRow = 3;
+  const numRows = lastRow - 2;
   if (numRows <= 0) return 0;
 
   const data = sheet.getRange(startRow, 1, numRows, lastCol).getValues();
@@ -3345,19 +3442,21 @@ function repairMisalignedRowsInSheet() {
   let sheet = ss.getSheetByName('Twitter Complaint List');
   if (!sheet) sheet = ss.getActiveSheet();
 
+  ensureRow2IsBlankAndFrozen(sheet);
+
   const lastRow = sheet.getLastRow();
-  if (lastRow < 2) return 0;
-  const numRows = lastRow - 1;
+  if (lastRow < 3) return 0;
+  const numRows = lastRow - 2;
   const colMap = getSheetColumnMap(sheet);
   const totalCols = sheet.getLastColumn();
-  const data = sheet.getRange(2, 1, numRows, totalCols).getValues();
+  const data = sheet.getRange(3, 1, numRows, totalCols).getValues();
   const overridesMap = getManualOverridesMap(ss);
 
   let repairedCount = 0;
 
   for (let i = 0; i < data.length; i++) {
     const row = data[i];
-    const sheetRowNumber = i + 2;
+    const sheetRowNumber = i + 3;
 
     const curText = (colMap.postText !== undefined) ? String(row[colMap.postText] || '').trim() : '';
     const curReply30 = (colMap.reply30 !== undefined) ? String(row[colMap.reply30] || '').trim() : '';
@@ -3417,20 +3516,13 @@ function repairMisalignedRowsInSheet() {
     const curDate = (colMap.date !== undefined) ? String(row[colMap.date] || '').trim() : '21-10-2026';
     const curShift = (colMap.linkShift !== undefined) ? String(row[colMap.linkShift] || '').trim() : 'MORNING';
 
-    // 6. CF counter (sequential number)
-    let cfVal = i + 1;
-    if (/^\d+$/.test(curReply30)) {
-      cfVal = curReply30;
-    } else if (colMap.cf !== undefined && /^\d+$/.test(String(row[colMap.cf] || ''))) {
-      cfVal = row[colMap.cf];
-    }
-
+    // 6. CF field (leave blank, dynamic CF formula will be applied across dataset)
     // Reconstruct clean row array matching totalCols
     const cleanRow = new Array(totalCols).fill('');
     if (colMap.date !== undefined) cleanRow[colMap.date] = curDate;
     if (colMap.linkShift !== undefined) cleanRow[colMap.linkShift] = curShift;
     if (colMap.replyShift !== undefined) cleanRow[colMap.replyShift] = curShift;
-    if (colMap.cf !== undefined) cleanRow[colMap.cf] = cfVal;
+    if (colMap.cf !== undefined) cleanRow[colMap.cf] = '';
     if (colMap.reply30 !== undefined) cleanRow[colMap.reply30] = c.replyWithin30Min;
     if (colMap.linkUrl !== undefined) cleanRow[colMap.linkUrl] = recoveredUrl;
     if (colMap.twitterId !== undefined) cleanRow[colMap.twitterId] = recoveredHandle;
@@ -3505,46 +3597,70 @@ function repairMisalignedRowsInSheet() {
     repairedCount++;
   }
 
+  ensureRow2IsBlankAndFrozen(sheet);
+  applyCfFormulaToSheet(sheet, true);
+  sortSheetByDateDescending();
+
   SpreadsheetApp.flush();
   const alertMsg = 'Repair Complete!\n\nRealigned ' + repairedCount + ' misaligned row(s) to match the new 23-column sheet layout perfectly.';
   try { SpreadsheetApp.getUi().alert(alertMsg); } catch (e) { Logger.log(alertMsg); }
   return repairedCount;
 }
 
-
-
-
-
 /**
- * Applies Complainant Frequency (CF) formula to Column C:
+ * Applies Complainant Frequency (CF) formula to Column C (or dynamically resolved CF column):
  * Formula: =IF($F3="","",COUNTIF($F:$F,$F3))
  * Counts how many times the Twitter ID in Column F repeats across the dataset.
+ * Automatically clears Row 2 so Row 2 remains 100% blank.
+ *
+ * @param {Sheet} [targetSheet] - Optional sheet instance.
+ * @param {boolean} [silent=false] - If true, suppresses UI alerts.
  */
-function applyCfFormulaToSheet() {
+function applyCfFormulaToSheet(targetSheet, silent) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  let sheet = ss.getSheetByName('Twitter Complaint List');
-  if (!sheet) sheet = ss.getActiveSheet();
+  let sheet = targetSheet || (ss ? ss.getSheetByName('Twitter Complaint List') : null);
+  if (!sheet && ss) sheet = ss.getActiveSheet();
+  if (!sheet) return;
 
   const lastRow = sheet.getLastRow();
   if (lastRow < 3) {
-    try {
-      SpreadsheetApp.getUi().alert('No data rows found in "Twitter Complaint List".');
-    } catch(e) {
-      Logger.log('No data rows found.');
+    if (!silent) {
+      try {
+        SpreadsheetApp.getUi().alert('No data rows found in "Twitter Complaint List".');
+      } catch(e) {
+        Logger.log('No data rows found.');
+      }
     }
     return;
   }
 
-  // Column C is Column index 3 (1-based)
-  const cfRange = sheet.getRange(3, 3, lastRow - 2, 1);
-  cfRange.setFormula('=IF($F3="","",COUNTIF($F:$F,$F3))');
+  const colMap = getSheetColumnMap(sheet);
+  const cfColIndex = (colMap.cf !== undefined) ? colMap.cf : 2; // 0-based: 2 is Column C
+  const cfCol = cfColIndex + 1; // 1-based
+
+  const twitterIdColZero = (colMap.twitterId !== undefined) ? colMap.twitterId : 5; // 0-based: 5 is Column F
+  const twitterLetter = getColumnLetter(twitterIdColZero, 'F');
+
+  const numRows = lastRow - 2;
+  const formula = '=IF($' + twitterLetter + '3="","",COUNTIF($' + twitterLetter + ':$' + twitterLetter + ',$' + twitterLetter + '3))';
+
+  // Ensure Row 2 CF cell is completely blank
+  sheet.getRange(2, cfCol).clearContent();
+
+  // Populate dynamic formula across Row 3 to lastRow
+  const cfRange = sheet.getRange(3, cfCol, numRows, 1);
+  cfRange.setFormula(formula);
   cfRange.setHorizontalAlignment('center').setVerticalAlignment('middle');
   SpreadsheetApp.flush();
 
-  const msg = 'CF Formula Applied Successfully!\n\nPopulated =COUNTIF($F:$F, $F3) across ' + (lastRow - 2) + ' rows in Column C.';
-  try {
-    SpreadsheetApp.getUi().alert(msg);
-  } catch(e) {
+  const msg = 'CF Formula Applied Successfully!\n\nPopulated ' + formula + ' across ' + numRows + ' rows in Column ' + getColumnLetter(cfColIndex, 'C') + '.';
+  if (!silent) {
+    try {
+      SpreadsheetApp.getUi().alert(msg);
+    } catch(e) {
+      Logger.log(msg);
+    }
+  } else {
     Logger.log(msg);
   }
 }
@@ -4110,6 +4226,9 @@ function removeOfficialRepliedFromSheet() {
       removedCount++;
     }
   }
+
+  ensureRow2IsBlankAndFrozen(sheet);
+  applyCfFormulaToSheet(sheet, true);
 
   SpreadsheetApp.flush();
   const msg = 'Official Reply Audit Complete!\n\nRemoved ' + removedCount + ' complaint row(s) where official handles (@PuVVNLHQ, @MVVNLHQ, etc.) already replied before UPPCLLKO.';
