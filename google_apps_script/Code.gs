@@ -608,7 +608,7 @@ const COMPLAINT_TYPE_DROPDOWN_VALUES = [
 ];
 
 // Picked status dropdown values
-const PICKED_STATUS_DROPDOWN_VALUES = ['YES', 'NO', 'TROLL', 'APPRECIATION'];
+const PICKED_STATUS_DROPDOWN_VALUES = ['YES', 'NO', 'OTHER', 'TROLL', 'APPRECIATION'];
 
 // Untagged complaint dropdown values
 const UNTAGGED_DROPDOWN_VALUES = ['YES', 'NO'];
@@ -868,7 +868,7 @@ function setupSheetDropdownsAndValidations(sheet) {
   SpreadsheetApp.flush();
 
   const msg = 'Dropdowns and Data Validations have been successfully applied!\n\n' +
-    '• Picked Status: YES, NO, TROLL, APPRECIATION\n' +
+    '• Picked Status: YES, NO, OTHER, TROLL, APPRECIATION\n' +
     '• Complaint Type: 29 Standard Categories\n' +
     '• Untagged Complaint: YES, NO\n' +
     '• Head: 13 Monitored Codes\n' +
@@ -1175,6 +1175,7 @@ function onOpen() {
     .addItem('🔄 Restore Standard Column Headers (Row 1)', 'restoreStandardHeaders')
     .addItem('⚡ Populate UPPCLLKO Replied (YES/NO) across All Rows', 'populateUppclRepliedColumn')
     .addItem('📋 Setup YES/NO Dropdowns for UPPCLLKO Replied (Col J)', 'setupUppclRepliedDropdowns')
+    .addItem('📋 Setup YES/NO/OTHER Dropdowns for Picked Status', 'setupPickedStatusDropdowns')
     .addItem('📅 Auto-Fix Corrupted Date Column (Col A)', 'fixDateColumnInSheet')
     .addItem('🔗 Auto-Fix Malformed/Missing Post Links (Col E)', 'fixMalformedUrlsInSheet')
     .addItem('Apply CF Formula to Column C (Twitter ID Repeat Count)', 'applyCfFormulaToSheet')
@@ -3631,6 +3632,43 @@ function setupUppclRepliedDropdowns() {
 
   const colHeader = sheet.getRange(1, targetCol).getValue() || 'UPPCLLKO Replied (YES/NO)';
   const msg = 'Successfully enabled YES/NO in-cell dropdowns for ' + colHeader + ' (Column ' + targetCol + ') across ' + numDataRows + ' rows (Rows 3 to ' + targetRows + ')!';
+  try {
+    SpreadsheetApp.getUi().alert('Dropdown Setup Complete\n\n' + msg);
+  } catch (e) {
+    Logger.log(msg);
+  }
+  return numDataRows;
+}
+
+/**
+ * Enables in-cell dropdown validation for 'Picked Status' column with YES, NO, OTHER, TROLL, APPRECIATION.
+ * Dynamically resolves column by Row 1 header.
+ * Applies across all data rows (Row 3 to the end of the sheet).
+ */
+function setupPickedStatusDropdowns() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sheet = ss.getSheetByName('Twitter Complaint List');
+  if (!sheet) sheet = ss.getActiveSheet();
+
+  const lastRow = sheet.getLastRow();
+  const maxRows = sheet.getMaxRows();
+  const targetRows = Math.max(lastRow, maxRows);
+  if (targetRows < 3) return 0;
+
+  const colMap = getSheetColumnMap(sheet);
+  const targetCol = (colMap.pickedStatus !== undefined) ? colMap.pickedStatus + 1 : 7;
+  const numDataRows = targetRows - 2;
+
+  const rule = SpreadsheetApp.newDataValidation()
+    .requireValueInList(PICKED_STATUS_DROPDOWN_VALUES, true)
+    .setAllowInvalid(true)
+    .build();
+
+  sheet.getRange(3, targetCol, numDataRows, 1).setDataValidation(rule);
+  SpreadsheetApp.flush();
+
+  const colHeader = sheet.getRange(1, targetCol).getValue() || 'Picked Status';
+  const msg = 'Successfully enabled YES, NO, OTHER in-cell dropdowns for ' + colHeader + ' (Column ' + targetCol + ') across ' + numDataRows + ' rows (Rows 3 to ' + targetRows + ')!';
   try {
     SpreadsheetApp.getUi().alert('Dropdown Setup Complete\n\n' + msg);
   } catch (e) {
