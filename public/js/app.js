@@ -204,7 +204,9 @@ const App = {
 
     this.startClock();
     if (this.token) {
-      if (!this.user || (this.user.role || '').toLowerCase() !== 'operator') {
+      const curRole = (this.user?.role || '').toLowerCase();
+      const curUser = (this.user?.username || '').toLowerCase();
+      if (curRole !== 'operator' && curRole !== 'social media cell operator' && curUser !== 'smc_operator' && curUser !== 'operator') {
         this.startNotificationPoller();
         this.startSyncPoller();
       }
@@ -487,7 +489,9 @@ const App = {
   },
 
   async loadMasterData() {
-    if (this.user && (this.user.role || '').toLowerCase() === 'operator') {
+    const curRole = (this.user?.role || '').toLowerCase();
+    const curUser = (this.user?.username || '').toLowerCase();
+    if (curRole === 'operator' || curRole === 'social media cell operator' || curUser === 'smc_operator' || curUser === 'operator') {
       return;
     }
     try {
@@ -521,7 +525,9 @@ const App = {
     this.user = user;
     localStorage.setItem('uppcl_smc_token', token);
     localStorage.setItem('uppcl_smc_user', JSON.stringify(user));
-    if ((user.role || '').toLowerCase() !== 'operator') {
+    const loginRole = (user?.role || '').toLowerCase();
+    const loginUser = (user?.username || '').toLowerCase();
+    if (loginRole !== 'operator' && loginRole !== 'social media cell operator' && loginUser !== 'smc_operator' && loginUser !== 'operator') {
       this.startNotificationPoller();
       this.startSyncPoller();
     }
@@ -551,7 +557,12 @@ const App = {
   },
 
   navigate(page, params = {}) {
-    const isRestrictedOperator = (this.user && (this.user.role || '').toLowerCase() === 'operator');
+    const roleLower = (this.user?.role || '').toLowerCase();
+    const usernameLower = (this.user?.username || '').toLowerCase();
+    const isRestrictedOperator = roleLower === 'operator' || 
+                                 roleLower === 'social media cell operator' || 
+                                 usernameLower === 'smc_operator' || 
+                                 usernameLower === 'operator';
     if (isRestrictedOperator && page !== 'working-sheet') {
       page = 'working-sheet';
     }
@@ -631,8 +642,12 @@ const App = {
   // -----------------------------------------------------------
   renderApp() {
     const root = document.getElementById('app');
-    const roleLower = (this.user.role || '').toLowerCase();
-    const isRestrictedOperator = roleLower === 'operator';
+    const roleLower = (this.user?.role || '').toLowerCase();
+    const usernameLower = (this.user?.username || '').toLowerCase();
+    const isRestrictedOperator = roleLower === 'operator' || 
+                                 roleLower === 'social media cell operator' || 
+                                 usernameLower === 'smc_operator' || 
+                                 usernameLower === 'operator';
     const isSuperAdmin = ['administrator', 'admin', 'super administrator'].includes(roleLower);
     const isOperator = ['administrator', 'admin', 'super administrator', 'social media cell operator', 'complaint handler', 'operator'].includes(roleLower);
     const isSupervisor = ['administrator', 'admin', 'super administrator', 'supervisor / management'].includes(roleLower);

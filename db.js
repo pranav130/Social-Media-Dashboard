@@ -62,11 +62,13 @@ async function initDb() {
   try {
     const opUser = get("SELECT id FROM users WHERE username = 'smc_operator';");
     if (!opUser) {
-      const defaultOpHash = '$2b$10$7SfXtx28pDIstzEXyJOR8eWQcYWAiG7Y47fpqZJz9pZepRXV7kD3q';
+      const defaultOpHash = '$2b$10$AbcukpyP6sRnNK9xlOzRouly6HOSQglJJuoKEvUEVEVCZrNNbmfcu';
       run(`
         INSERT INTO users (username, password_hash, full_name, email, role, is_active, created_at, updated_at)
         VALUES ('smc_operator', ?, 'SMC Working Sheet Operator', 'operator.working@uppcl.org', 'operator', 1, datetime('now'), datetime('now'));
       `, [defaultOpHash]);
+    } else {
+      run("UPDATE users SET password_hash = ? WHERE username = 'smc_operator';", [defaultOpHash]);
     }
   } catch (e) {}
 

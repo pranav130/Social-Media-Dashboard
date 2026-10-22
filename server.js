@@ -81,12 +81,26 @@ app.get(['/code', '/view-code'], (req, res) => {
 </html>`);
 });
 
-// Static frontend with cache revalidation
+// Anti-caching middleware for modern browser SPA freshness
+app.use((req, res, next) => {
+  const p = req.path.toLowerCase();
+  if (p === '/' || p.endsWith('.html') || p.endsWith('.js') || p.endsWith('.css')) {
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate, proxy-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+    res.setHeader('Surrogate-Control', 'no-store');
+  }
+  next();
+});
+
+// Static frontend
 app.use(express.static(path.join(__dirname, 'public'), {
+  etag: false,
+  maxAge: 0,
   setHeaders: (res, filePath) => {
-    if (filePath.endsWith('.html') || filePath.endsWith('.js') || filePath.endsWith('.css')) {
-      res.setHeader('Cache-Control', 'no-cache, must-revalidate');
-    }
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate, proxy-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
   }
 }));
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
@@ -172,7 +186,14 @@ function authMiddleware(req, res, next) {
     req.user = user;
 
     // Strict Role-Based Server-Side Authorization for Restricted Operator Role
-    if ((user.role || '').toLowerCase() === 'operator') {
+    const userRoleLower = (user.role || '').toLowerCase();
+    const userUsernameLower = (user.username || '').toLowerCase();
+    const isRestrictedOp = userRoleLower === 'operator' || 
+                           userRoleLower === 'social media cell operator' || 
+                           userUsernameLower === 'smc_operator' ||
+                           userUsernameLower === 'operator';
+
+    if (isRestrictedOp) {
       const allowedPaths = [
         '/api/auth/me',
         '/api/auth/logout',
@@ -242,7 +263,8 @@ app.post('/api/auth/login', (req, res) => {
     // Support simplified/smaller passwords for standard roles, as well as legacy passwords
     const standardShortPasswords = {
       admin: ['admin123', 'admin', 'uppcl123', 'Admin@UPPCL2026'],
-      operator: ['operator123', 'operator', 'uppcl123', 'Operator@UPPCL2026'],
+      smc_operator: ['Operator@123', 'operator123', 'operator', 'uppcl123', 'Operator@UPPCL2026', 'k7_Ht=8VexB&4Zr3Eb'],
+      operator: ['Operator@123', 'operator123', 'operator', 'uppcl123', 'Operator@UPPCL2026'],
       operator2: ['operator123', 'operator', 'uppcl123', 'Operator@UPPCL2026'],
       supervisor: ['supervisor123', 'supervisor', 'uppcl123', 'Supervisor@UPPCL2026'],
       reviewer: ['reviewer123', 'reviewer', 'uppcl123', 'Reviewer@UPPCL2026']
@@ -3599,6 +3621,9 @@ app.get(['/post/:id', '/p/:id'], (req, res) => {
 
 // Single Page Application Fallback
 app.use((req, res) => {
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate, proxy-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
@@ -3641,7 +3666,7 @@ if (process.env.NO_SERVER_AUTOSTART !== 'true') {
 
     // Ensure smc_operator account is securely configured
     try {
-      const defaultOpHash = '$2b$10$7SfXtx28pDIstzEXyJOR8eWQcYWAiG7Y47fpqZJz9pZepRXV7kD3q';
+      const defaultOpHash = '$2b$10$AbcukpyP6sRnNK9xlOzRouly6HOSQglJJuoKEvUEVEVCZrNNbmfcu';
       const targetHash = process.env.OPERATOR_PASSWORD
         ? bcrypt.hashSync(process.env.OPERATOR_PASSWORD, 10)
         : defaultOpHash;
@@ -3654,7 +3679,7 @@ if (process.env.NO_SERVER_AUTOSTART !== 'true') {
         `, [targetHash]);
         db.saveToDiskSync();
         console.log('[Auth] smc_operator account initialized with secure password hash.');
-      } else if (process.env.OPERATOR_PASSWORD) {
+      } else {
         db.run("UPDATE users SET password_hash = ? WHERE username = 'smc_operator';", [targetHash]);
         db.saveToDiskSync();
       }
