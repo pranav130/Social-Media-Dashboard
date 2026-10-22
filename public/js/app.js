@@ -842,11 +842,11 @@ const App = {
         </div>
 
         <div class="chart-card">
-          <div class="chart-header">
-            <div class="chart-title" style="font-size: 15px; font-weight: 700;"><i class="fa-brands fa-x-twitter"></i> Official Monitored Handles List</div>
-            <span style="font-size: 12.5px; color: var(--text-muted); font-weight: 600;"><i class="fa-solid fa-satellite-dish" style="color: #10b981;"></i> 5 Monitored Handles</span>
+          <div class="chart-header" style="margin-bottom: 10px;">
+            <div class="chart-title" style="font-size: 14.5px; font-weight: 700;"><i class="fa-brands fa-x-twitter"></i> Official Monitored Handles List</div>
+            <span style="font-size: 11.5px; color: var(--text-muted); font-weight: 600;"><i class="fa-solid fa-satellite-dish" style="color: #10b981;"></i> 5 Monitored Handles</span>
           </div>
-          <div class="chart-body" id="official-monitored-handles-container" style="overflow-y: auto; display: flex; flex-direction: column; gap: 8px; min-height: 280px; padding: 4px;">
+          <div class="chart-body" id="official-monitored-handles-container" style="height: auto; min-height: 250px; overflow: visible; display: flex; flex-direction: column; justify-content: space-between; gap: 6px; padding: 0;">
           </div>
         </div>
 
@@ -1707,38 +1707,38 @@ const App = {
     container.innerHTML = monitoredHandles.map(h => {
       const isActive = currentHandle === h.handle;
       return `
-        <div style="display: flex; align-items: center; justify-content: space-between; padding: 9px 14px; background: ${isActive ? 'rgba(0, 128, 128, 0.12)' : 'var(--bg-subtle)'}; border: 1.5px solid ${isActive ? 'var(--primary)' : 'var(--border-color)'}; border-radius: 8px; gap: 12px; transition: all 0.2s ease;">
-          <div style="display: flex; align-items: center; gap: 11px; min-width: 0;">
-            <span style="display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: 50%; background: #000; color: #fff; font-size: 14px; flex-shrink: 0; box-shadow: 0 1px 3px rgba(0,0,0,0.25);">
+        <div style="display: flex; align-items: center; justify-content: space-between; padding: 6px 12px; background: ${isActive ? 'rgba(0, 128, 128, 0.12)' : 'var(--bg-subtle)'}; border: 1.5px solid ${isActive ? 'var(--primary)' : 'var(--border-color)'}; border-radius: 7px; gap: 10px; transition: all 0.2s ease;">
+          <div style="display: flex; align-items: center; gap: 10px; min-width: 0;">
+            <span style="display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 50%; background: #000; color: #fff; font-size: 13px; flex-shrink: 0; box-shadow: 0 1px 2px rgba(0,0,0,0.2);">
               <i class="fa-brands fa-x-twitter"></i>
             </span>
             <div style="min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
-              <div style="display: flex; align-items: center; gap: 7px;">
-                <a href="https://x.com/${h.handle.replace('@', '')}" target="_blank" rel="noopener noreferrer" style="font-weight: 800; font-size: 15px; color: var(--primary); text-decoration: none;" title="Open ${h.handle} profile on X">
-                  ${h.handle} <i class="fa-solid fa-arrow-up-right-from-square" style="font-size: 11.5px; color: var(--text-muted);"></i>
+              <div style="display: flex; align-items: center; gap: 6px; line-height: 1.3;">
+                <a href="https://x.com/${h.handle.replace('@', '')}" target="_blank" rel="noopener noreferrer" style="font-weight: 800; font-size: 14px; color: var(--primary); text-decoration: none;" title="Open ${h.handle} profile on X">
+                  ${h.handle} <i class="fa-solid fa-arrow-up-right-from-square" style="font-size: 10.5px; color: var(--text-muted);"></i>
                 </a>
-                <span style="font-size: 13.5px; font-weight: 700; color: var(--text-dark);">&bull; ${h.title}</span>
+                <span style="font-size: 12.5px; font-weight: 700; color: var(--text-dark);">&bull; ${h.title}</span>
               </div>
-              <div style="font-size: 12px; color: var(--text-muted); margin-top: 1px;">${h.role}</div>
+              <div style="font-size: 11px; color: var(--text-muted); line-height: 1.2; margin-top: 1px;">${h.role}</div>
             </div>
           </div>
-          <div style="display: flex; align-items: center; gap: 8px; flex-shrink: 0;">
+          <div style="display: flex; align-items: center; gap: 6px; flex-shrink: 0;">
             ${isActive ? `
-              <span style="display: inline-flex; align-items: center; gap: 5px; background: rgba(0, 128, 128, 0.18); color: var(--primary); border: 1.5px solid var(--primary); font-size: 12px; font-weight: 700; padding: 4px 10px; border-radius: 6px;">
+              <span style="display: inline-flex; align-items: center; gap: 4px; background: rgba(0, 128, 128, 0.18); color: var(--primary); border: 1.5px solid var(--primary); font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 5px;">
                 <i class="fa-solid fa-check"></i> Active
               </span>
-              <button type="button" class="btn btn-sm btn-outline" onclick="App.filterDashboardByHandle('All')" style="padding: 4px 10px; font-size: 12px; font-weight: 700; cursor: pointer; color: #ef4444; border-color: #ef4444; border-radius: 6px;" title="Reset handle filter">
+              <button type="button" class="btn btn-sm btn-outline" onclick="App.filterDashboardByHandle('All')" style="padding: 3px 8px; font-size: 11px; font-weight: 700; cursor: pointer; color: #ef4444; border-color: #ef4444; border-radius: 5px;" title="Reset handle filter">
                 <i class="fa-solid fa-xmark"></i> Clear
               </button>
             ` : `
-              <span style="display: inline-flex; align-items: center; gap: 5px; background: rgba(16, 185, 129, 0.14); color: #10b981; border: 1.5px solid rgba(16, 185, 129, 0.35); font-size: 12px; font-weight: 700; padding: 4px 10px; border-radius: 6px;" title="Actively monitored 24/7">
-                <span class="sync-pulse-dot live" style="width: 7px; height: 7px; display: inline-block;"></span> Monitored
+              <span style="display: inline-flex; align-items: center; gap: 4px; background: rgba(16, 185, 129, 0.14); color: #10b981; border: 1.5px solid rgba(16, 185, 129, 0.35); font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 5px;" title="Actively monitored 24/7">
+                <span class="sync-pulse-dot live" style="width: 6px; height: 6px; display: inline-block;"></span> Monitored
               </span>
-              <button type="button" class="btn btn-sm btn-outline" onclick="App.filterDashboardByHandle('${h.handle}')" style="padding: 4px 12px; font-size: 12px; font-weight: 700; cursor: pointer; border-radius: 6px;" title="Filter dashboard for ${h.handle}">
+              <button type="button" class="btn btn-sm btn-outline" onclick="App.filterDashboardByHandle('${h.handle}')" style="padding: 3px 10px; font-size: 11px; font-weight: 700; cursor: pointer; border-radius: 5px;" title="Filter dashboard for ${h.handle}">
                 <i class="fa-solid fa-filter"></i> Filter
               </button>
             `}
-            <button type="button" class="btn btn-sm btn-ghost" onclick="App.navigate('register', { assigned_handle: '${h.handle}' })" style="padding: 4px 8px; font-size: 12.5px; cursor: pointer; border-radius: 6px;" title="Open all complaints for ${h.handle} in Register">
+            <button type="button" class="btn btn-sm btn-ghost" onclick="App.navigate('register', { assigned_handle: '${h.handle}' })" style="padding: 3px 6px; font-size: 11.5px; cursor: pointer; border-radius: 5px;" title="Open all complaints for ${h.handle} in Register">
               <i class="fa-solid fa-arrow-up-right-from-square"></i>
             </button>
           </div>
