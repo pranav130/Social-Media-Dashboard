@@ -540,7 +540,12 @@ function recalculateReplyWithin30MinInSheet(sheet) {
   }
 
   // Batch write all calculated values to Column D in one operation
-  sheet.getRange(3, reply30ColIndex + 1, updates.length, 1).setValues(updates);
+  if (updates.length > 0) {
+    sheet.getRange(3, reply30ColIndex + 1, updates.length, 1).setValues(updates);
+    sheet.getRange(3, reply30ColIndex + 1, updates.length, 1)
+      .setHorizontalAlignment('center')
+      .setVerticalAlignment('middle');
+  }
   SpreadsheetApp.flush();
 
   const msg = 'REPLY_WITHIN_30_MIN_BY_Laqshya Media column successfully recalculated for ' + updates.length + ' rows!\n\n' +
@@ -892,12 +897,37 @@ function onEdit(e) {
   }
 
   const row = range.getRow();
-  if (row < 3) return; // Ignore headers / metadata
+  const frozenRows = Math.max(sheet.getFrozenRows(), 1);
+  if (row <= frozenRows) return; // Ignore headers / metadata / counter row
 
   const col = range.getColumn();
   const colIndex = col - 1; // 0-based
   const colMap = getSheetColumnMap(sheet);
   const ss = sheet.getParent();
+
+  // 0. DATE COLUMN EDITED: normalize to genuine Date and sort descending
+  if (colIndex === colMap.date) {
+    const val = e.value !== undefined ? e.value : (range.getValue() || '');
+    if (val) {
+      if (typeof val === 'string' && /^\d{1,4}[-\/]\d{1,2}[-\/]\d{1,4}/.test(val.trim())) {
+        const parts = val.trim().split(/[-\/]/);
+        let dObj = null;
+        if (parts[0].length === 4) {
+          // YYYY-MM-DD
+          dObj = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+        } else {
+          // DD-MM-YYYY
+          dObj = new Date(parseInt(parts[2], 10), parseInt(parts[1], 10) - 1, parseInt(parts[0], 10));
+        }
+        if (dObj && !isNaN(dObj.getTime())) {
+          range.setNumberFormat('dd-MM-yyyy');
+          range.setValue(dObj);
+        }
+      }
+      sortSheetByDateDescending();
+    }
+    return;
+  }
 
   const newValue = String(e.value !== undefined ? e.value : (range.getValue() || '')).trim();
 
@@ -3092,12 +3122,15 @@ function sortSheetByDateDescending() {
     sheet.setFrozenRows(1);
   }
 
+  const frozenRows = Math.max(sheet.getFrozenRows(), 1);
+  const startRow = frozenRows >= 2 ? 3 : 2;
+  const numRows = lastRow - startRow + 1;
+  if (numRows <= 0) return;
+
   const colMap = getSheetColumnMap(sheet);
   const dateCol = (colMap.date !== undefined) ? colMap.date : 0;
   const linkUrlCol = (colMap.linkUrl !== undefined) ? colMap.linkUrl : 4;
 
-  const startRow = 2;
-  const numRows = lastRow - 1;
   const dataRange = sheet.getRange(startRow, 1, numRows, lastCol);
 
   // Multi-tier complete-row sort:
@@ -3136,8 +3169,10 @@ function fixDateColumnInSheet() {
 
   const colMap = getSheetColumnMap(sheet);
   const lastCol = sheet.getLastColumn();
-  const startRow = 2;
-  const numRows = lastRow - 1;
+  const frozenRows = Math.max(sheet.getFrozenRows(), 1);
+  const startRow = frozenRows >= 2 ? 3 : 2;
+  const numRows = lastRow - startRow + 1;
+  if (numRows <= 0) return 0;
 
   const data = sheet.getRange(startRow, 1, numRows, lastCol).getValues();
   const dateValues = [];
@@ -3296,51 +3331,6 @@ function fixDateColumnInSheet() {
   return fixCount;
 }
 
-/**
- * Automatically triggers whenever a user manually edits a cell in the sheet.
- * If the DATE column is edited, normalizes the input to a genuine Date and re-sorts.
- */
-function onEdit(e) {
-  if (!e || !e.range) return;
-  try {
-    const sheet = e.range.getSheet();
-    if (sheet.getName() !== 'Twitter Complaint List') return;
-
-    const row = e.range.getRow();
-    if (row < 2) return; // Ignore header row
-
-    const colMap = getSheetColumnMap(sheet);
-    const dateCol = (colMap.date !== undefined) ? colMap.date + 1 : 1;
-
-    // Check if the edited column is the DATE column
-    if (e.range.getColumn() === dateCol) {
-      const val = e.value;
-      if (!val) return;
-
-      // If entered as text string like "22-10-2026" or "2026-10-22", convert to genuine Date
-      if (typeof val === 'string' && /^\d{1,4}[-\/]\d{1,2}[-\/]\d{1,4}/.test(val.trim())) {
-        const parts = val.trim().split(/[-\/]/);
-        let dObj = null;
-        if (parts[0].length === 4) {
-          // YYYY-MM-DD
-          dObj = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
-        } else {
-          // DD-MM-YYYY
-          dObj = new Date(parseInt(parts[2], 10), parseInt(parts[1], 10) - 1, parseInt(parts[0], 10));
-        }
-        if (dObj && !isNaN(dObj.getTime())) {
-          e.range.setNumberFormat('dd-MM-yyyy');
-          e.range.setValue(dObj);
-        }
-      }
-
-      // Re-sort complete rows descending so edited row lands in correct position
-      sortSheetByDateDescending();
-    }
-  } catch (err) {
-    Logger.log('onEdit error: ' + err);
-  }
-}
 
 /**
  * Scans all rows in 'Twitter Complaint List' and repairs misaligned rows
