@@ -2192,19 +2192,20 @@ const App = {
 
                 const sBadge = `badge-${(displayStatus || '').replace(/[\s—/]+/g, '-')}`;
 
+                let replyMarkup = '';
                 let pickedMarkup = '';
                 if (isAppreciation) {
-                  pickedMarkup = `<span class="badge-reply appreciation" title="Consumer appreciation & gratitude post"><i class="fa-solid fa-heart" style="font-size: 9px;"></i> Appreciation</span>`;
+                  replyMarkup = pickedMarkup = `<span class="badge-reply appreciation" title="Consumer appreciation & gratitude post"><i class="fa-solid fa-heart" style="font-size: 9px;"></i> Appreciation</span>`;
                 } else if (hasUppclReplied) {
-                  pickedMarkup = `
+                  replyMarkup = pickedMarkup = `
                     <span class="badge-reply yes" title="Verified UPPCLLKO reply on record"><i class="fa-solid fa-circle-check" style="font-size: 9px;"></i> UPPCLLKO Replied</span>
                   `;
                 } else if (c.discom_replied === 1 || c.current_status === 'DISCOM Follow Up') {
-                  pickedMarkup = `
+                  replyMarkup = pickedMarkup = `
                     <span class="badge-reply discom" title="Responded by registered DISCOM / division handle"><i class="fa-solid fa-arrows-split-up-and-left" style="font-size: 9px;"></i> DISCOM Replied</span>
                   `;
                 } else {
-                  pickedMarkup = `
+                  replyMarkup = pickedMarkup = `
                     <span class="badge-reply no" title="UPPCLLKO not replied in that post"><i class="fa-solid fa-circle-xmark" style="font-size: 9px;"></i> UPPCLLKO Not Replied</span>
                   `;
                 }

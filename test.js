@@ -1375,6 +1375,13 @@ async function runTests() {
     assert.ok(row3Cells[4].startsWith('https://x.com/'), 'Row 3 must contain valid tweet URL');
   });
 
+  it('9. Frontend app.js table rendering does not reference undefined variables', () => {
+    const fs = require('fs');
+    const appJs = fs.readFileSync('public/js/app.js', 'utf8');
+    assert.ok(appJs.includes('let replyMarkup = '), 'app.js must declare replyMarkup');
+    assert.ok(appJs.includes('${replyMarkup}'), 'app.js must render replyMarkup');
+  });
+
   console.log('\n====================================================');
   console.log(` Tests Finished: ${passCount} Passed, ${failCount} Failed`);
   console.log('====================================================\n');
