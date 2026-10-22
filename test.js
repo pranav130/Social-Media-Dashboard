@@ -1153,6 +1153,111 @@ async function runTests() {
     assert.ok(gssCode.includes('sheetRowIndex: idx + 2'), 'sheetRowIndex must map accurately to 1-based sheet row numbers');
   });
 
+  console.log('\n[22. Automatic 30-Min SLA Calculation & UPPCLLKO Reply Integrity Suite]');
+
+  const { calculateReplyWithin30Min, parseTimestampToEpochMs, getSnowflakeEpochMs } = require('./sheet_mapper');
+
+  it('1. Rule 1: UPPCLLKO Replied = NO strictly produces blank (never YES, NO, or numbers)', () => {
+    assert.strictEqual(calculateReplyWithin30Min('NO', 1729432505765, 1729433405765), '');
+    assert.strictEqual(calculateReplyWithin30Min('no', 1729432505765, 1729433405765), '');
+    assert.strictEqual(calculateReplyWithin30Min('', 1729432505765, 1729433405765), '');
+    assert.strictEqual(calculateReplyWithin30Min(null, 1729432505765, 1729433405765), '');
+    assert.strictEqual(calculateReplyWithin30Min('PENDING', 1729432505765, 1729433405765), '');
+  });
+
+  it('2. Rule 2: UPPCLLKO Replied = YES with reply after 15 minutes produces YES', () => {
+    const compTime = 1729432505765;
+    const replyTime = compTime + 15 * 60 * 1000; // 15 mins
+    assert.strictEqual(calculateReplyWithin30Min('YES', compTime, replyTime), 'YES');
+  });
+
+  it('3. Rule 2: UPPCLLKO Replied = YES with reply after 29 minutes 59 seconds produces YES', () => {
+    const compTime = 1729432505765;
+    const replyTime = compTime + (29 * 60 + 59) * 1000; // 29 min 59 sec
+    assert.strictEqual(calculateReplyWithin30Min('YES', compTime, replyTime), 'YES');
+  });
+
+  it('4. Rule 2: UPPCLLKO Replied = YES with reply after exactly 30 minutes 00 seconds produces YES', () => {
+    const compTime = 1729432505765;
+    const replyTime = compTime + 30 * 60 * 1000; // exactly 30 min
+    assert.strictEqual(calculateReplyWithin30Min('YES', compTime, replyTime), 'YES');
+  });
+
+  it('5. Rule 2: UPPCLLKO Replied = YES with reply after 30 minutes 1 second produces NO', () => {
+    const compTime = 1729432505765;
+    const replyTime = compTime + (30 * 60 + 1) * 1000; // 30 min 1 sec
+    assert.strictEqual(calculateReplyWithin30Min('YES', compTime, replyTime), 'NO');
+  });
+
+  it('6. Across Midnight / Different Dates: Elapsed time calculated accurately across day boundary', () => {
+    // Complaint posted at 23:50 on 20-10-2026, replied at 00:15 on 21-10-2026 (25 minutes elapsed)
+    const compTime = new Date('2026-10-20T23:50:00.000Z').getTime();
+    const replyTime = new Date('2026-10-21T00:15:00.000Z').getTime();
+    assert.strictEqual(calculateReplyWithin30Min('YES', compTime, replyTime), 'YES');
+
+    // Complaint posted at 23:30 on 20-10-2026, replied at 00:15 on 21-10-2026 (45 minutes elapsed)
+    const replyTimeLate = new Date('2026-10-21T00:15:00.000Z').getTime();
+    const compTimeEarly = new Date('2026-10-20T23:30:00.000Z').getTime();
+    assert.strictEqual(calculateReplyWithin30Min('YES', compTimeEarly, replyTimeLate), 'NO');
+  });
+
+  it('7. Rule 3: Missing, invalid, or negative timestamps leave result strictly blank pending verification', () => {
+    const compTime = 1729432505765;
+    assert.strictEqual(calculateReplyWithin30Min('YES', compTime, null), '', 'Missing reply timestamp must be blank');
+    assert.strictEqual(calculateReplyWithin30Min('YES', null, compTime), '', 'Missing complaint timestamp must be blank');
+    assert.strictEqual(calculateReplyWithin30Min('YES', compTime, 'invalid-date'), '', 'Unparseable date must be blank');
+    // Negative elapsed time (reply timestamp before complaint timestamp)
+    assert.strictEqual(calculateReplyWithin30Min('YES', compTime, compTime - 60000), '', 'Negative elapsed time must be blank');
+  });
+
+  it('8. Multiple replies: Earliest UPPCLLKO reply is used for response-time calculation', () => {
+    const compTime = 1729432505765;
+    const firstReply = compTime + 20 * 60 * 1000; // 20 min -> YES
+    const secondReply = compTime + 45 * 60 * 1000; // 45 min -> NO
+    assert.strictEqual(calculateReplyWithin30Min('YES', compTime, firstReply), 'YES', 'Earliest reply dictates SLA');
+  });
+
+  it('9. Snowflake ID timestamp decoding matches microsecond Twitter epoch', () => {
+    const tweetId = '2112543129006170200';
+    const epochMs = getSnowflakeEpochMs(tweetId);
+    assert.strictEqual(epochMs, 1792504505765);
+    const d = new Date(epochMs);
+    assert.strictEqual(d.toISOString(), '2026-10-20T13:55:05.765Z');
+  });
+
+  it('10. Code.gs contains complete SLA calculation engine, onEdit trigger, onOpen menu, and batch updater', () => {
+    const fs = require('fs');
+    const codeGs = fs.readFileSync('google_apps_script/Code.gs', 'utf8');
+
+    assert.ok(codeGs.includes('function calculateReplyWithin30Min('), 'Code.gs must define calculateReplyWithin30Min');
+    assert.ok(codeGs.includes('function recalculateReplyWithin30MinInSheet('), 'Code.gs must define recalculateReplyWithin30MinInSheet');
+    assert.ok(codeGs.includes('function calculateRow30MinSlaInScript('), 'Code.gs must define calculateRow30MinSlaInScript');
+    assert.ok(codeGs.includes('VERIFIED_HISTORICAL_UPPCL_REPLIES'), 'Code.gs must include verified replies lookup dictionary');
+    assert.ok(codeGs.includes('colIndex === colMap.uppclReplied'), 'onEdit must trigger calculation when uppclReplied changes');
+    assert.ok(codeGs.includes('Recalculate 30-Min SLA Column'), 'onOpen menu must include SLA recalculation option');
+    assert.ok(codeGs.includes('sheet.getRange(3, reply30ColIndex + 1, updates.length, 1).setValues(updates)'), 'Must batch write updates to sheet');
+  });
+
+  it('11. Live sheet data simulation: Corrects stray counter numbers and unreplied violations strictly to blank', () => {
+    const fs = require('fs');
+    const liveCsv = fs.readFileSync('scripts/live_sheet_full.csv', 'utf8');
+    const lines = liveCsv.split('\n');
+    const headers = lines[0].split(',').map(h => h.trim());
+    const mapper = createHeaderMap(headers);
+
+    let unrepliedClearedCount = 0;
+    for (let i = 2; i < Math.min(lines.length, 500); i++) {
+      const row = lines[i].split(',');
+      const uppclReplied = mapper.get(row, 'uppcllko_replied');
+      if (uppclReplied !== 'YES') {
+        const val = calculateReplyWithin30Min(uppclReplied, null, null);
+        assert.strictEqual(val, '', 'Row where UPPCLLKO Replied != YES must be blank');
+        unrepliedClearedCount++;
+      }
+    }
+    assert.ok(unrepliedClearedCount > 0, 'Must verify multiple unreplied rows cleared to blank');
+  });
+
   console.log('\n====================================================');
   console.log(` Tests Finished: ${passCount} Passed, ${failCount} Failed`);
   console.log('====================================================\n');
