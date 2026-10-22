@@ -843,8 +843,8 @@ const App = {
 
         <div class="chart-card">
           <div class="chart-header" style="margin-bottom: 10px;">
-            <div class="chart-title" style="font-size: 14.5px; font-weight: 700;"><i class="fa-brands fa-x-twitter"></i> Official Monitored Handles List</div>
-            <span style="font-size: 11.5px; color: var(--text-muted); font-weight: 600;"><i class="fa-solid fa-satellite-dish" style="color: #10b981;"></i> 5 Monitored Handles</span>
+            <div class="chart-title"><i class="fa-brands fa-x-twitter"></i> Official Monitored Handles List</div>
+            <span style="font-size: 11px; color: var(--text-muted); font-weight: 600;"><i class="fa-solid fa-satellite-dish" style="color: #10b981;"></i> 5 Monitored Handles</span>
           </div>
           <div class="chart-body" id="official-monitored-handles-container" style="height: auto; min-height: 250px; overflow: visible; display: flex; flex-direction: column; justify-content: space-between; gap: 6px; padding: 0;">
           </div>
