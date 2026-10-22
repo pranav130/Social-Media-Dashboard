@@ -352,6 +352,89 @@ function buildComplaintOrderClause(sort_by, sort_order) {
   }
 }
 
+/**
+ * Builds a comprehensive search filter across complaint fields, including:
+ * - Complaint ID & sheet row number
+ * - Consumer name, handle, mobile, account number
+ * - Complaint text & target mentions
+ * - Received At timestamp & date (supports YYYY-MM-DD, DD-MM-YYYY, DD/MM/YYYY, MM-YYYY)
+ * - DISCOM, Zone, Circle, Division, District
+ * - Category, Subcategory, Complaint Type
+ * - Workflow Status & Picked Status
+ * - Head code & Monitored account
+ * - Tweet post URL & original post ID
+ * - Forwarding reference number
+ */
+function buildComplaintSearchFilter(search) {
+  if (!search || !String(search).trim()) return null;
+
+  const raw = String(search).trim();
+  const term = `%${raw}%`;
+
+  const clauses = [
+    'complaint_no LIKE ?',
+    'consumer_name LIKE ?',
+    'consumer_handle LIKE ?',
+    'complaint_text LIKE ?',
+    'district_name LIKE ?',
+    'division_name LIKE ?',
+    'subdivision_name LIKE ?',
+    'circle_name LIKE ?',
+    'zone_name LIKE ?',
+    'discom_name LIKE ?',
+    'category_name LIKE ?',
+    'subcategory_name LIKE ?',
+    'complaint_type LIKE ?',
+    'consumer_account_no LIKE ?',
+    'consumer_mobile LIKE ?',
+    'assigned_nodal_officer_name LIKE ?',
+    'monitored_account LIKE ?',
+    'hierarchy_handle_name LIKE ?',
+    'target_mentions LIKE ?',
+    'forwarding_ref_no LIKE ?',
+    'post_url LIKE ?',
+    'original_post_id LIKE ?',
+    'head LIKE ?',
+    'current_status LIKE ?',
+    'picked_status LIKE ?',
+    'link_shift LIKE ?',
+    'reply_shift LIKE ?',
+    'received_at LIKE ?'
+  ];
+  const params = Array(clauses.length).fill(term);
+
+  // 1. Date conversion: DD-MM-YYYY or DD/MM/YYYY or DD.MM.YYYY (e.g. 22-10-2026 -> 2026-10-22)
+  const dmy = raw.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})$/);
+  if (dmy) {
+    const dd = dmy[1].padStart(2, '0');
+    const mm = dmy[2].padStart(2, '0');
+    const yyyy = dmy[3];
+    clauses.push('received_at LIKE ?');
+    params.push(`%${yyyy}-${mm}-${dd}%`);
+  }
+
+  // 2. Date conversion: MM-YYYY or MM/YYYY (e.g. 10-2026 -> 2026-10)
+  const my = raw.match(/^(\d{1,2})[-/.](\d{4})$/);
+  if (my) {
+    const mm = my[1].padStart(2, '0');
+    const yyyy = my[2];
+    clauses.push('received_at LIKE ?');
+    params.push(`%${yyyy}-${mm}%`);
+  }
+
+  // 3. Sheet row index: "Row #3", "Row 3", "#3"
+  const rowMatch = raw.match(/^(?:row\s*#?|#)(\d+)$/i);
+  if (rowMatch) {
+    clauses.push('sheet_row_index = ?');
+    params.push(parseInt(rowMatch[1], 10));
+  }
+
+  return {
+    sql: `(${clauses.join(' OR ')})`,
+    params
+  };
+}
+
 // 1. Get Complaints (Search, Filter, Paginate, Role-Scoped)
 app.get('/api/complaints', authMiddleware, (req, res) => {
   const {
@@ -536,24 +619,11 @@ app.get('/api/complaints', authMiddleware, (req, res) => {
     whereClauses.push("data_quality_flags IS NOT NULL AND data_quality_flags != '[]'");
   }
 
-  // Search across multiple fields
-  if (search && search.trim()) {
-    const term = `%${search.trim()}%`;
-    whereClauses.push(`(
-      complaint_no LIKE ? OR
-      consumer_name LIKE ? OR
-      consumer_handle LIKE ? OR
-      complaint_text LIKE ? OR
-      district_name LIKE ? OR
-      division_name LIKE ? OR
-      consumer_account_no LIKE ? OR
-      assigned_nodal_officer_name LIKE ? OR
-      monitored_account LIKE ? OR
-      hierarchy_handle_name LIKE ? OR
-      target_mentions LIKE ? OR
-      forwarding_ref_no LIKE ?
-    )`);
-    params.push(term, term, term, term, term, term, term, term, term, term, term, term);
+  // Search across multiple fields (including received_at, dates, discom, category, etc.)
+  const searchFilter = buildComplaintSearchFilter(search);
+  if (searchFilter) {
+    whereClauses.push(searchFilter.sql);
+    params.push(...searchFilter.params);
   }
 
   const whereSql = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
@@ -1889,10 +1959,10 @@ app.get('/api/reports/export', authMiddleware, (req, res) => {
     )
   )`);
 
-  if (search && search.trim()) {
-    const term = `%${search.trim()}%`;
-    whereClauses.push('(complaint_no LIKE ? OR consumer_name LIKE ? OR consumer_handle LIKE ? OR complaint_text LIKE ? OR consumer_mobile LIKE ? OR consumer_account_no LIKE ? OR forwarding_ref_no LIKE ?)');
-    params.push(term, term, term, term, term, term, term);
+  const searchFilter = buildComplaintSearchFilter(search);
+  if (searchFilter) {
+    whereClauses.push(searchFilter.sql);
+    params.push(...searchFilter.params);
   }
 
   if (req.user.role === 'DISCOM Nodal Officer') {
@@ -2297,24 +2367,11 @@ function handleDashboardTableExcelExport(req, res) {
     whereClauses.push("data_quality_flags IS NOT NULL AND data_quality_flags != '[]'");
   }
 
-  // Search across multiple fields
-  if (search && search.trim()) {
-    const term = `%${search.trim()}%`;
-    whereClauses.push(`(
-      complaint_no LIKE ? OR
-      consumer_name LIKE ? OR
-      consumer_handle LIKE ? OR
-      complaint_text LIKE ? OR
-      district_name LIKE ? OR
-      division_name LIKE ? OR
-      consumer_account_no LIKE ? OR
-      assigned_nodal_officer_name LIKE ? OR
-      monitored_account LIKE ? OR
-      hierarchy_handle_name LIKE ? OR
-      target_mentions LIKE ? OR
-      forwarding_ref_no LIKE ?
-    )`);
-    params.push(term, term, term, term, term, term, term, term, term, term, term, term);
+  // Search across multiple fields (including received_at, dates, discom, category, etc.)
+  const searchFilter = buildComplaintSearchFilter(search);
+  if (searchFilter) {
+    whereClauses.push(searchFilter.sql);
+    params.push(...searchFilter.params);
   }
 
   const whereSql = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
