@@ -204,8 +204,10 @@ const App = {
 
     this.startClock();
     if (this.token) {
-      this.startNotificationPoller();
-      this.startSyncPoller();
+      if (!this.user || (this.user.role || '').toLowerCase() !== 'operator') {
+        this.startNotificationPoller();
+        this.startSyncPoller();
+      }
     }
 
     if (this.token && this.user) {
@@ -485,6 +487,9 @@ const App = {
   },
 
   async loadMasterData() {
+    if (this.user && (this.user.role || '').toLowerCase() === 'operator') {
+      return;
+    }
     try {
       const [cats, discs, xh, nodals, tpls, fwdTpls] = await Promise.all([
         this.api('/api/master/categories'),
@@ -516,8 +521,10 @@ const App = {
     this.user = user;
     localStorage.setItem('uppcl_smc_token', token);
     localStorage.setItem('uppcl_smc_user', JSON.stringify(user));
-    this.startNotificationPoller();
-    this.startSyncPoller();
+    if ((user.role || '').toLowerCase() !== 'operator') {
+      this.startNotificationPoller();
+      this.startSyncPoller();
+    }
     this.loadMasterData().then(() => {
       this.renderApp();
     });
@@ -544,6 +551,10 @@ const App = {
   },
 
   navigate(page, params = {}) {
+    const isRestrictedOperator = (this.user && (this.user.role || '').toLowerCase() === 'operator');
+    if (isRestrictedOperator && page !== 'working-sheet') {
+      page = 'working-sheet';
+    }
     this.currentPage = page;
     document.querySelectorAll('.nav-item').forEach(el => {
       el.classList.toggle('active', el.dataset.page === page);
@@ -620,9 +631,11 @@ const App = {
   // -----------------------------------------------------------
   renderApp() {
     const root = document.getElementById('app');
-    const isSuperAdmin = ['Administrator', 'Admin', 'Super Administrator'].includes(this.user.role);
-    const isOperator = ['Administrator', 'Admin', 'Super Administrator', 'Social Media Cell Operator', 'Complaint Handler'].includes(this.user.role);
-    const isSupervisor = ['Administrator', 'Admin', 'Super Administrator', 'Supervisor / Management'].includes(this.user.role);
+    const roleLower = (this.user.role || '').toLowerCase();
+    const isRestrictedOperator = roleLower === 'operator';
+    const isSuperAdmin = ['administrator', 'admin', 'super administrator'].includes(roleLower);
+    const isOperator = ['administrator', 'admin', 'super administrator', 'social media cell operator', 'complaint handler', 'operator'].includes(roleLower);
+    const isSupervisor = ['administrator', 'admin', 'super administrator', 'supervisor / management'].includes(roleLower);
     const isDiscomNodal = this.user.role === 'DISCOM Nodal Officer';
 
     root.innerHTML = `
@@ -639,16 +652,18 @@ const App = {
 
           <div class="sidebar-nav">
             <div class="nav-section-title">Operations</div>
-            <a class="nav-item active" data-page="dashboard" onclick="App.navigate('dashboard')">
+            ${!isRestrictedOperator ? `
+            <a class="nav-item ${this.currentPage === 'dashboard' ? 'active' : ''}" data-page="dashboard" onclick="App.navigate('dashboard')">
               <i class="fa-solid fa-chart-line"></i> Dashboard
             </a>
-            <a class="nav-item" data-page="register" onclick="App.navigate('register')">
+            <a class="nav-item ${this.currentPage === 'register' ? 'active' : ''}" data-page="register" onclick="App.navigate('register')">
               <i class="fa-solid fa-table-list"></i> Complaint Register
-            </a>
-            <a class="nav-item" data-page="working-sheet" onclick="App.navigate('working-sheet')">
+            </a>` : ''}
+            <a class="nav-item ${isRestrictedOperator || this.currentPage === 'working-sheet' ? 'active' : ''}" data-page="working-sheet" onclick="App.navigate('working-sheet')">
               <i class="fa-solid fa-table-cells"></i> WORKING SHEET
             </a>
 
+            ${!isRestrictedOperator ? `
             <div class="nav-section-title">Intelligence & Masters</div>
             <a class="nav-item" data-page="reports" onclick="App.navigate('reports')">
               <i class="fa-solid fa-file-invoice"></i> Reports & Exports
@@ -676,6 +691,7 @@ const App = {
             <a class="nav-item" data-page="settings" onclick="App.navigate('settings')">
               <i class="fa-solid fa-sliders"></i> System Settings
             </a>` : ''}
+            ` : ''}
           </div>
         </aside>
 
@@ -697,6 +713,7 @@ const App = {
             </div>
 
             <div class="header-right">
+              ${!isRestrictedOperator ? `
               <button class="btn btn-secondary btn-sm" id="btn-sync-sheet" onclick="App.triggerSheetSync()" title="Synchronize directly with Google Sheet">
                 <i class="fa-solid fa-arrows-rotate" id="sync-btn-icon"></i> Sync Sheet
               </button>
@@ -719,6 +736,7 @@ const App = {
               <button class="btn btn-secondary btn-sm" onclick="App.openInternalTicketModal()" title="Report Issue with Dashboard">
                 <i class="fa-solid fa-circle-question"></i> Help
               </button>
+              ` : ''}
 
               <!-- Theme Toggle Button -->
               <button class="theme-toggle-btn" onclick="App.toggleTheme()" title="${this.theme === 'midnight' ? 'Theme: Midnight (Click for Light Mode)' : (this.theme === 'light' ? 'Theme: Light Mode (Click for Dark Mode)' : 'Theme: Dark Mode (Click for Midnight Theme')}" aria-label="Toggle Theme">
@@ -748,7 +766,11 @@ const App = {
       <div id="modal-root"></div>
     `;
 
-    this.navigate('dashboard');
+    if (isRestrictedOperator) {
+      this.navigate('working-sheet');
+    } else {
+      this.navigate('dashboard');
+    }
   },
 
   // -----------------------------------------------------------

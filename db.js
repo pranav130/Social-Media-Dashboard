@@ -57,6 +57,19 @@ async function initDb() {
 
   // Create tables and schema
   createSchema();
+
+  // Ensure default operator account exists
+  try {
+    const opUser = get("SELECT id FROM users WHERE username = 'smc_operator';");
+    if (!opUser) {
+      const defaultOpHash = '$2b$10$7SfXtx28pDIstzEXyJOR8eWQcYWAiG7Y47fpqZJz9pZepRXV7kD3q';
+      run(`
+        INSERT INTO users (username, password_hash, full_name, email, role, is_active, created_at, updated_at)
+        VALUES ('smc_operator', ?, 'SMC Working Sheet Operator', 'operator.working@uppcl.org', 'operator', 1, datetime('now'), datetime('now'));
+      `, [defaultOpHash]);
+    }
+  } catch (e) {}
+
   saveToDiskSync();
   return dbInstance;
 }

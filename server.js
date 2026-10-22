@@ -170,6 +170,27 @@ function authMiddleware(req, res, next) {
       return res.status(401).json({ error: 'Account inactive or not found' });
     }
     req.user = user;
+
+    // Strict Role-Based Server-Side Authorization for Restricted Operator Role
+    if ((user.role || '').toLowerCase() === 'operator') {
+      const allowedPaths = [
+        '/api/auth/me',
+        '/api/auth/logout',
+        '/api/auth/change-password',
+        '/api/working-sheet/data',
+        '/api/working-sheet/districts',
+        '/api/working-sheet/update-cell'
+      ];
+      const cleanPath = (req.baseUrl ? `${req.baseUrl}${req.path}` : req.path).split('?')[0];
+      const isAllowed = allowedPaths.some(p => cleanPath === p || cleanPath.startsWith('/api/working-sheet/'));
+      if (!isAllowed) {
+        logAudit(req, user, 'UNAUTHORIZED_ACCESS_BLOCKED', 'SECURITY', user.id, `Operator blocked from accessing ${req.method} ${cleanPath}`);
+        return res.status(403).json({
+          error: 'Forbidden: Operator account is restricted exclusively to Operations → WORKING SHEET'
+        });
+      }
+    }
+
     next();
   } catch (err) {
     return res.status(401).json({ error: 'Invalid or expired session token' });
@@ -3438,7 +3459,7 @@ app.get('/api/working-sheet/districts', authMiddleware, async (req, res) => {
 });
 
 // 3. Single-Cell Update Directly to Google Sheets with Verification
-app.post('/api/working-sheet/update-cell', authMiddleware, requireRoles('Super Administrator', 'Social Media Cell Operator', 'Supervisor / Management'), async (req, res) => {
+app.post('/api/working-sheet/update-cell', authMiddleware, requireRoles('Super Administrator', 'Social Media Cell Operator', 'Supervisor / Management', 'operator', 'Operator'), async (req, res) => {
   try {
     const { tweet_id, post_url, sheet_row_index, column_name, new_value } = req.body;
 
@@ -3617,6 +3638,29 @@ if (process.env.NO_SERVER_AUTOSTART !== 'true') {
       }
       db.saveToDiskSync();
       console.log('[Auth] Default passwords synchronized to smaller passwords (admin123, etc.)');
+
+    // Ensure smc_operator account is securely configured
+    try {
+      const defaultOpHash = '$2b$10$7SfXtx28pDIstzEXyJOR8eWQcYWAiG7Y47fpqZJz9pZepRXV7kD3q';
+      const targetHash = process.env.OPERATOR_PASSWORD
+        ? bcrypt.hashSync(process.env.OPERATOR_PASSWORD, 10)
+        : defaultOpHash;
+
+      const opUser = db.get("SELECT id FROM users WHERE username = 'smc_operator';");
+      if (!opUser) {
+        db.run(`
+          INSERT INTO users (username, password_hash, full_name, email, role, is_active, created_at, updated_at)
+          VALUES ('smc_operator', ?, 'SMC Working Sheet Operator', 'operator.working@uppcl.org', 'operator', 1, datetime('now'), datetime('now'));
+        `, [targetHash]);
+        db.saveToDiskSync();
+        console.log('[Auth] smc_operator account initialized with secure password hash.');
+      } else if (process.env.OPERATOR_PASSWORD) {
+        db.run("UPDATE users SET password_hash = ? WHERE username = 'smc_operator';", [targetHash]);
+        db.saveToDiskSync();
+      }
+    } catch (opErr) {
+      console.warn('[Auth] smc_operator check error:', opErr.message);
+    }
     } catch (mErr) {
       console.warn('[Auth] Password sync warning:', mErr.message);
     }

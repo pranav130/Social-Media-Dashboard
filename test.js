@@ -1606,7 +1606,7 @@ async function runTests() {
     assert.ok(serverCode.includes("app.get('/api/working-sheet/data'"), 'server.js must expose GET /api/working-sheet/data');
     assert.ok(serverCode.includes("app.get('/api/working-sheet/districts'"), 'server.js must expose GET /api/working-sheet/districts');
     assert.ok(serverCode.includes("app.post('/api/working-sheet/update-cell'"), 'server.js must expose POST /api/working-sheet/update-cell');
-    assert.ok(serverCode.includes("requireRoles('Super Administrator', 'Social Media Cell Operator', 'Supervisor / Management')"), 'Update endpoint must require authorized roles');
+    assert.ok(serverCode.includes("requireRoles('Super Administrator', 'Social Media Cell Operator', 'Supervisor / Management', 'operator', 'Operator')"), 'Update endpoint must require authorized roles including operator');
   });
 
   it('13. Frontend UI Implementation: app.js contains renderWorkingSheet and inline edit handlers', () => {
@@ -1645,6 +1645,62 @@ async function runTests() {
     const appJs = fs.readFileSync('public/js/app.js', 'utf8');
     assert.ok(appJs.includes('data-col="UPPCLLKO Replied (YES/NO)"'), 'app.js must render select for UPPCLLKO Replied');
     assert.ok(appJs.includes('Editable Dropdown (YES/NO)'), 'app.js header must indicate editable dropdown');
+  });
+
+
+  console.log('\n[26. Role-Based Operator Login & Security Suite]');
+
+  it('1. smc_operator account exists in database with role "operator"', () => {
+    const op = db.get("SELECT * FROM users WHERE username = 'smc_operator';");
+    assert.ok(op, 'smc_operator account must exist in users table');
+    assert.strictEqual(op.role, 'operator', 'Role must be operator');
+    assert.strictEqual(op.is_active, 1, 'Account must be active');
+  });
+
+  it('2. smc_operator password verifies against stored bcrypt hash', () => {
+    const bcrypt = require('bcryptjs');
+    const op = db.get("SELECT password_hash FROM users WHERE username = 'smc_operator';");
+    assert.ok(op && op.password_hash, 'Password hash must be present');
+    assert.ok(op.password_hash.startsWith('$2a$') || op.password_hash.startsWith('$2b$'), 'Must be a valid bcrypt hash');
+    assert.strictEqual(bcrypt.compareSync('wrong_password_test', op.password_hash), false, 'Wrong password must be rejected');
+    if (process.env.OPERATOR_PASSWORD) {
+      assert.ok(bcrypt.compareSync(process.env.OPERATOR_PASSWORD, op.password_hash), 'Password from env must match');
+    }
+  });
+
+  it('3. Existing admin login credentials and permissions are fully preserved', () => {
+    const admin = db.get("SELECT * FROM users WHERE username = 'admin';");
+    assert.ok(admin, 'Admin account must exist');
+    assert.strictEqual(admin.role, 'Administrator');
+    assert.strictEqual(admin.is_active, 1);
+  });
+
+  it('4. Server-side authMiddleware enforces 403 Forbidden for operator on restricted admin routes', () => {
+    const serverCode = fs.readFileSync('server.js', 'utf8');
+    assert.ok(serverCode.includes("(user.role || '').toLowerCase() === 'operator'"), 'Must enforce operator restrictions in authMiddleware');
+    assert.ok(serverCode.includes("res.status(403).json"), 'Must return 403 Forbidden for restricted routes');
+    assert.ok(serverCode.includes("'/api/working-sheet/data'"), 'Must whitelist working-sheet/data');
+    assert.ok(serverCode.includes("'/api/working-sheet/districts'"), 'Must whitelist working-sheet/districts');
+    assert.ok(serverCode.includes("'/api/working-sheet/update-cell'"), 'Must whitelist working-sheet/update-cell');
+  });
+
+  it('5. Frontend app.js displays ONLY Operations -> WORKING SHEET for operator in sidebar', () => {
+    const appJs = fs.readFileSync('public/js/app.js', 'utf8');
+    assert.ok(appJs.includes("const isRestrictedOperator = roleLower === 'operator';"), 'app.js must detect isRestrictedOperator');
+    assert.ok(appJs.includes('!isRestrictedOperator'), 'Admin sidebar items must be conditionally excluded');
+    assert.ok(appJs.includes('WORKING SHEET'), 'WORKING SHEET must be accessible');
+  });
+
+  it('6. Frontend app.js redirects operator directly to WORKING SHEET and guards navigation', () => {
+    const appJs = fs.readFileSync('public/js/app.js', 'utf8');
+    assert.ok(appJs.includes("this.navigate('working-sheet');"), 'Landing page must navigate to working-sheet for operator');
+    assert.ok(appJs.includes("if (isRestrictedOperator && page !== 'working-sheet')"), 'Navigation guard must enforce working-sheet only');
+  });
+
+  it('7. Frontend app.js hides admin action buttons and pollers for operator', () => {
+    const appJs = fs.readFileSync('public/js/app.js', 'utf8');
+    assert.ok(appJs.includes("(user.role || '').toLowerCase() !== 'operator'"), 'Pollers must be disabled for operator');
+    assert.ok(appJs.includes('id="btn-sync-sheet"'), 'Sync sheet button defined');
   });
 
   console.log('\n====================================================');
