@@ -639,7 +639,7 @@ function createHeaderMap(headers, options = {}) {
           }
         }
       } else if (canonicalField === 'post_text') {
-        if (!val || val.length < 5) {
+        if (!val || val.length < 5 || /^\d{15,25}$/.test(val.trim())) {
           // Look for long text in the row (e.g. col 20 or col 19 if columns were shifted)
           for (let c = row.length - 1; c >= 0; c--) {
             const cell = String(row[c] || '').trim();

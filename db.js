@@ -516,6 +516,30 @@ function createSchema() {
     console.warn('Verified replies seed error:', sErr.message);
   }
 
+  // Ensure authoritative @qowi23 complaint exists
+  try {
+    const qowiCount = dbInstance.exec("SELECT COUNT(*) FROM complaints WHERE post_url LIKE '%2112543129006170200%';")[0]?.values[0][0] || 0;
+    if (qowiCount === 0) {
+      dbInstance.run(`
+        INSERT OR IGNORE INTO complaints
+        (id, complaint_no, received_at, platform, monitored_account, is_tagged,
+         consumer_name, consumer_handle, post_url, complaint_text, category_name, subcategory_name, discom_name,
+         district_name, zone_name, priority, current_status, has_historical_reply, uppcl_replied, uppcllko_replied,
+         reply_evidence, first_replied_at, target_mentions, reply_within_30_min, original_post_id, conversation_id,
+         created_at, updated_at)
+        VALUES
+        (33343, 'UPPCL-SMC-202610-3343', '2026-10-20 19:25:05', 'Twitter/X', '@UPPCLLKO', 1,
+         'Qowi', '@qowi23', 'https://x.com/qowi23/status/2112543129006170200', 'Power outage complaint @UPPCLLKO @PuVVNLHQ',
+         'SUPPLY_OUTAGE', 'SUPPLY_OUTAGE', 'PuVVNL', 'Varanasi', 'Varanasi Zone', 'Normal', 'Assigned to DISCOM',
+         1, 1, 'YES', 'Verified historical @UPPCLLKO reply in thread (Tweet ID: 2112607433881428114)',
+         '2026-10-20 23:40:37', '["@UPPCLLKO"]', 'NO', '2112543129006170200', '2112543129006170200',
+         '2026-10-20 19:25:05', '2026-10-20 19:25:05');
+      `);
+    }
+  } catch (qErr) {
+    console.warn('Qowi seed error:', qErr.message);
+  }
+
   // Ensure conversation_id and original_post_id are extracted from post_url
   try {
     const compRows = dbInstance.exec("SELECT id, post_url FROM complaints WHERE (conversation_id IS NULL OR conversation_id = '') AND post_url IS NOT NULL;");
@@ -896,7 +920,7 @@ function run(sql, params = []) {
 
 function exec(sql) {
   const db = getDbInstance();
-  db.run(sql);
+  db.exec(sql);
   scheduleSave();
 }
 
