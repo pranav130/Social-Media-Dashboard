@@ -626,12 +626,12 @@ function createHeaderMap(headers, options = {}) {
           }
         }
       } else if (canonicalField === 'head') {
-        // Valid heads are 3 letters: upl, emo, emm, ako, akm, akb, akc, upm
+        // Valid heads: upl, upm, upc, emo, emm, emc, ako, akm, akb, akc, mdc, mdm, cmc, cmm, news, grok
         const cleanHead = val.toLowerCase();
-        const validHeads = new Set(['upl', 'emo', 'emm', 'ako', 'akm', 'akb', 'akc', 'upm']);
+        const validHeads = new Set(['upl', 'upm', 'upc', 'emo', 'emm', 'emc', 'ako', 'akm', 'akb', 'akc', 'mdc', 'mdm', 'cmc', 'cmm', 'news', 'grok']);
         if (!validHeads.has(cleanHead)) {
-          // Look for valid head in other columns (e.g. col 6 if columns were shifted)
-          for (let c = 0; c < row.length; c++) {
+          // Look for valid head in other columns (e.g. col 8 or col 6 if columns were shifted)
+          for (let c = 0; c < Math.min(row.length, 15); c++) {
             const cell = String(row[c] || '').trim().toLowerCase();
             if (validHeads.has(cell)) {
               return cell;
@@ -639,11 +639,54 @@ function createHeaderMap(headers, options = {}) {
           }
         }
       } else if (canonicalField === 'post_text') {
-        if (!val || val.length < 5 || /^\d{15,25}$/.test(val.trim())) {
-          // Look for long text in the row (e.g. col 20 or col 19 if columns were shifted)
+        if (!val || val.length < 5 || /^\d{15,25}$/.test(val.trim()) || /^(yes|no|pending|closed)$/i.test(val.trim())) {
+          // Look for long text in the row (e.g. col 21, col 20 or col 16 if columns were shifted)
+          const candidateCols = [21, 20, 16, 22, 18, 17, 19];
+          for (const c of candidateCols) {
+            const cell = String(row[c] || '').trim();
+            if (cell.length > 15 && !cell.startsWith('http') && !/^\d+$/.test(cell) && !/^(yes|no|pending|closed)$/i.test(cell)) {
+              return cell;
+            }
+          }
           for (let c = row.length - 1; c >= 0; c--) {
             const cell = String(row[c] || '').trim();
-            if (cell.length > 20 && !cell.startsWith('http') && !/^\d{15,25}$/.test(cell)) {
+            if (cell.length > 20 && !cell.startsWith('http') && !/^\d{15,25}$/.test(cell) && !/^(yes|no|pending|closed)$/i.test(cell)) {
+              return cell;
+            }
+          }
+        }
+      } else if (canonicalField === 'complaint_type') {
+        const KNOWN_TYPES = new Set([
+          'SUPPLY_OUTAGE', 'SUPPLY_VOLTAGE', 'BREAKDOWN_LT', 'BREAKDOWN_HT',
+          'BREAKDOWN_POLE', 'TRANSFORMER_DAMAGE', 'TRANSFORMER_NEW', 'THEFT',
+          'EMPLOYEE_RELATED', 'DISSATISFIED_CONSUMER', 'BILL_RELATED',
+          'CONNECTION_NEW', 'ACCIDENT_PRONE_TO_OCCURED', 'ACCIDENT_OCCURED',
+          'INFO_AND_SUGG', 'METER_RELATED', 'PTW', 'DISCONNECTION',
+          'LOAD ENHANCEMENT', 'POLE_RELATED', 'OTS', 'APP RELATED',
+          'SMART_METER_PAYMENT', 'SMART_METER', 'SMART_METER_APP_RELATED',
+          'SMART_METER_PREPAID_TO_POSTPAID', 'SMART_METER_BILL',
+          'SMART_CHECK_METER', 'T/F CAPACITY INCREASE', 'APPRECIATION'
+        ]);
+        const cleanType = val.toUpperCase().replace(/\s+/g, '_');
+        if (!KNOWN_TYPES.has(val.toUpperCase()) && !KNOWN_TYPES.has(cleanType)) {
+          for (let c = 0; c < row.length; c++) {
+            const cell = String(row[c] || '').trim();
+            const cellNorm = cell.toUpperCase().replace(/\s+/g, '_');
+            if (KNOWN_TYPES.has(cell.toUpperCase()) || KNOWN_TYPES.has(cellNorm)) {
+              return cell;
+            }
+          }
+        }
+      } else if (canonicalField === 'status') {
+        const KNOWN_STATUSES = new Set([
+          'Pending Review', 'Forwarded to Discom', 'Reply to Consumer', 'DM',
+          'Discom follow-up', 'Problem not Solved', 'Information Needed',
+          'Resolved', 'Closed', 'Pending'
+        ]);
+        if (!val || !KNOWN_STATUSES.has(val)) {
+          for (let c = 0; c < row.length; c++) {
+            const cell = String(row[c] || '').trim();
+            if (KNOWN_STATUSES.has(cell)) {
               return cell;
             }
           }

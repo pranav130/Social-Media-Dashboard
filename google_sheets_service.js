@@ -592,7 +592,10 @@ async function fetchSheetMatrix() {
     const extractRowData = (row, headerMap) => {
       let url = '';
       if (headerMap && headerMap['link_url'] !== undefined && row[headerMap['link_url']]) {
-        url = String(row[headerMap['link_url']]).trim();
+        const cell = String(row[headerMap['link_url']]).trim();
+        if (/https?:\/\/(?:twitter|x)\.com\/\S+/i.test(cell) || /status\/\d+/i.test(cell)) {
+          url = cell;
+        }
       }
       if (!url) {
         for (let c = 0; c < row.length; c++) {
@@ -603,23 +606,34 @@ async function fetchSheetMatrix() {
           }
         }
       }
-      if (!url && row[4]) url = String(row[4]).trim();
+      if (!url && row[4] && /https?:\/\//i.test(row[4])) url = String(row[4]).trim();
       const tid = extractTweetId(url) || url;
 
       let handle = '';
       if (headerMap && headerMap['twitter_id'] !== undefined && row[headerMap['twitter_id']]) {
-        handle = String(row[headerMap['twitter_id']]).trim();
-      } else if (row[5]) {
+        const h = String(row[headerMap['twitter_id']]).trim();
+        if (h && !/^(yes|no|http)/i.test(h) && !/^\d{1,5}$/.test(h)) {
+          handle = h;
+        }
+      }
+      if (!handle && url) {
+        const match = url.match(/https?:\/\/(?:x|twitter)\.com\/([^\/\?]+)/i);
+        if (match && !['i', 'intent', 'status'].includes(match[1].toLowerCase())) {
+          handle = match[1];
+        }
+      }
+      if (!handle && row[5] && !/^(yes|no|http)/i.test(row[5])) {
         handle = String(row[5]).trim();
       }
 
       const validHeads = ['upl', 'upm', 'upc', 'emo', 'emm', 'emc', 'ako', 'akm', 'akb', 'akc', 'mdc', 'mdm', 'cmc', 'cmm', 'news', 'grok'];
       let head = '';
       if (headerMap && headerMap['head'] !== undefined && row[headerMap['head']]) {
-        head = String(row[headerMap['head']]).trim().toLowerCase();
+        const h = String(row[headerMap['head']]).trim().toLowerCase();
+        if (validHeads.includes(h)) head = h;
       }
       if (!head) {
-        for (let c = 0; c < Math.min(row.length, 10); c++) {
+        for (let c = 0; c < Math.min(row.length, 15); c++) {
           const cell = String(row[c] || '').toLowerCase().trim();
           if (validHeads.includes(cell)) {
             head = cell;
@@ -630,10 +644,13 @@ async function fetchSheetMatrix() {
 
       let text = '';
       if (headerMap && headerMap['post_text'] !== undefined && row[headerMap['post_text']]) {
-        text = String(row[headerMap['post_text']]).trim();
+        const t = String(row[headerMap['post_text']]).trim();
+        if (t.length > 10 && !/^(yes|no|pending|closed)$/i.test(t)) {
+          text = t;
+        }
       }
       if (!text) {
-        const candidateCols = [20, 16, 21, 22, 18, 17, 19];
+        const candidateCols = [21, 20, 16, 22, 18, 17, 19];
         for (const c of candidateCols) {
           if (row[c] && row[c].trim().length > 15 && !row[c].trim().startsWith('http') && !/^\d+$/.test(row[c].trim())) {
             text = row[c].trim();
@@ -645,7 +662,7 @@ async function fetchSheetMatrix() {
         let longest = '';
         for (let c = 5; c < row.length; c++) {
           const cell = String(row[c] || '').trim();
-          if (cell.length > longest.length && !cell.startsWith('http') && !/^\d{10,}$/.test(cell) && !/^\d{2}-\d{2}-\d{4}/.test(cell)) {
+          if (cell.length > longest.length && !cell.startsWith('http') && !/^\d{10,}$/.test(cell) && !/^\d{2}-\d{2}-\d{4}/.test(cell) && !/^(yes|no|pending|closed)$/i.test(cell)) {
             longest = cell;
           }
         }
@@ -679,7 +696,7 @@ async function fetchSheetMatrix() {
         if (isOfficialHandle(handle) || (url && isOfficialHandle(url))) continue;
 
         const textEligible = isPostEligible(text);
-        const headEligible = Boolean(head) && ['upl', 'upm', 'emo', 'ako', 'akm', 'akb', 'akc', 'emm'].includes(head);
+        const headEligible = Boolean(head) && ['upl', 'upm', 'upc', 'emo', 'emm', 'emc', 'ako', 'akm', 'akb', 'akc', 'mdc', 'mdm', 'cmc', 'cmm', 'news', 'grok'].includes(head);
         if (!textEligible && !headEligible) continue;
 
         if (!tid) continue;
@@ -1157,14 +1174,16 @@ function processSheetMatrix(headers, data, method, startTime = Date.now()) {
       continue;
     }
 
-    // Strictly enforce 5 official monitored handles filter:
+    // Strictly enforce official monitored handles filter:
     const matchedTargets = getMatchedTargetHandles(rawPostText);
     let headAccount = null;
-    if (head === 'upm') headAccount = '@mduppcl';
-    else if (head === 'emo' || head === 'emm') headAccount = '@EMofficeUP';
+    if (head === 'upm' || head === 'upc' || head === 'upl') headAccount = '@UPPCLLKO';
+    else if (head === 'emo' || head === 'emm' || head === 'emc') headAccount = '@EMofficeUP';
     else if (head === 'ako' || head === 'akm') headAccount = '@AKSharmaOffice';
     else if (head === 'akb' || head === 'akc') headAccount = '@aksharmaBharat';
-    else if (head === 'upl') headAccount = '@UPPCLLKO';
+    else if (head === 'mdc' || head === 'mdm') headAccount = '@mduppcl';
+    else if (head === 'cmc' || head === 'cmm') headAccount = '@CMOfficeUP';
+    else if (head === 'news' || head === 'grok') headAccount = '@UPPCLLKO';
 
     if (matchedTargets.length === 0 && !headAccount) {
       continue;
