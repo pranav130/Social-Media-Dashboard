@@ -718,9 +718,10 @@ const App = {
               <div id="sync-status-indicator" class="sync-status-pill" title="Authoritative Source: Google Sheets (Twitter Complaint List)">
                 <span class="sync-pulse-dot live" id="sync-pulse-dot"></span>
                 <span id="sync-status-text">Sheet: LIVE</span>
+                ${!isRestrictedOperator ? `
                 <a id="sync-sheet-link" href="https://docs.google.com/spreadsheets/d/10_210Ynr_F0Pj1Yov_pqjVZ1kaYIEWrbGF1jn16sgNY/edit?gid=598922870#gid=598922870" target="_blank" rel="noopener noreferrer" title="Open Google Sheet (Twitter Complaint List) in new tab">
                   <i class="fa-solid fa-arrow-up-right-from-square" style="font-size: 10px; margin-left: 2px;"></i>
-                </a>
+                </a>` : ''}
               </div>
               <div id="ist-clock" class="clock-display">
                 <i class="fa-regular fa-clock"></i> IST: Loading...
@@ -5657,10 +5658,6 @@ const App = {
           <button class="btn btn-primary btn-sm" id="ws-refresh-btn" onclick="App.refreshWorkingSheet()">
             <i class="fa-solid fa-arrows-rotate"></i> Refresh Sheet
           </button>
-          <a href="https://docs.google.com/spreadsheets/d/10_210Ynr_F0Pj1Yov_pqjVZ1kaYIEWrbGF1jn16sgNY/edit?gid=598922870#gid=598922870"
-             target="_blank" rel="noopener noreferrer" class="btn btn-secondary btn-sm" style="display: inline-flex; align-items: center; gap: 6px;">
-            <i class="fa-solid fa-arrow-up-right-from-square"></i> Open Google Sheet
-          </a>
         </div>
       </div>
 
