@@ -1502,9 +1502,12 @@ async function runTests() {
 
   it('7. Dropdown Option Integrity: Picked Status, Head, Untagged Complaint, Complaint Type, and Status match rules', () => {
     const wss = require('./working_sheet_service');
-    assert.deepStrictEqual(wss.PICKED_STATUS_OPTIONS, ['YES', 'NO', 'TROLL', 'APPRECIATION']);
+    ['YES', 'NO', 'OTHER', 'TROLL', 'APPRECIATION'].forEach(opt => {
+      assert.ok(wss.PICKED_STATUS_OPTIONS.includes(opt), `Picked Status must include ${opt}`);
+    });
     assert.deepStrictEqual(wss.HEAD_OPTIONS, ['akm', 'akc', 'emm', 'emc', 'mdc', 'mdm', 'upm', 'upc', 'cmc', 'cmm', 'ako', 'NEWS', 'GROK']);
     assert.deepStrictEqual(wss.UNTAGGED_OPTIONS, ['YES', 'NO']);
+    assert.deepStrictEqual(wss.UPPCLLKO_REPLIED_OPTIONS, ['YES', 'NO']);
     assert.strictEqual(wss.COMPLAINT_TYPE_OPTIONS.length, 29, 'Must have exactly 29 standard complaint types');
     assert.ok(wss.STATUS_OPTIONS.includes('Forwarded to Discom'));
     assert.ok(wss.STATUS_OPTIONS.includes('Reply to Consumer'));
@@ -1631,6 +1634,17 @@ async function runTests() {
 
     // Revert back
     db.run("UPDATE complaints SET picked_status = ?, updated_at = ? WHERE id = ?;", [origPicked, nowIst, testComplaint.id]);
+  });
+
+  it('15. UPPCLLKO Replied Dropdown: Included in editable columns and rendered as select in Working Sheet', () => {
+    const wss = require('./working_sheet_service');
+    assert.ok(wss.EDITABLE_COLUMNS.includes('UPPCLLKO Replied (YES/NO)'), 'UPPCLLKO Replied must be editable');
+    assert.ok(!wss.READONLY_COLUMNS.includes('UPPCLLKO Replied (YES/NO)'), 'UPPCLLKO Replied must not be read-only');
+    assert.deepStrictEqual(wss.UPPCLLKO_REPLIED_OPTIONS, ['YES', 'NO']);
+
+    const appJs = fs.readFileSync('public/js/app.js', 'utf8');
+    assert.ok(appJs.includes('data-col="UPPCLLKO Replied (YES/NO)"'), 'app.js must render select for UPPCLLKO Replied');
+    assert.ok(appJs.includes('Editable Dropdown (YES/NO)'), 'app.js header must indicate editable dropdown');
   });
 
   console.log('\n====================================================');

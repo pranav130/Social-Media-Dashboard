@@ -675,7 +675,7 @@ const COMPLAINT_TYPE_DROPDOWN_VALUES = [
 ];
 
 // Picked status dropdown values
-const PICKED_STATUS_DROPDOWN_VALUES = ['YES', 'NO', 'TROLL', 'APPRECIATION'];
+const PICKED_STATUS_DROPDOWN_VALUES = ['YES', 'NO', 'OTHER', 'TROLL', 'APPRECIATION'];
 
 // Untagged complaint dropdown values
 const UNTAGGED_DROPDOWN_VALUES = ['YES', 'NO'];
@@ -4386,16 +4386,22 @@ function updateWorkingSheetCell(contents) {
   if (!sheet) sheet = ss.getActiveSheet();
 
   const targetUrl = String(contents.postUrl || '').trim();
-  const targetTweetId = String(contents.tweetId || '').trim();
+  var targetTweetId = String(contents.tweetId || '').trim();
+  if (!targetTweetId && targetUrl) {
+    var match = targetUrl.match(/status\/(\d+)/);
+    if (match) targetTweetId = match[1];
+  }
   const hintedRowIndex = parseInt(contents.sheetRowIndex, 10);
   const columnName = String(contents.columnName || '').trim();
   const rawNewValue = contents.newValue !== undefined ? String(contents.newValue).trim() : '';
 
   // Allowed editable columns
   const allowedEditable = [
-    'Picked Status', 'Head', 'Untagged Complaint', 'Complaint Type', 'District', 'Status'
+    'Picked Status', 'Head', 'Untagged Complaint', 'UPPCLLKO Replied (YES/NO)', 'UPPCLLKO Replied', 'Complaint Type', 'District', 'Status'
   ];
-  if (!allowedEditable.includes(columnName)) {
+  var cleanTarget = columnName.trim().toLowerCase().replace(/[\s_\(\)\/\-]/g, '');
+  var allowedNorm = allowedEditable.map(function(c) { return c.toLowerCase().replace(/[\s_\(\)\/\-]/g, ''); });
+  if (!allowedEditable.includes(columnName) && allowedNorm.indexOf(cleanTarget) === -1) {
     return { status: 'error', error: 'Column ' + columnName + ' is not permitted for manual edits.' };
   }
 
@@ -4412,7 +4418,6 @@ function updateWorkingSheetCell(contents) {
 
   // Resolve column position
   var targetCol = -1;
-  var cleanTarget = columnName.trim().toLowerCase().replace(/[\s_\(\)\/\-]/g, '');
   for (var c = 0; c < rawHeaders.length; c++) {
     var h = String(rawHeaders[c] || '').trim().toLowerCase().replace(/[\s_\(\)\/\-]/g, '');
     if (h === cleanTarget) {
@@ -4424,14 +4429,23 @@ function updateWorkingSheetCell(contents) {
     return { status: 'error', error: 'Target column ' + columnName + ' not found in sheet headers.' };
   }
 
+  function matchesComplaint(u, tid) {
+    if (targetTweetId && ((u && u.indexOf(targetTweetId) !== -1) || tid === targetTweetId)) return true;
+    if (targetUrl) {
+      var normU = u.replace('twitter.com', 'x.com');
+      var normT = targetUrl.replace('twitter.com', 'x.com');
+      if (normU === normT) return true;
+    }
+    return false;
+  }
+
   // Identify target row
   var targetRow = -1;
   // 1. Check hinted row
   if (!isNaN(hintedRowIndex) && hintedRowIndex >= 3 && hintedRowIndex <= lastRow) {
     var urlAtHint = String(sheet.getRange(hintedRowIndex, linkUrlCol).getValue() || '').trim();
     var idAtHint = (twitterIdCol > 0) ? String(sheet.getRange(hintedRowIndex, twitterIdCol).getValue() || '').trim() : '';
-    if ((targetUrl && urlAtHint === targetUrl) ||
-        (targetTweetId && (urlAtHint.includes(targetTweetId) || idAtHint === targetTweetId))) {
+    if (matchesComplaint(urlAtHint, idAtHint)) {
       targetRow = hintedRowIndex;
     }
   }
@@ -4443,12 +4457,16 @@ function updateWorkingSheetCell(contents) {
     for (var i = 0; i < urlVals.length; i++) {
       var u = String(urlVals[i][0] || '').trim();
       var tid = (idVals && idVals[i]) ? String(idVals[i][0] || '').trim() : '';
-      if ((targetUrl && u === targetUrl) ||
-          (targetTweetId && (u.includes(targetTweetId) || tid === targetTweetId))) {
+      if (matchesComplaint(u, tid)) {
         targetRow = i + 3;
         break;
       }
     }
+  }
+
+  // 3. Fallback to valid hinted row if search was empty
+  if (targetRow === -1 && !isNaN(hintedRowIndex) && hintedRowIndex >= 3 && hintedRowIndex <= lastRow && !targetTweetId && !targetUrl) {
+    targetRow = hintedRowIndex;
   }
 
   if (targetRow === -1 || targetRow < 3) {
@@ -4476,6 +4494,14 @@ function updateWorkingSheetCell(contents) {
           zoneVal = matched.zone;
         }
       }
+    }
+  }
+
+  // If UPPCLLKO Replied was updated, immediately recalculate the 30-min SLA column!
+  if (cleanTarget.includes('uppcl') || cleanTarget.includes('replied')) {
+    if (colMap.reply30 !== undefined) {
+      const calculatedSla = calculateRow30MinSlaInScript(sheet, targetRow, colMap, rawNewValue, targetTweetId, targetUrl);
+      sheet.getRange(targetRow, colMap.reply30 + 1).setValue(calculatedSla);
     }
   }
 

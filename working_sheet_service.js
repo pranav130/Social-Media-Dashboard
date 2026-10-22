@@ -56,7 +56,8 @@ const WORKING_SHEET_COLUMNS = [
 ];
 
 // Permitted options for dropdown controls
-const PICKED_STATUS_OPTIONS = ['YES', 'NO', 'TROLL', 'APPRECIATION'];
+const PICKED_STATUS_OPTIONS = ['YES', 'NO', 'OTHER', 'TROLL', 'APPRECIATION'];
+const UPPCLLKO_REPLIED_OPTIONS = ['YES', 'NO'];
 
 const HEAD_OPTIONS = [
   'akm', 'akc', 'emm', 'emc', 'mdc', 'mdm',
@@ -112,6 +113,7 @@ const EDITABLE_COLUMNS = [
   'Picked Status',
   'Head',
   'Untagged Complaint',
+  'UPPCLLKO Replied (YES/NO)',
   'Complaint Type',
   'District',
   'Status'
@@ -122,8 +124,7 @@ const READONLY_COLUMNS = [
   'DATE',
   'C F',
   'LINK URL',
-  'Twitter Id',
-  'UPPCLLKO Replied (YES/NO)'
+  'Twitter Id'
 ];
 
 // In-memory cache
@@ -798,6 +799,7 @@ async function getWorkingSheetData({
       'Picked Status': PICKED_STATUS_OPTIONS,
       'Head': HEAD_OPTIONS,
       'Untagged Complaint': UNTAGGED_OPTIONS,
+      'UPPCLLKO Replied (YES/NO)': UPPCLLKO_REPLIED_OPTIONS,
       'Complaint Type': COMPLAINT_TYPE_OPTIONS,
       'District': districtOptions,
       'Status': STATUS_OPTIONS
@@ -835,6 +837,9 @@ async function updateWorkingSheetCell({
   }
   if (normCol === 'Untagged Complaint' && !UNTAGGED_OPTIONS.includes(rawVal)) {
     throw new Error(`Invalid Untagged option "${rawVal}". Permitted: YES, NO`);
+  }
+  if (normCol === 'UPPCLLKO Replied (YES/NO)' && !['YES', 'NO', '', '-'].includes(rawVal.toUpperCase())) {
+    throw new Error(`Invalid UPPCLLKO Replied option "${rawVal}". Permitted: YES, NO`);
   }
   if (normCol === 'Complaint Type' && !COMPLAINT_TYPE_OPTIONS.includes(rawVal)) {
     throw new Error(`Invalid Complaint Type "${rawVal}".`);
@@ -1014,6 +1019,10 @@ async function updateWorkingSheetCell({
     if (json.status === 'ok' && json.verified) {
       verifiedValue = json.value !== undefined ? String(json.value).trim() : rawVal;
       if (json.row) targetRow = json.row;
+    } else if (json.status === 'ok' && (json.inserted === 0 || !json.verified)) {
+      throw new Error(
+        'Google Apps Script Web App is running an older deployment that does not support cell updates yet. Please paste the updated Code.gs into Google Sheets (Extensions > Apps Script) and deploy a "New version". Copy 1-click code at: https://social-media-dashboard-b1mv.onrender.com/code'
+      );
     } else {
       throw new Error(json.error || 'Google Apps Script update failed.');
     }
@@ -1128,6 +1137,10 @@ function syncWorkingEditToSqlite({
     sql += ", updated_at = ? WHERE id = ?;";
     params.push(nowIst, complaint.id);
     db.run(sql, params);
+  } else if (columnName === 'UPPCLLKO Replied (YES/NO)' || columnName.includes('Replied')) {
+    const upper = (newValue || '').toUpperCase();
+    const isYes = (upper === 'YES');
+    db.run("UPDATE complaints SET uppcl_replied = ?, uppcllko_replied = ?, updated_at = ? WHERE id = ?;", [isYes ? 1 : 0, isYes ? 'YES' : (upper === 'NO' ? 'NO' : null), nowIst, complaint.id]);
   } else if (columnName === 'Status') {
     db.run("UPDATE complaints SET status = ?, updated_at = ? WHERE id = ?;", [newValue, nowIst, complaint.id]);
   }
@@ -1138,6 +1151,7 @@ module.exports = {
   EDITABLE_COLUMNS,
   READONLY_COLUMNS,
   PICKED_STATUS_OPTIONS,
+  UPPCLLKO_REPLIED_OPTIONS,
   HEAD_OPTIONS,
   UNTAGGED_OPTIONS,
   COMPLAINT_TYPE_OPTIONS,

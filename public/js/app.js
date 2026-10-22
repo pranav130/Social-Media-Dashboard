@@ -5714,7 +5714,9 @@ const App = {
                 <th class="ws-col-untagged">
                   <span>Untagged</span> <i class="fa-solid fa-pen" style="font-size: 9px; color: #008080;" title="Editable Dropdown"></i>
                 </th>
-                <th class="ws-col-replied" style="text-align: center;" title="UPPCLLKO Replied Status">UPPCLLKO Replied</th>
+                <th class="ws-col-replied" style="text-align: center;">
+                  <span>UPPCLLKO Replied</span> <i class="fa-solid fa-pen" style="font-size: 9px; color: #008080;" title="Editable Dropdown (YES/NO)"></i>
+                </th>
                 <th class="ws-col-type">
                   <span>Complaint Type</span> <i class="fa-solid fa-pen" style="font-size: 9px; color: #008080;" title="Editable Dropdown"></i>
                 </th>
@@ -5899,7 +5901,7 @@ const App = {
       const statusVal = String(r['Status'] || '').trim();
       const repliedVal = String(r['UPPCLLKO Replied (YES/NO)'] || '').trim().toUpperCase();
 
-      const pickedOptions = (opts['Picked Status'] || ['YES', 'NO', 'TROLL', 'APPRECIATION']).map(p =>
+      const pickedOptions = (opts['Picked Status'] || ['YES', 'NO', 'OTHER', 'TROLL', 'APPRECIATION']).map(p =>
         `<option value="${p}" ${pickedVal === p ? 'selected' : ''}>${p}</option>`
       ).join('');
 
@@ -5923,12 +5925,10 @@ const App = {
         `<option value="${st}" ${statusVal === st ? 'selected' : ''}>${st}</option>`
       ).join('');
 
-      // UPPCLLKO Replied Badge (Enhanced Font Size)
-      const repliedMarkup = repliedVal === 'YES'
-        ? `<span class="badge ws-replied-badge" style="background-color: #d1fae5; color: #065f46;"><i class="fa-solid fa-check"></i> YES</span>`
-        : (repliedVal === 'NO'
-            ? `<span class="badge ws-replied-badge" style="background-color: #f1f5f9; color: #475569;">NO</span>`
-            : `<span style="color: #94a3b8; font-size: 13px;">-</span>`);
+      // UPPCLLKO Replied Dropdown Options
+      const repliedOptions = (opts['UPPCLLKO Replied (YES/NO)'] || ['YES', 'NO']).map(u =>
+        `<option value="${u}" ${repliedVal === u ? 'selected' : ''}>${u}</option>`
+      ).join('');
 
       // Link URL Button (Enhanced Font Size)
       const linkMarkup = r['LINK URL']
@@ -5989,7 +5989,11 @@ const App = {
 
           <!-- 8. UPPCLLKO Replied (YES/NO) -->
           <td class="ws-col-replied" style="text-align: center;">
-            ${repliedMarkup}
+            <select class="ws-select" data-col="UPPCLLKO Replied (YES/NO)" data-orig="${repliedVal}"
+                    onchange="App.handleWorkingSheetCellChange(this, ${sheetRowIdx}, 'UPPCLLKO Replied (YES/NO)', '${tweetId}', '${rawPostUrl}')">
+              <option value="" ${!repliedVal || repliedVal === '-' ? 'selected' : ''}>-</option>
+              ${repliedOptions}
+            </select>
           </td>
 
           <!-- 9. Complaint Type -->
