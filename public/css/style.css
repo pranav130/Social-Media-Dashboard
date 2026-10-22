@@ -1818,3 +1818,27 @@ body {
   letter-spacing: 0.5px;
   font-weight: 600;
 }
+
+
+/* Static Display-Only KPI Cards on WORKING SHEET */
+.kpi-card.kpi-card-static,
+.ws-kpi-card {
+  cursor: default !important;
+  transform: none !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04) !important;
+  user-select: text;
+}
+
+.kpi-card.kpi-card-static:hover,
+.ws-kpi-card:hover {
+  transform: none !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04) !important;
+  cursor: default !important;
+}
+
+.ws-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px;
+  margin-bottom: 20px;
+}

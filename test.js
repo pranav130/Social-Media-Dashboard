@@ -1647,6 +1647,33 @@ async function runTests() {
     assert.ok(appJs.includes('Editable Dropdown (YES/NO)'), 'app.js header must indicate editable dropdown');
   });
 
+  it('16. WORKING SHEET Metric Cards: Renders the 7 display-only informational cards above the table without click handlers', () => {
+    const appJs = fs.readFileSync('public/js/app.js', 'utf8');
+    assert.ok(appJs.includes('ws-kpi-grid'), 'Must render ws-kpi-grid container');
+    assert.ok(appJs.includes('kpi-card-static'), 'Must use static non-clickable kpi cards');
+
+    // Verify all seven required cards are present
+    const requiredCards = [
+      'Total Received',
+      'Received Today',
+      'UPPCLLKO Replied',
+      'UPPCLLKO Not Replied',
+      'Appreciation',
+      '30-Min First Reply',
+      'DISCOM Follow Up'
+    ];
+    requiredCards.forEach(label => {
+      assert.ok(appJs.includes(label), `Working Sheet must display ${label} metric card`);
+    });
+
+    // Verify cards are display-only (no click handlers on ws-kpi-grid cards)
+    const gridStart = appJs.indexOf('id="ws-kpi-grid"');
+    const gridEnd = appJs.indexOf('<!-- Filter Bar -->', gridStart);
+    const gridHtml = appJs.slice(gridStart, gridEnd);
+    assert.ok(!gridHtml.includes('onclick='), 'Metric cards in working sheet must have no click actions');
+    assert.ok(!gridHtml.includes('<a '), 'Metric cards in working sheet must have no link tags');
+  });
+
 
   
   console.log('\n[26. Role-Based Operator Login & Security Suite]');

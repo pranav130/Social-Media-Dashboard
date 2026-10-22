@@ -976,6 +976,12 @@ const App = {
   },
 
   renderKPIs(k) {
+    this.latestKpis = k;
+    try {
+      sessionStorage.setItem('uppcl_smc_kpis', JSON.stringify(k));
+      localStorage.setItem('uppcl_smc_kpis', JSON.stringify(k));
+    } catch (e) {}
+
     const container = document.getElementById('dash-kpi-grid');
     if (!container) return;
 
@@ -5644,10 +5650,61 @@ const App = {
     document.getElementById('login-password').value = p;
   },
 
-    // -----------------------------------------------------------
+    getWorkingSheetMetrics() {
+    let k = this.latestKpis;
+    if (!k) {
+      try {
+        const raw = sessionStorage.getItem('uppcl_smc_kpis') || localStorage.getItem('uppcl_smc_kpis');
+        if (raw) k = JSON.parse(raw);
+      } catch (e) {}
+    }
+    k = k || {};
+
+    const totalVal = (k.total !== undefined && k.total !== null)
+      ? k.total
+      : (this.workingSheetData?.totalRecords !== undefined ? this.workingSheetData.totalRecords : '—');
+
+    const receivedTodayVal = (k.receivedToday !== undefined && k.receivedToday !== null)
+      ? k.receivedToday
+      : '—';
+
+    const uppclRepliedVal = (k.uppclRepliedCount !== undefined && k.uppclRepliedCount !== null)
+      ? k.uppclRepliedCount
+      : ((k.pickedYes !== undefined && k.pickedYes !== null) ? k.pickedYes : '—');
+
+    const uppclNotRepliedVal = (k.uppclNotRepliedCount !== undefined && k.uppclNotRepliedCount !== null)
+      ? k.uppclNotRepliedCount
+      : ((k.pickedNo !== undefined && k.pickedNo !== null) ? k.pickedNo : '—');
+
+    const appreciationVal = (k.pickedAppreciation !== undefined && k.pickedAppreciation !== null)
+      ? k.pickedAppreciation
+      : '—';
+
+    const reply30Val = (k.replyWithin30MinRate !== undefined && k.replyWithin30MinRate !== null)
+      ? `${k.replyWithin30MinRate}%`
+      : ((k.replyWithin30MinCount !== undefined && k.replyWithin30MinCount !== null) ? k.replyWithin30MinCount : '—');
+
+    const followupVal = (k.followup !== undefined && k.followup !== null)
+      ? k.followup
+      : '—';
+
+    return {
+      total: totalVal,
+      receivedToday: receivedTodayVal,
+      uppclReplied: uppclRepliedVal,
+      uppclNotReplied: uppclNotRepliedVal,
+      appreciation: appreciationVal,
+      reply30: reply30Val,
+      followup: followupVal
+    };
+  },
+
+  // -----------------------------------------------------------
   // WORKING SHEET MODULE (11 COLUMNS REAL-TIME GOOGLE SHEET)
   // -----------------------------------------------------------
   async renderWorkingSheet(container) {
+    const m = this.getWorkingSheetMetrics();
+
     container.innerHTML = `
       <div class="page-header">
         <div class="page-title">
@@ -5658,6 +5715,51 @@ const App = {
           <button class="btn btn-primary btn-sm" id="ws-refresh-btn" onclick="App.refreshWorkingSheet()">
             <i class="fa-solid fa-arrows-rotate"></i> Refresh Sheet
           </button>
+        </div>
+      </div>
+
+      <!-- Seven Display-Only Dashboard Metric Cards -->
+      <div class="kpi-grid ws-kpi-grid" id="ws-kpi-grid" style="margin-bottom: 20px;">
+        <div class="kpi-card kpi-card-static kpi-total" id="ws-card-total" title="Total Received">
+          <div class="kpi-label">Total Received</div>
+          <div class="kpi-value" id="ws-val-total">${m.total}</div>
+          <div class="kpi-sub">Total no. of complaints received till now</div>
+        </div>
+
+        <div class="kpi-card kpi-card-static kpi-today" id="ws-card-today" title="Received Today">
+          <div class="kpi-label">Received Today</div>
+          <div class="kpi-value" id="ws-val-today">${m.receivedToday}</div>
+          <div class="kpi-sub">Total no. of complaints received today's date</div>
+        </div>
+
+        <div class="kpi-card kpi-card-static" id="ws-card-replied" style="border-top: 3px solid #059669;" title="UPPCLLKO Replied">
+          <div class="kpi-label" style="color: #059669;">UPPCLLKO Replied</div>
+          <div class="kpi-value" id="ws-val-replied" style="color: #059669;">${m.uppclReplied}</div>
+          <div class="kpi-sub">If UPPCLLKO replied in that post</div>
+        </div>
+
+        <div class="kpi-card kpi-card-static" id="ws-card-not-replied" style="border-top: 3px solid #64748b;" title="UPPCLLKO Not Replied">
+          <div class="kpi-label" style="color: #64748b;">UPPCLLKO Not Replied</div>
+          <div class="kpi-value" id="ws-val-not-replied" style="color: #64748b;">${m.uppclNotReplied}</div>
+          <div class="kpi-sub">If UPPCLLKO not replied in that post</div>
+        </div>
+
+        <div class="kpi-card kpi-card-static" id="ws-card-appreciation" style="border-top: 3px solid #d97706;" title="Appreciation">
+          <div class="kpi-label" style="color: #d97706;">Appreciation</div>
+          <div class="kpi-value" id="ws-val-appreciation" style="color: #d97706;">${m.appreciation}</div>
+          <div class="kpi-sub">Consumer appreciation & gratitude posts</div>
+        </div>
+
+        <div class="kpi-card kpi-card-static" id="ws-card-reply-30" style="border-top: 3px solid #0284c7;" title="30-Min First Reply">
+          <div class="kpi-label" style="color: #0284c7;">30-Min First Reply</div>
+          <div class="kpi-value" id="ws-val-reply-30" style="color: #0284c7;">${m.reply30}</div>
+          <div class="kpi-sub">Time difference between post time and UPPCLLKO replied time &lt;30Mins</div>
+        </div>
+
+        <div class="kpi-card kpi-card-static kpi-followup" id="ws-card-followup" title="DISCOM Follow Up">
+          <div class="kpi-label">DISCOM Follow Up</div>
+          <div class="kpi-value" id="ws-val-followup">${m.followup}</div>
+          <div class="kpi-sub">If Discom/division replies after getting Tagged on reply from UPPCLLKO</div>
         </div>
       </div>
 
@@ -5843,6 +5945,12 @@ const App = {
       }
 
       this.workingSheetData = res;
+
+      // Update total records metric if available and card is showing placeholder
+      const totalEl = document.getElementById('ws-val-total');
+      if (totalEl && totalEl.textContent === '—' && res.totalRecords !== undefined) {
+        totalEl.textContent = res.totalRecords;
+      }
 
       // Populate filter dropdowns if not yet populated
       const distSelect = document.getElementById('ws-filter-district');
