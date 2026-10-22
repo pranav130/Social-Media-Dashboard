@@ -1382,6 +1382,46 @@ async function runTests() {
     assert.ok(appJs.includes('${replyMarkup}'), 'app.js must render replyMarkup');
   });
 
+  console.log('\n[24. Google Sheets UPPCLLKO Replied (YES/NO) Authoritative Partition Suite]');
+
+  it('1. UPPCLLKO Replied card and table strictly include all records with YES', () => {
+    const yesCount = db.get("SELECT COUNT(*) as c FROM complaints WHERE (uppcl_replied = 1 OR uppcllko_replied = 'YES');").c;
+    assert.ok(yesCount > 0, 'UPPCLLKO Replied count must be greater than 0');
+
+    // Confirm that no record with uppcllko_replied = 'NO' is in the YES count
+    const leakageIntoYes = db.get("SELECT COUNT(*) as c FROM complaints WHERE (uppcl_replied = 1 OR uppcllko_replied = 'YES') AND uppcllko_replied = 'NO';").c;
+    assert.strictEqual(leakageIntoYes, 0, 'Records marked NO in Google Sheet must never be included in UPPCLLKO Replied');
+  });
+
+  it('2. UPPCLLKO Not Replied card and table strictly include all records with NO', () => {
+    const noCount = db.get("SELECT COUNT(*) as c FROM complaints WHERE ((uppcl_replied = 0 OR uppcl_replied IS NULL) AND (uppcllko_replied = 'NO' OR uppcllko_replied IS NULL OR uppcllko_replied = '') AND (category_name != 'APPRECIATION' OR category_name IS NULL));").c;
+    assert.ok(noCount > 0, 'UPPCLLKO Not Replied count must be greater than 0');
+
+    // Confirm that no record with uppcllko_replied = 'YES' is in the NO count
+    const leakageIntoNo = db.get("SELECT COUNT(*) as c FROM complaints WHERE ((uppcl_replied = 0 OR uppcl_replied IS NULL) AND (uppcllko_replied = 'NO' OR uppcllko_replied IS NULL OR uppcllko_replied = '') AND (category_name != 'APPRECIATION' OR category_name IS NULL)) AND (uppcl_replied = 1 OR uppcllko_replied = 'YES');").c;
+    assert.strictEqual(leakageIntoNo, 0, 'Records marked YES in Google Sheet must never be included in UPPCLLKO Not Replied');
+  });
+
+  it('3. Mutual exclusivity: A complaint cannot simultaneously belong to YES and NO', () => {
+    const overlap = db.get(`
+      SELECT COUNT(*) as c FROM complaints 
+      WHERE (uppcl_replied = 1 OR uppcllko_replied = 'YES') 
+        AND ((uppcl_replied = 0 OR uppcl_replied IS NULL) AND (uppcllko_replied = 'NO' OR uppcllko_replied IS NULL OR uppcllko_replied = ''));
+    `).c;
+    assert.strictEqual(overlap, 0, 'Overlap between UPPCLLKO Replied and UPPCLLKO Not Replied must strictly be 0');
+  });
+
+  it('4. server.js KPI calculations query both uppcl_replied and uppcllko_replied', () => {
+    const fs = require('fs');
+    const serverCode = fs.readFileSync('server.js', 'utf8');
+
+    // Check dashboard KPI SQL
+    assert.ok(serverCode.includes("WHEN uppcl_replied = 1 OR uppcllko_replied = 'YES' THEN 'YES'"), 'Dashboard KPI must count YES based on uppcl_replied OR uppcllko_replied');
+
+    // Check picked_status filter
+    assert.ok(serverCode.includes('(uppcl_replied = 1 OR uppcllko_replied = "YES")'), 'Filter must include uppcllko_replied = YES');
+  });
+
   console.log('\n====================================================');
   console.log(` Tests Finished: ${passCount} Passed, ${failCount} Failed`);
   console.log('====================================================\n');

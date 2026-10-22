@@ -1207,7 +1207,8 @@ function processSheetMatrix(headers, data, method, startTime = Date.now()) {
                                      Boolean(mapper.get(row, 'reply_post_url')) ||
                                      Boolean(mapper.get(row, 'reply_posted_at'));
 
-    // Permanent status retention: once verified in history, never revoked even if DISCOM or consumer replies later!
+    // Google Sheets Column UPPCLLKO Replied (YES/NO) is authoritative:
+    const cleanSheetReply = String(sheetUppclReplied || '').trim().toUpperCase();
     const isHistoricallyReplied = Boolean(
       existingComp && (
         existingComp.has_historical_reply === 1 ||
@@ -1215,8 +1216,20 @@ function processSheetMatrix(headers, data, method, startTime = Date.now()) {
         Boolean(existingComp.published_reply_id)
       )
     );
-    const isSheetRepliedYes = sheetUppclReplied.toUpperCase() === 'YES';
-    const uppclReplied = (isHistoricallyReplied || hasIncomingVerifiedReply || isSheetRepliedYes) ? 1 : 0;
+
+    let uppclReplied = 0;
+    let uppcllkoReplied = 'NO';
+    if (cleanSheetReply === 'YES') {
+      uppclReplied = 1;
+      uppcllkoReplied = 'YES';
+    } else if (cleanSheetReply === 'NO') {
+      uppclReplied = 0;
+      uppcllkoReplied = 'NO';
+    } else {
+      // Unspecified in sheet: fallback to historical or incoming verified reply
+      uppclReplied = (isHistoricallyReplied || hasIncomingVerifiedReply) ? 1 : 0;
+      uppcllkoReplied = uppclReplied === 1 ? 'YES' : 'NO';
+    }
 
     let replyEvidence = (uppclReplied && existingComp && existingComp.reply_evidence) ? existingComp.reply_evidence : null;
     let firstRepliedAt = (uppclReplied && existingComp && existingComp.first_replied_at) ? existingComp.first_replied_at : null;
@@ -1231,7 +1244,7 @@ function processSheetMatrix(headers, data, method, startTime = Date.now()) {
           replyEvidence = 'Verified UPPCLLKO reply on record';
         }
       }
-    } else if (isSheetRepliedYes) {
+    } else if (cleanSheetReply === 'YES') {
       replyEvidence = replyEvidence || 'Verified UPPCLLKO reply in sheet record';
       firstRepliedAt = firstRepliedAt || nowIst;
     }
@@ -1360,7 +1373,7 @@ function processSheetMatrix(headers, data, method, startTime = Date.now()) {
       firstRepliedAt,
       discomTaggedInReply,
       targetMentions,
-      uppclReplied === 1 ? 'YES' : 'NO',
+      uppcllkoReplied,
       nowIst,
       postCreatedAt || null,
       firstDetectedAt || null,
@@ -1426,9 +1439,10 @@ function processSheetMatrix(headers, data, method, startTime = Date.now()) {
           WHERE complaint_id = complaints.id AND is_uppcl_reply = 1 
           ORDER BY id DESC LIMIT 1
         )
-    WHERE (id IN (SELECT DISTINCT complaint_id FROM complaint_replies WHERE is_uppcl_reply = 1))
+    WHERE ((id IN (SELECT DISTINCT complaint_id FROM complaint_replies WHERE is_uppcl_reply = 1))
        OR (published_reply_id IS NOT NULL AND published_reply_id != '')
-       OR (id IN (SELECT DISTINCT complaint_id FROM x_outgoing_replies WHERE status IN ('Published', 'SENT')));
+       OR (id IN (SELECT DISTINCT complaint_id FROM x_outgoing_replies WHERE status IN ('Published', 'SENT'))))
+      AND (uppcllko_replied != 'NO' OR uppcllko_replied IS NULL);
   `);
 
   // 3. Complaints where UPPCLLKO has not replied

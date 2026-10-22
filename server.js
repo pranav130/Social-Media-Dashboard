@@ -494,9 +494,9 @@ app.get('/api/complaints', authMiddleware, (req, res) => {
   if (picked_status && picked_status !== 'All') {
     const ps = picked_status.toUpperCase();
     if (ps === 'YES' || ps === 'UPPCLLKO REPLIED') {
-      whereClauses.push('uppcl_replied = 1');
+      whereClauses.push('(uppcl_replied = 1 OR uppcllko_replied = "YES")');
     } else if (ps === 'NO' || ps === 'UPPCLLKO NOT REPLIED') {
-      whereClauses.push('(uppcl_replied = 0 OR uppcl_replied IS NULL) AND (category_name != "APPRECIATION" OR category_name IS NULL)');
+      whereClauses.push('((uppcl_replied = 0 OR uppcl_replied IS NULL) AND (uppcllko_replied = "NO" OR uppcllko_replied IS NULL OR uppcllko_replied = "") AND (category_name != "APPRECIATION" OR category_name IS NULL))');
     } else if (ps === 'APPRECIATION') {
       whereClauses.push('(category_name = "APPRECIATION" OR complaint_type = "APPRECIATION")');
     } else if (ps === 'DISCOM REPLIED') {
@@ -513,7 +513,7 @@ app.get('/api/complaints', authMiddleware, (req, res) => {
     if (upStr === '1' || upStr === 'TRUE' || upStr === 'YES') {
       whereClauses.push('(uppcl_replied = 1 OR uppcllko_replied = "YES")');
     } else if (upStr === '0' || upStr === 'FALSE' || upStr === 'NO') {
-      whereClauses.push('(uppcl_replied = 0 OR uppcl_replied IS NULL OR uppcllko_replied = "NO")');
+      whereClauses.push('((uppcl_replied = 0 OR uppcl_replied IS NULL) AND (uppcllko_replied = "NO" OR uppcllko_replied IS NULL OR uppcllko_replied = ""))');
     } else if (upStr === 'UNVERIFIED') {
       whereClauses.push('(uppcllko_replied IS NULL AND (uppcl_replied IS NULL OR uppcl_replied = 0))');
     }
@@ -1587,7 +1587,7 @@ app.get('/api/dashboard/kpis', authMiddleware, (req, res) => {
     SELECT 
       CASE 
         WHEN category_name = 'APPRECIATION' OR complaint_type = 'APPRECIATION' THEN 'APPRECIATION'
-        WHEN uppcl_replied = 1 THEN 'YES'
+        WHEN uppcl_replied = 1 OR uppcllko_replied = 'YES' THEN 'YES'
         ELSE 'NO'
       END as effective_picked,
       COUNT(*) as c 
@@ -2262,9 +2262,9 @@ function handleDashboardTableExcelExport(req, res) {
   if (picked_status && picked_status !== 'All') {
     const ps = picked_status.toUpperCase();
     if (ps === 'YES' || ps === 'UPPCLLKO REPLIED') {
-      whereClauses.push('uppcl_replied = 1');
+      whereClauses.push('(uppcl_replied = 1 OR uppcllko_replied = "YES")');
     } else if (ps === 'NO' || ps === 'UPPCLLKO NOT REPLIED') {
-      whereClauses.push('(uppcl_replied = 0 OR uppcl_replied IS NULL) AND (category_name != "APPRECIATION" OR category_name IS NULL)');
+      whereClauses.push('((uppcl_replied = 0 OR uppcl_replied IS NULL) AND (uppcllko_replied = "NO" OR uppcllko_replied IS NULL OR uppcllko_replied = "") AND (category_name != "APPRECIATION" OR category_name IS NULL))');
     } else if (ps === 'APPRECIATION') {
       whereClauses.push('(category_name = "APPRECIATION" OR complaint_type = "APPRECIATION")');
     } else if (ps === 'DISCOM REPLIED') {
@@ -2277,9 +2277,9 @@ function handleDashboardTableExcelExport(req, res) {
 
   if (uppcl_replied !== undefined && uppcl_replied !== 'All' && uppcl_replied !== '') {
     if (uppcl_replied === '1' || uppcl_replied === 'true' || uppcl_replied.toString().toUpperCase() === 'YES') {
-      whereClauses.push('uppcl_replied = 1');
+      whereClauses.push('(uppcl_replied = 1 OR uppcllko_replied = "YES")');
     } else if (uppcl_replied === '0' || uppcl_replied === 'false' || uppcl_replied.toString().toUpperCase() === 'NO') {
-      whereClauses.push('(uppcl_replied = 0 OR uppcl_replied IS NULL)');
+      whereClauses.push('((uppcl_replied = 0 OR uppcl_replied IS NULL) AND (uppcllko_replied = "NO" OR uppcllko_replied IS NULL OR uppcllko_replied = ""))');
     }
   }
 

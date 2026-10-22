@@ -1241,7 +1241,10 @@ const App = {
       tbody.innerHTML = data.map(c => {
         const isDiscomTagged = c.discom_name && ['PVVNL', 'PUVVNL', 'MVVNL', 'DVVNL', 'KESCO'].includes(c.discom_name.toUpperCase());
         const isAppreciation = c.picked_status === 'APPRECIATION' || c.current_status === 'Appreciation' || c.category_name === 'APPRECIATION';
-        const hasUppclReplied = !isAppreciation && Boolean(
+        const isSheetNo = String(c.uppcllko_replied || '').trim().toUpperCase() === 'NO';
+        const isSheetYes = String(c.uppcllko_replied || '').trim().toUpperCase() === 'YES';
+        const hasUppclReplied = !isAppreciation && !isSheetNo && (
+          isSheetYes ||
           c.uppcl_replied === 1 ||
           c.uppcl_replied === '1' ||
           c.has_historical_reply === 1 ||
@@ -2164,7 +2167,10 @@ const App = {
               ${(() => {
                 const isDiscomTagged = c.discom_name && ['PVVNL', 'PUVVNL', 'MVVNL', 'DVVNL', 'KESCO'].includes(c.discom_name.toUpperCase());
                 const isAppreciation = c.picked_status === 'APPRECIATION' || c.current_status === 'Appreciation' || c.category_name === 'APPRECIATION';
-                const hasUppclReplied = !isAppreciation && Boolean(
+                const isSheetNo = String(c.uppcllko_replied || '').trim().toUpperCase() === 'NO';
+                const isSheetYes = String(c.uppcllko_replied || '').trim().toUpperCase() === 'YES';
+                const hasUppclReplied = !isAppreciation && !isSheetNo && (
+                  isSheetYes ||
                   c.uppcl_replied === 1 ||
                   c.uppcl_replied === '1' ||
                   c.has_historical_reply === 1 ||
