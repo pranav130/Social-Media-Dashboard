@@ -608,7 +608,7 @@ const COMPLAINT_TYPE_DROPDOWN_VALUES = [
 ];
 
 // Picked status dropdown values
-const PICKED_STATUS_DROPDOWN_VALUES = ['YES', 'NO', 'OTHER', 'TROLL', 'APPRECIATION'];
+const PICKED_STATUS_DROPDOWN_VALUES = ['YES', 'NO', 'TROLL', 'APPRECIATION'];
 
 // Untagged complaint dropdown values
 const UNTAGGED_DROPDOWN_VALUES = ['YES', 'NO'];
@@ -897,8 +897,9 @@ function onEdit(e) {
   }
 
   const row = range.getRow();
+  if (row < 3) return; // Ignore headers / metadata / counter row
   const frozenRows = Math.max(sheet.getFrozenRows(), 1);
-  if (row <= frozenRows) return; // Ignore headers / metadata / counter row
+  if (row <= frozenRows) return;
 
   const col = range.getColumn();
   const colIndex = col - 1; // 0-based

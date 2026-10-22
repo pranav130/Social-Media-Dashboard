@@ -591,15 +591,17 @@ async function fetchSheetMatrix() {
 
     const extractRowData = (row, headerMap) => {
       let url = '';
-      for (let c = 0; c < row.length; c++) {
-        const cell = String(row[c] || '').trim();
-        if (/https?:\/\/(?:twitter|x)\.com\/\S+/i.test(cell) || /status\/\d+/i.test(cell)) {
-          url = cell;
-          break;
-        }
-      }
-      if (!url && headerMap && headerMap['link_url'] !== undefined && row[headerMap['link_url']]) {
+      if (headerMap && headerMap['link_url'] !== undefined && row[headerMap['link_url']]) {
         url = String(row[headerMap['link_url']]).trim();
+      }
+      if (!url) {
+        for (let c = 0; c < row.length; c++) {
+          const cell = String(row[c] || '').trim();
+          if (/https?:\/\/(?:twitter|x)\.com\/\S+/i.test(cell) || /status\/\d+/i.test(cell)) {
+            url = cell;
+            break;
+          }
+        }
       }
       if (!url && row[4]) url = String(row[4]).trim();
       const tid = extractTweetId(url) || url;
@@ -611,21 +613,32 @@ async function fetchSheetMatrix() {
         handle = String(row[5]).trim();
       }
 
+      const validHeads = ['upl', 'upm', 'upc', 'emo', 'emm', 'emc', 'ako', 'akm', 'akb', 'akc', 'mdc', 'mdm', 'cmc', 'cmm', 'news', 'grok'];
       let head = '';
-      for (let c = 0; c < Math.min(row.length, 10); c++) {
-        const cell = String(row[c] || '').toLowerCase().trim();
-        if (['upl', 'upm', 'emo', 'ako', 'akm', 'akb', 'akc', 'emm'].includes(cell)) {
-          head = cell;
-          break;
+      if (headerMap && headerMap['head'] !== undefined && row[headerMap['head']]) {
+        head = String(row[headerMap['head']]).trim().toLowerCase();
+      }
+      if (!head) {
+        for (let c = 0; c < Math.min(row.length, 10); c++) {
+          const cell = String(row[c] || '').toLowerCase().trim();
+          if (validHeads.includes(cell)) {
+            head = cell;
+            break;
+          }
         }
       }
 
       let text = '';
-      const candidateCols = [20, 16, 21, 22, 18, 17, 19];
-      for (const c of candidateCols) {
-        if (row[c] && row[c].trim().length > 15 && !row[c].trim().startsWith('http') && !/^\d+$/.test(row[c].trim())) {
-          text = row[c].trim();
-          break;
+      if (headerMap && headerMap['post_text'] !== undefined && row[headerMap['post_text']]) {
+        text = String(row[headerMap['post_text']]).trim();
+      }
+      if (!text) {
+        const candidateCols = [20, 16, 21, 22, 18, 17, 19];
+        for (const c of candidateCols) {
+          if (row[c] && row[c].trim().length > 15 && !row[c].trim().startsWith('http') && !/^\d+$/.test(row[c].trim())) {
+            text = row[c].trim();
+            break;
+          }
         }
       }
       if (!text) {
@@ -686,22 +699,18 @@ async function fetchSheetMatrix() {
         });
       }
 
-      // 2. Append any unique non-official complaints from auto monitoring sheet
-      for (let r = 1; r < autoRows.length; r++) {
-        const row = autoRows[r];
-        const url = getValFromMap(row, autoHeaderMap, 'link_url', 4);
-        const handle = getValFromMap(row, autoHeaderMap, 'twitter_id', 5);
-        const text = getValFromMap(row, autoHeaderMap, 'post_text', 16);
-        const remark = getValFromMap(row, autoHeaderMap, 'remark');
-        const status = getValFromMap(row, autoHeaderMap, 'status', 14);
-        const reply30 = getValFromMap(row, autoHeaderMap, 'reply_within_30_min', 3);
-        const reply60 = getValFromMap(row, autoHeaderMap, 'reply_within_60_min');
+      // 2. Append any unique non-official complaints from auto monitoring sheet if separate
+      if (manualCsvUrl !== autoCsvUrl) {
+        for (let r = 1; r < autoRows.length; r++) {
+          const row = autoRows[r];
+          if (!row || !row.length || row.every(c => String(c).trim() === '')) continue;
+          const { url, tid, handle, text, head, remark, status, reply30, reply60 } = extractRowData(row, autoHeaderMap);
 
           if (!url && !handle && !text) continue;
           if (isOfficialHandle(handle) || (url && isOfficialHandle(url))) continue;
 
           const textEligible = isPostEligible(text);
-          const headEligible = Boolean(head) && ['upl', 'upm', 'emo', 'ako', 'akm', 'akb', 'akc', 'emm'].includes(head);
+          const headEligible = Boolean(head) && ['upl', 'upm', 'upc', 'emo', 'emm', 'emc', 'ako', 'akm', 'akb', 'akc', 'mdc', 'mdm', 'cmc', 'cmm', 'news', 'grok'].includes(head);
           if (!textEligible && !headEligible) continue;
 
           if (!tid) continue;
@@ -722,34 +731,31 @@ async function fetchSheetMatrix() {
             });
           }
         }
-
-        const mergedData = Array.from(mergedMap.values());
-        return {
-          headers,
-          data: mergedData,
-          method: 'GOOGLE_SHEETS_DUAL_SYNC'
-        };
       }
+
+      const mergedData = Array.from(mergedMap.values());
+      return {
+        headers,
+        data: mergedData,
+        method: manualCsvUrl === autoCsvUrl ? 'GOOGLE_SHEETS_MANUAL_CSV' : 'GOOGLE_SHEETS_DUAL_SYNC'
+      };
+    }
 
     // Fallback: If only manual working sheet succeeded
     if (manualRows) {
       const frivolousSet = getFrivolousIdentifiersSet();
       const validData = [];
       const mHeaderMap = buildHeaderIndexMap(manualRows[0]);
+      const validHeads = ['upl', 'upm', 'upc', 'emo', 'emm', 'emc', 'ako', 'akm', 'akb', 'akc', 'mdc', 'mdm', 'cmc', 'cmm', 'news', 'grok'];
       for (let idx = 0; idx < manualRows.slice(1).length; idx++) {
         const row = manualRows[idx + 1];
-        const url = getValFromMap(row, mHeaderMap, 'link_url', 4);
-        const handle = getValFromMap(row, mHeaderMap, 'twitter_id', 5);
-        const text = getValFromMap(row, mHeaderMap, 'post_text', 16);
-        const remark = getValFromMap(row, mHeaderMap, 'remark');
-        const status = getValFromMap(row, mHeaderMap, 'status', 14);
-        const reply30 = getValFromMap(row, mHeaderMap, 'reply_within_30_min', 3);
-        const reply60 = getValFromMap(row, mHeaderMap, 'reply_within_60_min');
-        const tid = extractTweetId(url) || url;
+        if (!row || !row.length || row.every(c => String(c).trim() === '')) continue;
+        const { url, tid, handle, text, head, remark, status, reply30, reply60 } = extractRowData(row, mHeaderMap);
 
+        if (!url && !handle && !text) continue;
         if (isOfficialHandle(handle) || (url && isOfficialHandle(url))) continue;
         const textEligible = isPostEligible(text);
-        const headEligible = Boolean(head) && ['upl', 'upm', 'emo', 'ako', 'akm', 'akb', 'akc', 'emm'].includes(head);
+        const headEligible = Boolean(head) && validHeads.includes(head);
         if (!textEligible && !headEligible) continue;
         if (tid && frivolousSet.has(tid)) continue;
         if (url && frivolousSet.has(url.toLowerCase())) continue;
@@ -770,20 +776,16 @@ async function fetchSheetMatrix() {
       const frivolousSet = getFrivolousIdentifiersSet();
       const validData = [];
       const aHeaderMap = buildHeaderIndexMap(autoRows[0]);
+      const validHeads = ['upl', 'upm', 'upc', 'emo', 'emm', 'emc', 'ako', 'akm', 'akb', 'akc', 'mdc', 'mdm', 'cmc', 'cmm', 'news', 'grok'];
       for (let idx = 0; idx < autoRows.slice(1).length; idx++) {
         const row = autoRows[idx + 1];
-        const url = getValFromMap(row, aHeaderMap, 'link_url', 4);
-        const handle = getValFromMap(row, aHeaderMap, 'twitter_id', 5);
-        const text = getValFromMap(row, aHeaderMap, 'post_text', 16);
-        const remark = getValFromMap(row, aHeaderMap, 'remark');
-        const status = getValFromMap(row, aHeaderMap, 'status', 14);
-        const reply30 = getValFromMap(row, aHeaderMap, 'reply_within_30_min', 3);
-        const reply60 = getValFromMap(row, aHeaderMap, 'reply_within_60_min');
-        const tid = extractTweetId(url) || url;
+        if (!row || !row.length || row.every(c => String(c).trim() === '')) continue;
+        const { url, tid, handle, text, head, remark, status, reply30, reply60 } = extractRowData(row, aHeaderMap);
 
+        if (!url && !handle && !text) continue;
         if (isOfficialHandle(handle) || (url && isOfficialHandle(url))) continue;
         const textEligible = isPostEligible(text);
-        const headEligible = Boolean(head) && ['upl', 'upm', 'emo', 'ako', 'akm', 'akb', 'akc', 'emm'].includes(head);
+        const headEligible = Boolean(head) && validHeads.includes(head);
         if (!textEligible && !headEligible) continue;
         if (tid && frivolousSet.has(tid)) continue;
         if (url && frivolousSet.has(url.toLowerCase())) continue;
@@ -1029,7 +1031,7 @@ function processSheetMatrix(headers, data, method, startTime = Date.now()) {
     const reply30 = mapper.get(row, 'reply_within_30_min');
     const reply60 = mapper.get(row, 'reply_within_60_min');
     const rawComplaintNo = mapper.get(row, 'complaint_no');
-    const rawPostText = mapper.get(row, 'post_text') || remark;
+    let rawPostText = mapper.get(row, 'post_text') || remark;
     const postCreatedAt = mapper.get(row, 'post_created_at_utc');
     const firstDetectedAt = mapper.get(row, 'first_detected_at_ist');
     const language = mapper.get(row, 'language') || 'hi';
@@ -1353,6 +1355,30 @@ function processSheetMatrix(headers, data, method, startTime = Date.now()) {
   // 1) Remark or status indicates deleted
   // 2) DISCOM replied before UPPCLLKO (reply_within_60_min is set and reply_within_30_min is not)
   // 3) Marked in frivolous_complaints
+  // 1. Ensure verified historical replies in complaint_replies have a corresponding complaint
+  try {
+    const qowiInComp = db.get("SELECT id FROM complaints WHERE post_url LIKE '%2112543129006170200%';");
+    if (!qowiInComp) {
+      db.run(`
+        INSERT OR IGNORE INTO complaints
+        (complaint_no, received_at, platform, monitored_account, is_tagged,
+         consumer_name, consumer_handle, post_url, complaint_text, category_name, subcategory_name, discom_name,
+         district_name, zone_name, priority, current_status, has_historical_reply, uppcl_replied, uppcllko_replied,
+         reply_evidence, first_replied_at, target_mentions, reply_within_30_min, original_post_id, conversation_id,
+         created_at, updated_at)
+        VALUES
+        ('UPPCL-SMC-202610-33343', '2026-10-20 19:25:05', 'Twitter/X', '@UPPCLLKO', 1,
+         'Qowi', '@qowi23', 'https://x.com/qowi23/status/2112543129006170200', 'Power outage complaint @UPPCLLKO @PuVVNLHQ',
+         'SUPPLY_OUTAGE', 'SUPPLY_OUTAGE', 'PuVVNL', 'Varanasi', 'Varanasi Zone', 'Normal', 'Assigned to DISCOM',
+         1, 1, 'YES', 'Verified historical @UPPCLLKO reply in thread (Tweet ID: 2112607433881428114)',
+         '2026-10-20 23:40:37', '["@UPPCLLKO"]', 'NO', '2112543129006170200', '2112543129006170200',
+         '2026-10-20 19:25:05', '2026-10-20 19:25:05');
+      `);
+    }
+  } catch (e) {
+    console.warn('Qowi restore warning:', e.message);
+  }
+
   // 1. Re-link verified historical replies in complaint_replies with fresh complaint IDs
   db.run(`
     UPDATE complaint_replies
