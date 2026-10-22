@@ -1643,3 +1643,109 @@ body {
 }
 
 
+
+/* ==============================================================================
+   WORKING SHEET MODULE STYLES
+   ============================================================================== */
+.ws-table-container {
+  background: var(--bg-card, #ffffff);
+  border-radius: var(--radius-lg, 8px);
+  border: 1px solid var(--border-light, #e5e7eb);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  margin-top: 16px;
+  overflow: hidden;
+}
+
+.ws-select {
+  font-size: 11px;
+  font-weight: 500;
+  padding: 4px 6px;
+  border-radius: 4px;
+  border: 1px solid var(--border-color, #d1d5db);
+  background-color: var(--bg-card, #ffffff);
+  color: var(--text-main, #1f2937);
+  cursor: pointer;
+  max-width: 170px;
+  width: 100%;
+  transition: all 0.2s ease;
+}
+
+.ws-select:hover {
+  border-color: #008080;
+}
+
+.ws-select:focus {
+  outline: none;
+  border-color: #008080;
+  box-shadow: 0 0 0 2px rgba(0, 128, 128, 0.2);
+}
+
+.ws-select.is-saving {
+  background-color: #fef3c7 !important;
+  border-color: #f59e0b !important;
+  color: #92400e !important;
+  cursor: wait;
+}
+
+.ws-select.is-saved {
+  background-color: #d1fae5 !important;
+  border-color: #10b981 !important;
+  color: #065f46 !important;
+}
+
+.ws-select.is-error {
+  background-color: #fee2e2 !important;
+  border-color: #ef4444 !important;
+  color: #991b1b !important;
+}
+
+.ws-cf-badge {
+  display: inline-block;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 11px;
+  font-weight: 700;
+  color: #374151;
+  background-color: #f3f4f6;
+  border: 1px solid #e5e7eb;
+  padding: 2px 7px;
+  border-radius: 4px;
+  min-width: 32px;
+  text-align: center;
+}
+
+.ws-twitter-id {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 11px;
+  color: #4b5563;
+  background-color: rgba(0, 0, 0, 0.03);
+  padding: 2px 5px;
+  border-radius: 3px;
+  white-space: nowrap;
+}
+
+.ws-link-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: #008080;
+  text-decoration: none;
+  font-weight: 600;
+  font-size: 12px;
+  padding: 3px 6px;
+  border-radius: 4px;
+  transition: background 0.15s ease;
+}
+
+.ws-link-btn:hover {
+  background-color: rgba(0, 128, 128, 0.08);
+  color: #006666;
+  text-decoration: none;
+}
+
+.ws-readonly-badge {
+  font-size: 10px;
+  color: #6b7280;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-weight: 600;
+}

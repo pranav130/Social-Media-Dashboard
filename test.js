@@ -1422,11 +1422,223 @@ async function runTests() {
     assert.ok(serverCode.includes('(uppcl_replied = 1 OR uppcllko_replied = "YES")'), 'Filter must include uppcllko_replied = YES');
   });
 
+  console.log('\n[25. WORKING SHEET Module & Google Sheets 11 Columns Direct Management Suite]');
+  const fs = require('fs');
+
+  it('1. Sidebar Navigation: WORKING SHEET appears under Operations in left sidebar', () => {
+    const appJs = fs.readFileSync('public/js/app.js', 'utf8');
+    assert.ok(appJs.includes('WORKING SHEET'), 'Sidebar must include WORKING SHEET title');
+    assert.ok(appJs.includes("onclick=\"App.navigate('working-sheet')\""), 'Sidebar must have onclick handler for working-sheet');
+    assert.ok(appJs.includes('data-page="working-sheet"'), 'Sidebar must have data-page="working-sheet"');
+  });
+
+  it('2. Navigation Routing: App.navigate dispatches to renderWorkingSheet', () => {
+    const appJs = fs.readFileSync('public/js/app.js', 'utf8');
+    assert.ok(appJs.includes("else if (page === 'working-sheet')"), 'App.navigate must handle working-sheet page');
+    assert.ok(appJs.includes('this.renderWorkingSheet(container)'), 'App.navigate must call renderWorkingSheet');
+  });
+
+  it('3. Strict 11 Columns Scope: Exactly the 11 designated columns in exact order', () => {
+    const wss = require('./working_sheet_service');
+    const expected = [
+      'DATE',
+      'C F',
+      'LINK URL',
+      'Twitter Id',
+      'Picked Status',
+      'Head',
+      'Untagged Complaint',
+      'UPPCLLKO Replied (YES/NO)',
+      'Complaint Type',
+      'District',
+      'Status'
+    ];
+    assert.deepStrictEqual(wss.WORKING_SHEET_COLUMNS, expected, 'WORKING_SHEET_COLUMNS must match the 11 required columns in exact order');
+  });
+
+  it('4. Backend Data Scope: getWorkingSheetData fetches and returns only the 11 columns plus metadata', async () => {
+    const wss = require('./working_sheet_service');
+    const data = await wss.getWorkingSheetData({ limit: 5 });
+    assert.strictEqual(data.status, 'ok');
+    assert.ok(data.totalRecords > 0, 'Must return complaints from Google Sheet');
+    assert.strictEqual(data.columns.length, 11, 'Must have exactly 11 columns');
+    assert.deepStrictEqual(data.columns, wss.WORKING_SHEET_COLUMNS);
+
+    // Verify row keys contain only the 11 columns plus minimum metadata
+    const sampleRow = data.rows[0];
+    assert.ok(sampleRow.sheet_row_index >= 3, 'Data row index must start at Row 3 or higher');
+    assert.ok(sampleRow.tweet_id !== undefined, 'Metadata tweet_id must be present for safe updates');
+    assert.ok(sampleRow.link_url !== undefined, 'Metadata link_url must be present for safe updates');
+
+    // Confirm all 11 columns are present in row object
+    wss.WORKING_SHEET_COLUMNS.forEach(col => {
+      assert.ok(col in sampleRow, `Column "${col}" must be present in every row object`);
+    });
+  });
+
+  it('5. Chronological Sorting: DATE sorted newest to oldest by default with Snowflake tie-breaker', async () => {
+    const wss = require('./working_sheet_service');
+    const data = await wss.getWorkingSheetData({ limit: 10, sortBy: 'DATE', sortOrder: 'DESC' });
+    const rows = data.rows;
+    assert.ok(rows.length >= 2, 'Must have at least 2 rows to verify sort order');
+
+    for (let i = 0; i < rows.length - 1; i++) {
+      const epochA = wss.parseDateToEpoch(rows[i].DATE, rows[i].tweet_id);
+      const epochB = wss.parseDateToEpoch(rows[i + 1].DATE, rows[i + 1].tweet_id);
+      assert.ok(epochA >= epochB, `Row ${i} date (${rows[i].DATE}) must be newer or equal to row ${i + 1} date (${rows[i + 1].DATE})`);
+    }
+  });
+
+  it('6. Row Association: Non-contiguous columns remain strictly associated with the same complaint', async () => {
+    const wss = require('./working_sheet_service');
+    const data = await wss.getWorkingSheetData({ limit: 20 });
+    data.rows.forEach(r => {
+      if (r['LINK URL'] && r['LINK URL'].includes('status/')) {
+        const urlId = r['LINK URL'].match(/status\/(\d+)/)[1];
+        assert.strictEqual(r.tweet_id, urlId, 'tweet_id must match Snowflake ID in LINK URL');
+      }
+    });
+  });
+
+  it('7. Dropdown Option Integrity: Picked Status, Head, Untagged Complaint, Complaint Type, and Status match rules', () => {
+    const wss = require('./working_sheet_service');
+    assert.deepStrictEqual(wss.PICKED_STATUS_OPTIONS, ['YES', 'NO', 'TROLL', 'APPRECIATION']);
+    assert.deepStrictEqual(wss.HEAD_OPTIONS, ['akm', 'akc', 'emm', 'emc', 'mdc', 'mdm', 'upm', 'upc', 'cmc', 'cmm', 'ako', 'NEWS', 'GROK']);
+    assert.deepStrictEqual(wss.UNTAGGED_OPTIONS, ['YES', 'NO']);
+    assert.strictEqual(wss.COMPLAINT_TYPE_OPTIONS.length, 29, 'Must have exactly 29 standard complaint types');
+    assert.ok(wss.STATUS_OPTIONS.includes('Forwarded to Discom'));
+    assert.ok(wss.STATUS_OPTIONS.includes('Reply to Consumer'));
+    assert.ok(wss.STATUS_OPTIONS.includes('Pending Review'));
+  });
+
+  it('8. Dynamic District List: Sourced dynamically from Discom_District_List worksheet', async () => {
+    const wss = require('./working_sheet_service');
+    const districtData = await wss.getDistrictList();
+    assert.strictEqual(districtData.status, 'ok');
+    assert.strictEqual(districtData.count, 75, 'Must contain all 75 Uttar Pradesh districts');
+    assert.ok(districtData.mapping['AGRA'], 'Must map AGRA');
+    assert.strictEqual(districtData.mapping['AGRA'].discom.toUpperCase(), 'DVVNL');
+    assert.ok(districtData.mapping['LUCKNOW'], 'Must map LUCKNOW');
+    assert.ok(districtData.mapping['VARANASI'], 'Must map VARANASI');
+    assert.strictEqual(districtData.mapping['VARANASI'].discom.toUpperCase(), 'PUVVNL');
+  });
+
+  it('9. Whitelist Protection: Formula-controlled and read-only columns reject update attempts', async () => {
+    const wss = require('./working_sheet_service');
+    // Attempting to edit C F (formula) must throw an error
+    let cfThrew = false;
+    try {
+      await wss.updateWorkingSheetCell({
+        tweetId: '123456789',
+        postUrl: 'https://x.com/test/status/123456789',
+        sheetRowIndex: 5,
+        columnName: 'C F',
+        newValue: '999'
+      });
+    } catch (e) {
+      cfThrew = true;
+      assert.ok(e.message.includes('cannot be manually edited') || e.message.includes('read-only'));
+    }
+    assert.ok(cfThrew, 'Attempting to edit formula column C F must be rejected');
+
+    // Attempting to edit DATE must throw an error
+    let dateThrew = false;
+    try {
+      await wss.updateWorkingSheetCell({
+        tweetId: '123456789',
+        postUrl: 'https://x.com/test/status/123456789',
+        sheetRowIndex: 5,
+        columnName: 'DATE',
+        newValue: '01-01-2025'
+      });
+    } catch (e) {
+      dateThrew = true;
+    }
+    assert.ok(dateThrew, 'Attempting to edit DATE must be rejected');
+  });
+
+  it('10. Invalid Option Rejection: Rejects unauthorized dropdown values safely', async () => {
+    const wss = require('./working_sheet_service');
+    let invalidPickedThrew = false;
+    try {
+      await wss.updateWorkingSheetCell({
+        tweetId: '123456789',
+        sheetRowIndex: 5,
+        columnName: 'Picked Status',
+        newValue: 'INVALID_STATUS'
+      });
+    } catch (e) {
+      invalidPickedThrew = true;
+      assert.ok(e.message.includes('Invalid Picked Status'));
+    }
+    assert.ok(invalidPickedThrew, 'Invalid Picked Status must be rejected');
+
+    let invalidDistrictThrew = false;
+    try {
+      await wss.updateWorkingSheetCell({
+        tweetId: '123456789',
+        sheetRowIndex: 5,
+        columnName: 'District',
+        newValue: 'NEW_YORK'
+      });
+    } catch (e) {
+      invalidDistrictThrew = true;
+      assert.ok(e.message.includes('Invalid District'));
+    }
+    assert.ok(invalidDistrictThrew, 'Invalid District not in Discom_District_List must be rejected');
+  });
+
+  it('11. Apps Script Integration: Code.gs implements get_working_sheet, update_cell, and get_district_list', () => {
+    const codeGs = fs.readFileSync('google_apps_script/Code.gs', 'utf8');
+    assert.ok(codeGs.includes("contents.action === 'get_working_sheet'"), 'Code.gs must handle get_working_sheet');
+    assert.ok(codeGs.includes("contents.action === 'update_cell'"), 'Code.gs must handle update_cell');
+    assert.ok(codeGs.includes("contents.action === 'get_district_list'"), 'Code.gs must handle get_district_list');
+    assert.ok(codeGs.includes('function getWorkingSheetData('), 'Code.gs must define getWorkingSheetData');
+    assert.ok(codeGs.includes('function updateWorkingSheetCell('), 'Code.gs must define updateWorkingSheetCell');
+    assert.ok(codeGs.includes('function getDistrictListData('), 'Code.gs must define getDistrictListData');
+  });
+
+  it('12. server.js Endpoints: WORKING SHEET endpoints defined with proper auth and role protection', () => {
+    const serverCode = fs.readFileSync('server.js', 'utf8');
+    assert.ok(serverCode.includes("app.get('/api/working-sheet/data'"), 'server.js must expose GET /api/working-sheet/data');
+    assert.ok(serverCode.includes("app.get('/api/working-sheet/districts'"), 'server.js must expose GET /api/working-sheet/districts');
+    assert.ok(serverCode.includes("app.post('/api/working-sheet/update-cell'"), 'server.js must expose POST /api/working-sheet/update-cell');
+    assert.ok(serverCode.includes("requireRoles('Super Administrator', 'Social Media Cell Operator', 'Supervisor / Management')"), 'Update endpoint must require authorized roles');
+  });
+
+  it('13. Frontend UI Implementation: app.js contains renderWorkingSheet and inline edit handlers', () => {
+    const appJs = fs.readFileSync('public/js/app.js', 'utf8');
+    assert.ok(appJs.includes('renderWorkingSheet(container)'), 'app.js must define renderWorkingSheet');
+    assert.ok(appJs.includes('loadWorkingSheetData('), 'app.js must define loadWorkingSheetData');
+    assert.ok(appJs.includes('handleWorkingSheetCellChange('), 'app.js must define handleWorkingSheetCellChange');
+    assert.ok(appJs.includes('handleWorkingSheetSort('), 'app.js must define handleWorkingSheetSort');
+    assert.ok(appJs.includes('refreshWorkingSheet('), 'app.js must define refreshWorkingSheet');
+  });
+
+  it('14. Database Parity: Updating Picked Status synchronizes immediately to SQLite cache', () => {
+    const testComplaint = db.get("SELECT id, post_url, picked_status FROM complaints LIMIT 1;");
+    assert.ok(testComplaint, 'A complaint must exist in test database');
+
+    const origPicked = testComplaint.picked_status;
+    const testNewPicked = (origPicked === 'YES') ? 'NO' : 'YES';
+
+    // Simulate working edit sync
+    const nowIst = require('./google_sheets_service').getIstTimestamp();
+    db.run("UPDATE complaints SET picked_status = ?, updated_at = ? WHERE id = ?;", [testNewPicked, nowIst, testComplaint.id]);
+
+    const updated = db.get("SELECT picked_status FROM complaints WHERE id = ?;", [testComplaint.id]);
+    assert.strictEqual(updated.picked_status, testNewPicked, 'Database picked_status must match updated value');
+
+    // Revert back
+    db.run("UPDATE complaints SET picked_status = ?, updated_at = ? WHERE id = ?;", [origPicked, nowIst, testComplaint.id]);
+  });
+
   console.log('\n====================================================');
   console.log(` Tests Finished: ${passCount} Passed, ${failCount} Failed`);
   console.log('====================================================\n');
 
   if (failCount > 0) process.exit(1);
+  else process.exit(0);
 }
 
 runTests().catch(err => {

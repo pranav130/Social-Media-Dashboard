@@ -31,6 +31,18 @@ const App = {
     limit: 15,
     search: ''
   },
+  workingSheetFilter: {
+    page: 1,
+    limit: 50,
+    search: '',
+    picked_status: 'All',
+    head: 'All',
+    district: 'All',
+    complaint_type: 'All',
+    sortBy: 'DATE',
+    sortOrder: 'DESC'
+  },
+  workingSheetData: null,
   currentReportTab: 'time_trends',
   charts: {},
   notifications: [],
@@ -562,6 +574,8 @@ const App = {
       if (params.search !== undefined) this.currentFilters.search = params.search;
       this.currentFilters.page = 1;
       this.renderComplaintRegister(container);
+    } else if (page === 'working-sheet') {
+      this.renderWorkingSheet(container);
     } else if (page === 'add-complaint') {
       this.renderAddComplaint(container);
     } else if (page === 'pending-overdue') {
@@ -630,6 +644,9 @@ const App = {
             </a>
             <a class="nav-item" data-page="register" onclick="App.navigate('register')">
               <i class="fa-solid fa-table-list"></i> Complaint Register
+            </a>
+            <a class="nav-item" data-page="working-sheet" onclick="App.navigate('working-sheet')">
+              <i class="fa-solid fa-table-cells"></i> WORKING SHEET
             </a>
 
             <div class="nav-section-title">Intelligence & Masters</div>
@@ -5587,6 +5604,642 @@ const App = {
   quickFill(u, p) {
     document.getElementById('login-username').value = u;
     document.getElementById('login-password').value = p;
+  },
+
+    // -----------------------------------------------------------
+  // WORKING SHEET MODULE (11 COLUMNS REAL-TIME GOOGLE SHEET)
+  // -----------------------------------------------------------
+  async renderWorkingSheet(container) {
+    container.innerHTML = `
+      <div class="page-header">
+        <div class="page-title">
+          <h2>WORKING SHEET</h2>
+          <p>Direct Google Sheet Management Interface — Real-time View & In-place Updates</p>
+        </div>
+        <div class="page-actions">
+          <button class="btn btn-primary btn-sm" id="ws-refresh-btn" onclick="App.refreshWorkingSheet()">
+            <i class="fa-solid fa-arrows-rotate"></i> Refresh Sheet
+          </button>
+          <a href="https://docs.google.com/spreadsheets/d/10_210Ynr_F0Pj1Yov_pqjVZ1kaYIEWrbGF1jn16sgNY/edit?gid=598922870#gid=598922870"
+             target="_blank" rel="noopener noreferrer" class="btn btn-secondary btn-sm" style="display: inline-flex; align-items: center; gap: 6px;">
+            <i class="fa-solid fa-arrow-up-right-from-square"></i> Open Google Sheet
+          </a>
+        </div>
+      </div>
+
+      <div class="card-table">
+        <!-- Filter Bar -->
+        <div class="filter-bar" style="display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; padding: 14px 16px;">
+          <div class="filter-group" style="flex: 2; min-width: 220px;">
+            <label style="font-size: 11px; font-weight: 600; color: var(--text-muted, #64748b); text-transform: uppercase; margin-bottom: 4px; display: block;">Search Google Sheet</label>
+            <div style="position: relative;">
+              <input type="text" id="ws-search-input" class="form-control"
+                     placeholder="Search DATE, C F, Twitter Id, Link, District..."
+                     value="${this.workingSheetFilter.search || ''}"
+                     onkeydown="if(event.key==='Enter') App.handleWorkingSheetSearch()">
+              <button class="btn btn-sm btn-primary" onclick="App.handleWorkingSheetSearch()"
+                      style="position: absolute; right: 4px; top: 3px; padding: 3px 10px; font-size: 11px;">
+                <i class="fa-solid fa-magnifying-glass"></i>
+              </button>
+            </div>
+          </div>
+
+          <div class="filter-group" style="min-width: 140px;">
+            <label style="font-size: 11px; font-weight: 600; color: var(--text-muted, #64748b); text-transform: uppercase; margin-bottom: 4px; display: block;">Picked Status</label>
+            <select id="ws-filter-picked" class="form-control" onchange="App.handleWorkingSheetFilterChange()">
+              <option value="All">All Picked</option>
+              <option value="YES" ${this.workingSheetFilter.picked_status === 'YES' ? 'selected' : ''}>YES</option>
+              <option value="NO" ${this.workingSheetFilter.picked_status === 'NO' ? 'selected' : ''}>NO</option>
+              <option value="TROLL" ${this.workingSheetFilter.picked_status === 'TROLL' ? 'selected' : ''}>TROLL</option>
+              <option value="APPRECIATION" ${this.workingSheetFilter.picked_status === 'APPRECIATION' ? 'selected' : ''}>APPRECIATION</option>
+            </select>
+          </div>
+
+          <div class="filter-group" style="min-width: 120px;">
+            <label style="font-size: 11px; font-weight: 600; color: var(--text-muted, #64748b); text-transform: uppercase; margin-bottom: 4px; display: block;">Head</label>
+            <select id="ws-filter-head" class="form-control" onchange="App.handleWorkingSheetFilterChange()">
+              <option value="All">All Heads</option>
+              ${['akm', 'akc', 'emm', 'emc', 'mdc', 'mdm', 'upm', 'upc', 'cmc', 'cmm', 'ako', 'NEWS', 'GROK'].map(h => `<option value="${h}" ${this.workingSheetFilter.head === h ? 'selected' : ''}>${h}</option>`).join('')}
+            </select>
+          </div>
+
+          <div class="filter-group" style="min-width: 150px;">
+            <label style="font-size: 11px; font-weight: 600; color: var(--text-muted, #64748b); text-transform: uppercase; margin-bottom: 4px; display: block;">District</label>
+            <select id="ws-filter-district" class="form-control" onchange="App.handleWorkingSheetFilterChange()">
+              <option value="All">All Districts</option>
+            </select>
+          </div>
+
+          <div class="filter-group" style="min-width: 170px;">
+            <label style="font-size: 11px; font-weight: 600; color: var(--text-muted, #64748b); text-transform: uppercase; margin-bottom: 4px; display: block;">Complaint Type</label>
+            <select id="ws-filter-type" class="form-control" onchange="App.handleWorkingSheetFilterChange()">
+              <option value="All">All Complaint Types</option>
+            </select>
+          </div>
+
+          <div class="filter-group" style="display: flex; gap: 6px; align-items: flex-end;">
+            <button class="btn btn-secondary btn-sm" onclick="App.resetWorkingSheetFilters()" title="Reset All Filters">
+              <i class="fa-solid fa-arrow-rotate-left"></i> Reset
+            </button>
+          </div>
+        </div>
+
+        <div id="ws-toast-area" style="padding: 0 16px;"></div>
+
+        <!-- Table View -->
+        <div class="table-responsive" style="margin-top: 8px;">
+          <table class="data-table" id="ws-data-table">
+            <thead>
+              <tr>
+                <th class="sortable" onclick="App.handleWorkingSheetSort('DATE')" style="white-space: nowrap; cursor: pointer;">
+                  <div class="sort-header-inner">
+                    <span>DATE</span>
+                    <i class="fa-solid ${this.workingSheetFilter.sortBy === 'DATE' ? (this.workingSheetFilter.sortOrder === 'DESC' ? 'fa-sort-down active-sort' : 'fa-sort-up active-sort') : 'fa-sort sort-icon'}"></i>
+                  </div>
+                </th>
+                <th class="sortable" onclick="App.handleWorkingSheetSort('C F')" style="white-space: nowrap; cursor: pointer; text-align: center;">
+                  <div class="sort-header-inner" style="justify-content: center;">
+                    <span>C F</span>
+                    <i class="fa-solid ${this.workingSheetFilter.sortBy === 'C F' ? (this.workingSheetFilter.sortOrder === 'DESC' ? 'fa-sort-down active-sort' : 'fa-sort-up active-sort') : 'fa-sort sort-icon'}"></i>
+                  </div>
+                </th>
+                <th style="white-space: nowrap;">LINK URL</th>
+                <th style="white-space: nowrap;">Twitter Id</th>
+                <th style="white-space: nowrap;">
+                  <span>Picked Status</span> <i class="fa-solid fa-pen-to-square" style="font-size: 10px; color: #008080;" title="Editable Dropdown"></i>
+                </th>
+                <th style="white-space: nowrap;">
+                  <span>Head</span> <i class="fa-solid fa-pen-to-square" style="font-size: 10px; color: #008080;" title="Editable Dropdown"></i>
+                </th>
+                <th style="white-space: nowrap;">
+                  <span>Untagged Complaint</span> <i class="fa-solid fa-pen-to-square" style="font-size: 10px; color: #008080;" title="Editable Dropdown"></i>
+                </th>
+                <th style="white-space: nowrap;">UPPCLLKO Replied (YES/NO)</th>
+                <th style="white-space: nowrap;">
+                  <span>Complaint Type</span> <i class="fa-solid fa-pen-to-square" style="font-size: 10px; color: #008080;" title="Editable Dropdown"></i>
+                </th>
+                <th style="white-space: nowrap;">
+                  <span>District</span> <i class="fa-solid fa-pen-to-square" style="font-size: 10px; color: #008080;" title="Editable Dropdown (Discom_District_List)"></i>
+                </th>
+                <th style="white-space: nowrap;">
+                  <span>Status</span> <i class="fa-solid fa-pen-to-square" style="font-size: 10px; color: #008080;" title="Editable Dropdown"></i>
+                </th>
+              </tr>
+            </thead>
+            <tbody id="ws-table-tbody">
+              <tr>
+                <td colspan="11" style="text-align: center; padding: 40px;">
+                  <i class="fa-solid fa-spinner fa-spin fa-2x" style="color: #008080; margin-bottom: 10px;"></i>
+                  <p>Fetching Google Sheet (Twitter Complaint List, 11 columns)...</p>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Pagination Bar -->
+        <div class="pagination-bar" id="ws-pagination-bar" style="padding: 12px 16px; display: flex; justify-content: space-between; align-items: center; border-top: 1px solid var(--border-light, #e5e7eb); flex-wrap: wrap; gap: 10px;">
+          <div style="font-size: 12px; color: var(--text-muted, #64748b);" id="ws-record-info">
+            Loading...
+          </div>
+          <div style="display: flex; align-items: center; gap: 12px;">
+            <div style="display: flex; align-items: center; gap: 6px; font-size: 12px;">
+              <span>Rows per page:</span>
+              <select id="ws-limit-select" class="form-control" style="width: 75px; padding: 2px 6px; font-size: 12px;" onchange="App.handleWorkingSheetLimitChange(this.value)">
+                <option value="25" ${this.workingSheetFilter.limit === 25 ? 'selected' : ''}>25</option>
+                <option value="50" ${this.workingSheetFilter.limit === 50 ? 'selected' : ''}>50</option>
+                <option value="100" ${this.workingSheetFilter.limit === 100 ? 'selected' : ''}>100</option>
+                <option value="250" ${this.workingSheetFilter.limit === 250 ? 'selected' : ''}>250</option>
+              </select>
+            </div>
+            <div id="ws-page-controls" style="display: flex; gap: 4px;"></div>
+          </div>
+        </div>
+      </div>
+    `;
+
+    await this.loadWorkingSheetData();
+  },
+
+  async loadWorkingSheetData(forceRefresh = false) {
+    const tbody = document.getElementById('ws-table-tbody');
+    const refreshBtn = document.getElementById('ws-refresh-btn');
+    if (!tbody) return;
+
+    if (refreshBtn) {
+      refreshBtn.disabled = true;
+      refreshBtn.innerHTML = '<i class="fa-solid fa-arrows-rotate fa-spin"></i> Refreshing...';
+    }
+
+    tbody.innerHTML = `
+      <tr>
+        <td colspan="11" style="text-align: center; padding: 35px;">
+          <i class="fa-solid fa-spinner fa-spin fa-2x" style="color: #008080; margin-bottom: 10px;"></i>
+          <p>Loading real-time Google Sheet data...</p>
+        </td>
+      </tr>
+    `;
+
+    try {
+      const q = new URLSearchParams();
+      q.append('page', this.workingSheetFilter.page || 1);
+      q.append('limit', this.workingSheetFilter.limit || 50);
+      q.append('sort_by', this.workingSheetFilter.sortBy || 'DATE');
+      q.append('sort_order', this.workingSheetFilter.sortOrder || 'DESC');
+      if (this.workingSheetFilter.search) q.append('search', this.workingSheetFilter.search);
+      if (this.workingSheetFilter.picked_status && this.workingSheetFilter.picked_status !== 'All') {
+        q.append('picked_status', this.workingSheetFilter.picked_status);
+      }
+      if (this.workingSheetFilter.head && this.workingSheetFilter.head !== 'All') {
+        q.append('head', this.workingSheetFilter.head);
+      }
+      if (this.workingSheetFilter.district && this.workingSheetFilter.district !== 'All') {
+        q.append('district', this.workingSheetFilter.district);
+      }
+      if (this.workingSheetFilter.complaint_type && this.workingSheetFilter.complaint_type !== 'All') {
+        q.append('complaint_type', this.workingSheetFilter.complaint_type);
+      }
+      if (forceRefresh) q.append('refresh', 'true');
+
+      const res = await this.api(`/api/working-sheet/data?${q.toString()}`);
+      if (!res || res.status !== 'ok') {
+        throw new Error(res?.error || 'Invalid response from server');
+      }
+
+      this.workingSheetData = res;
+
+      // Populate filter dropdowns if not yet populated
+      const distSelect = document.getElementById('ws-filter-district');
+      if (distSelect && distSelect.options.length <= 1 && res.dropdownOptions && res.dropdownOptions['District']) {
+        const curDist = this.workingSheetFilter.district;
+        res.dropdownOptions['District'].forEach(d => {
+          const opt = document.createElement('option');
+          opt.value = d;
+          opt.textContent = d;
+          if (curDist === d) opt.selected = true;
+          distSelect.appendChild(opt);
+        });
+      }
+
+      const typeSelect = document.getElementById('ws-filter-type');
+      if (typeSelect && typeSelect.options.length <= 1 && res.dropdownOptions && res.dropdownOptions['Complaint Type']) {
+        const curType = this.workingSheetFilter.complaint_type;
+        res.dropdownOptions['Complaint Type'].forEach(t => {
+          const opt = document.createElement('option');
+          opt.value = t;
+          opt.textContent = t;
+          if (curType === t) opt.selected = true;
+          typeSelect.appendChild(opt);
+        });
+      }
+
+      this.renderWorkingSheetRows(res);
+    } catch (err) {
+      console.error('Error loading Working Sheet data:', err);
+      tbody.innerHTML = `
+        <tr>
+          <td colspan="11" style="text-align: center; padding: 30px; color: #ef4444;">
+            <i class="fa-solid fa-triangle-exclamation fa-2x" style="margin-bottom: 8px;"></i>
+            <p><b>Error loading Working Sheet:</b> ${err.message}</p>
+            <button class="btn btn-primary btn-sm" onclick="App.loadWorkingSheetData(true)" style="margin-top: 10px;">
+              <i class="fa-solid fa-rotate-right"></i> Retry
+            </button>
+          </td>
+        </tr>
+      `;
+    } finally {
+      if (refreshBtn) {
+        refreshBtn.disabled = false;
+        refreshBtn.innerHTML = '<i class="fa-solid fa-arrows-rotate"></i> Refresh Sheet';
+      }
+    }
+  },
+
+  renderWorkingSheetRows(data) {
+    const tbody = document.getElementById('ws-table-tbody');
+    const recInfo = document.getElementById('ws-record-info');
+    const pageControls = document.getElementById('ws-page-controls');
+    if (!tbody) return;
+
+    const rows = data.rows || [];
+    const opts = data.dropdownOptions || {};
+
+    if (rows.length === 0) {
+      tbody.innerHTML = `
+        <tr>
+          <td colspan="11" style="text-align: center; padding: 40px; color: var(--text-muted, #64748b);">
+            <i class="fa-solid fa-magnifying-glass fa-2x" style="margin-bottom: 8px; opacity: 0.5;"></i>
+            <p>No complaints matched your search/filter criteria in Google Sheets.</p>
+          </td>
+        </tr>
+      `;
+      if (recInfo) recInfo.textContent = 'Showing 0 records';
+      if (pageControls) pageControls.innerHTML = '';
+      return;
+    }
+
+    const startIdx = ((data.page - 1) * data.limit) + 1;
+    const endIdx = Math.min(startIdx + rows.length - 1, data.totalRecords);
+    if (recInfo) {
+      recInfo.innerHTML = `Showing <b>${startIdx}</b> to <b>${endIdx}</b> of <b>${data.totalRecords.toLocaleString()}</b> complaints in Google Sheet`;
+    }
+
+    // Render Table Rows (Strictly 11 Columns in order)
+    tbody.innerHTML = rows.map((r, idx) => {
+      const tweetId = r.tweet_id || '';
+      const rawPostUrl = encodeURIComponent(r['LINK URL'] || r.link_url || '');
+      const sheetRowIdx = r.sheet_row_index;
+
+      // Dropdown Options
+      const pickedVal = String(r['Picked Status'] || '').trim().toUpperCase();
+      const headVal = String(r['Head'] || '').trim().toLowerCase();
+      const untaggedVal = String(r['Untagged Complaint'] || '').trim().toUpperCase();
+      const compTypeVal = String(r['Complaint Type'] || '').trim();
+      const distVal = String(r['District'] || '').trim().toUpperCase();
+      const statusVal = String(r['Status'] || '').trim();
+      const repliedVal = String(r['UPPCLLKO Replied (YES/NO)'] || '').trim().toUpperCase();
+
+      const pickedOptions = (opts['Picked Status'] || ['YES', 'NO', 'TROLL', 'APPRECIATION']).map(p =>
+        `<option value="${p}" ${pickedVal === p ? 'selected' : ''}>${p}</option>`
+      ).join('');
+
+      const headOptions = (opts['Head'] || ['akm', 'akc', 'emm', 'emc', 'mdc', 'mdm', 'upm', 'upc', 'cmc', 'cmm', 'ako', 'NEWS', 'GROK']).map(h =>
+        `<option value="${h}" ${headVal === h.toLowerCase() ? 'selected' : ''}>${h}</option>`
+      ).join('');
+
+      const untaggedOptions = (opts['Untagged Complaint'] || ['YES', 'NO']).map(u =>
+        `<option value="${u}" ${untaggedVal === u ? 'selected' : ''}>${u}</option>`
+      ).join('');
+
+      const compTypeOptions = (opts['Complaint Type'] || []).map(ct =>
+        `<option value="${ct}" ${compTypeVal === ct ? 'selected' : ''}>${ct}</option>`
+      ).join('');
+
+      const districtOptions = (opts['District'] || []).map(d =>
+        `<option value="${d}" ${distVal === d.toUpperCase() ? 'selected' : ''}>${d}</option>`
+      ).join('');
+
+      const statusOptions = (opts['Status'] || ['Forwarded to Discom', 'Reply to Consumer', 'DM', 'Discom follow-up', 'Problem not Solved', 'Information Needed', 'Pending Review']).map(st =>
+        `<option value="${st}" ${statusVal === st ? 'selected' : ''}>${st}</option>`
+      ).join('');
+
+      // UPPCLLKO Replied Badge
+      const repliedMarkup = repliedVal === 'YES'
+        ? `<span class="badge" style="background-color: #d1fae5; color: #065f46; font-weight: 700; padding: 3px 8px; border-radius: 4px;"><i class="fa-solid fa-check"></i> YES</span>`
+        : (repliedVal === 'NO'
+            ? `<span class="badge" style="background-color: #f1f5f9; color: #475569; font-weight: 600; padding: 3px 8px; border-radius: 4px;">NO</span>`
+            : `<span style="color: #94a3b8; font-size: 11px;">-</span>`);
+
+      // Link URL Button
+      const linkMarkup = r['LINK URL']
+        ? `<a href="${r['LINK URL']}" target="_blank" rel="noopener noreferrer" class="ws-link-btn" title="Open source post on X">
+             <i class="fa-brands fa-x-twitter"></i>
+             <span>View</span>
+             <i class="fa-solid fa-arrow-up-right-from-square" style="font-size: 10px;"></i>
+           </a>`
+        : `<span style="color: #94a3b8;">-</span>`;
+
+      return `
+        <tr data-row-index="${sheetRowIdx}">
+          <!-- 1. DATE -->
+          <td style="white-space: nowrap; font-size: 12px; font-weight: 600;">
+            ${r['DATE'] || '-'}
+          </td>
+
+          <!-- 2. C F -->
+          <td style="text-align: center; white-space: nowrap;">
+            <span class="ws-cf-badge" title="Formula-controlled dynamic count in Google Sheet">${r['C F'] || '-'}</span>
+          </td>
+
+          <!-- 3. LINK URL -->
+          <td style="white-space: nowrap;">
+            ${linkMarkup}
+          </td>
+
+          <!-- 4. Twitter Id -->
+          <td style="white-space: nowrap;">
+            <span class="ws-twitter-id">@${r['Twitter Id'] || '-'}</span>
+          </td>
+
+          <!-- 5. Picked Status -->
+          <td style="min-width: 110px;">
+            <select class="ws-select" data-col="Picked Status" data-orig="${pickedVal}"
+                    onchange="App.handleWorkingSheetCellChange(this, ${sheetRowIdx}, 'Picked Status', '${tweetId}', '${rawPostUrl}')">
+              <option value="" disabled ${!pickedVal ? 'selected' : ''}>Select...</option>
+              ${pickedOptions}
+            </select>
+          </td>
+
+          <!-- 6. Head -->
+          <td style="min-width: 100px;">
+            <select class="ws-select" data-col="Head" data-orig="${headVal}"
+                    onchange="App.handleWorkingSheetCellChange(this, ${sheetRowIdx}, 'Head', '${tweetId}', '${rawPostUrl}')">
+              <option value="" disabled ${!headVal ? 'selected' : ''}>Select...</option>
+              ${headOptions}
+            </select>
+          </td>
+
+          <!-- 7. Untagged Complaint -->
+          <td style="min-width: 90px;">
+            <select class="ws-select" data-col="Untagged Complaint" data-orig="${untaggedVal}"
+                    onchange="App.handleWorkingSheetCellChange(this, ${sheetRowIdx}, 'Untagged Complaint', '${tweetId}', '${rawPostUrl}')">
+              <option value="" disabled ${!untaggedVal ? 'selected' : ''}>Select...</option>
+              ${untaggedOptions}
+            </select>
+          </td>
+
+          <!-- 8. UPPCLLKO Replied (YES/NO) -->
+          <td style="white-space: nowrap; text-align: center;">
+            ${repliedMarkup}
+          </td>
+
+          <!-- 9. Complaint Type -->
+          <td style="min-width: 160px;">
+            <select class="ws-select" data-col="Complaint Type" data-orig="${compTypeVal}"
+                    onchange="App.handleWorkingSheetCellChange(this, ${sheetRowIdx}, 'Complaint Type', '${tweetId}', '${rawPostUrl}')">
+              <option value="" disabled ${!compTypeVal ? 'selected' : ''}>Select Category...</option>
+              ${compTypeOptions}
+            </select>
+          </td>
+
+          <!-- 10. District -->
+          <td style="min-width: 150px;">
+            <select class="ws-select" data-col="District" data-orig="${distVal}"
+                    onchange="App.handleWorkingSheetCellChange(this, ${sheetRowIdx}, 'District', '${tweetId}', '${rawPostUrl}')">
+              <option value="" disabled ${!distVal ? 'selected' : ''}>Select District...</option>
+              ${districtOptions}
+            </select>
+          </td>
+
+          <!-- 11. Status -->
+          <td style="min-width: 150px;">
+            <select class="ws-select" data-col="Status" data-orig="${statusVal}"
+                    onchange="App.handleWorkingSheetCellChange(this, ${sheetRowIdx}, 'Status', '${tweetId}', '${rawPostUrl}')">
+              <option value="" disabled ${!statusVal ? 'selected' : ''}>Select Status...</option>
+              ${statusOptions}
+            </select>
+          </td>
+        </tr>
+      `;
+    }).join('');
+
+    // Render Pagination Controls
+    if (pageControls) {
+      let pageHtml = '';
+      const curPage = data.page;
+      const totalPages = data.totalPages;
+
+      // Prev Button
+      pageHtml += `<button class="btn btn-secondary btn-sm" ${curPage <= 1 ? 'disabled' : ''} onclick="App.handleWorkingSheetPage(${curPage - 1})"><i class="fa-solid fa-chevron-left"></i></button>`;
+
+      // Page numbers (smart window around current page)
+      const startPage = Math.max(1, curPage - 2);
+      const endPage = Math.min(totalPages, curPage + 2);
+
+      if (startPage > 1) {
+        pageHtml += `<button class="btn btn-secondary btn-sm" onclick="App.handleWorkingSheetPage(1)">1</button>`;
+        if (startPage > 2) pageHtml += `<span style="padding: 2px 4px; color: var(--text-muted);">...</span>`;
+      }
+
+      for (let p = startPage; p <= endPage; p++) {
+        pageHtml += `<button class="btn btn-sm ${p === curPage ? 'btn-primary' : 'btn-secondary'}" onclick="App.handleWorkingSheetPage(${p})">${p}</button>`;
+      }
+
+      if (endPage < totalPages) {
+        if (endPage < totalPages - 1) pageHtml += `<span style="padding: 2px 4px; color: var(--text-muted);">...</span>`;
+        pageHtml += `<button class="btn btn-secondary btn-sm" onclick="App.handleWorkingSheetPage(${totalPages})">${totalPages}</button>`;
+      }
+
+      // Next Button
+      pageHtml += `<button class="btn btn-secondary btn-sm" ${curPage >= totalPages ? 'disabled' : ''} onclick="App.handleWorkingSheetPage(${curPage + 1})"><i class="fa-solid fa-chevron-right"></i></button>`;
+
+      pageControls.innerHTML = pageHtml;
+    }
+  },
+
+  async handleWorkingSheetCellChange(selectEl, sheetRowIndex, columnName, tweetId, rawPostUrl) {
+    const postUrl = decodeURIComponent(rawPostUrl || '');
+    const oldValue = selectEl.dataset.orig || '';
+    const newValue = selectEl.value;
+
+    if (newValue === oldValue) return;
+
+    // Visual: Saving state
+    selectEl.classList.remove('is-saved', 'is-error');
+    selectEl.classList.add('is-saving');
+    selectEl.disabled = true;
+
+    try {
+      const payload = {
+        tweet_id: tweetId,
+        post_url: postUrl,
+        sheet_row_index: sheetRowIndex,
+        column_name: columnName,
+        new_value: newValue
+      };
+
+      const res = await this.api('/api/working-sheet/update-cell', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+
+      if (!res || !res.success) {
+        throw new Error(res?.error || 'Update failed');
+      }
+
+      // Visual: Success state confirmed by Google Sheets
+      selectEl.classList.remove('is-saving');
+      selectEl.classList.add('is-saved');
+      selectEl.dataset.orig = res.updated_value || newValue;
+      selectEl.disabled = false;
+
+      let successMsg = `Row ${res.row || sheetRowIndex}: Saved "${columnName}" = "${res.updated_value || newValue}" in Google Sheet!`;
+      if (columnName === 'District' && res.discom) {
+        successMsg += ` (DISCOM: ${res.discom}, Zone: ${res.zone || '-'})`;
+      }
+
+      App.showWorkingSheetToast(successMsg, 'success');
+
+      // Revert green highlight after 2.5s
+      setTimeout(() => {
+        selectEl.classList.remove('is-saved');
+      }, 2500);
+
+    } catch (err) {
+      console.error('Working Sheet cell update failed:', err);
+      // Visual: Error state and revert value
+      selectEl.classList.remove('is-saving');
+      selectEl.classList.add('is-error');
+      selectEl.value = oldValue; // Revert back
+      selectEl.disabled = false;
+
+      App.showWorkingSheetToast(
+        `Save Failed for Row ${sheetRowIndex} (${columnName}): ${err.message}`,
+        'error'
+      );
+
+      setTimeout(() => {
+        selectEl.classList.remove('is-error');
+      }, 4000);
+    }
+  },
+
+  handleWorkingSheetSearch() {
+    const input = document.getElementById('ws-search-input');
+    this.workingSheetFilter.search = input ? input.value.trim() : '';
+    this.workingSheetFilter.page = 1;
+    this.loadWorkingSheetData();
+  },
+
+  handleWorkingSheetFilterChange() {
+    const picked = document.getElementById('ws-filter-picked');
+    const head = document.getElementById('ws-filter-head');
+    const district = document.getElementById('ws-filter-district');
+    const type = document.getElementById('ws-filter-type');
+
+    this.workingSheetFilter.picked_status = picked ? picked.value : 'All';
+    this.workingSheetFilter.head = head ? head.value : 'All';
+    this.workingSheetFilter.district = district ? district.value : 'All';
+    this.workingSheetFilter.complaint_type = type ? type.value : 'All';
+    this.workingSheetFilter.page = 1;
+
+    this.loadWorkingSheetData();
+  },
+
+  resetWorkingSheetFilters() {
+    this.workingSheetFilter = {
+      page: 1,
+      limit: 50,
+      search: '',
+      picked_status: 'All',
+      head: 'All',
+      district: 'All',
+      complaint_type: 'All',
+      sortBy: 'DATE',
+      sortOrder: 'DESC'
+    };
+    const container = document.getElementById('page-content');
+    if (container) {
+      this.renderWorkingSheet(container);
+    }
+  },
+
+  handleWorkingSheetSort(columnName) {
+    if (this.workingSheetFilter.sortBy === columnName) {
+      this.workingSheetFilter.sortOrder = this.workingSheetFilter.sortOrder === 'ASC' ? 'DESC' : 'ASC';
+    } else {
+      this.workingSheetFilter.sortBy = columnName;
+      this.workingSheetFilter.sortOrder = 'DESC';
+    }
+    this.workingSheetFilter.page = 1;
+
+    // Update header icons
+    const table = document.getElementById('ws-data-table');
+    if (table) {
+      const ths = table.querySelectorAll('th.sortable');
+      ths.forEach(th => {
+        const text = th.innerText.trim();
+        const icon = th.querySelector('i');
+        if (icon) {
+          if (text.startsWith(columnName)) {
+            icon.className = `fa-solid ${this.workingSheetFilter.sortOrder === 'DESC' ? 'fa-sort-down active-sort' : 'fa-sort-up active-sort'}`;
+          } else {
+            icon.className = 'fa-solid fa-sort sort-icon';
+          }
+        }
+      });
+    }
+
+    this.loadWorkingSheetData();
+  },
+
+  handleWorkingSheetLimitChange(limit) {
+    this.workingSheetFilter.limit = parseInt(limit, 10) || 50;
+    this.workingSheetFilter.page = 1;
+    this.loadWorkingSheetData();
+  },
+
+  handleWorkingSheetPage(pageNum) {
+    this.workingSheetFilter.page = pageNum;
+    this.loadWorkingSheetData();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  },
+
+  async refreshWorkingSheet() {
+    await this.loadWorkingSheetData(true);
+    App.showWorkingSheetToast('Google Sheet data refreshed from source.', 'success');
+  },
+
+  showWorkingSheetToast(msg, type = 'success') {
+    const area = document.getElementById('ws-toast-area');
+    if (!area) return;
+
+    const bg = type === 'success' ? '#ecfdf5' : '#fef2f2';
+    const border = type === 'success' ? '#10b981' : '#ef4444';
+    const color = type === 'success' ? '#065f46' : '#991b1b';
+    const icon = type === 'success' ? 'fa-circle-check' : 'fa-circle-exclamation';
+
+    const toast = document.createElement('div');
+    toast.style.cssText = `
+      background: ${bg};
+      border: 1px solid ${border};
+      color: ${color};
+      padding: 8px 14px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 500;
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    `;
+    toast.innerHTML = `<i class="fa-solid ${icon}"></i> <span>${msg}</span>`;
+    area.innerHTML = '';
+    area.appendChild(toast);
+
+    setTimeout(() => {
+      if (toast.parentNode) toast.parentNode.removeChild(toast);
+    }, 4500);
   },
 
   async handleLogin(e) {

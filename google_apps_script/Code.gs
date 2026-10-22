@@ -2141,6 +2141,21 @@ function doPost(e) {
       return ContentService.createTextOutput(JSON.stringify(deleteResult))
         .setMimeType(ContentService.MimeType.JSON);
     }
+    if (contents.action === 'get_working_sheet') {
+      const workingSheetData = getWorkingSheetData(contents);
+      return ContentService.createTextOutput(JSON.stringify(workingSheetData))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+    if (contents.action === 'update_cell') {
+      const updateResult = updateWorkingSheetCell(contents);
+      return ContentService.createTextOutput(JSON.stringify(updateResult))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+    if (contents.action === 'get_district_list') {
+      const districtData = getDistrictListData();
+      return ContentService.createTextOutput(JSON.stringify(districtData))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
 
     const rows = contents.rows;
     if (!rows || !rows.length) {
@@ -4238,4 +4253,291 @@ function removeOfficialRepliedFromSheet() {
     Logger.log(msg);
   }
   return removedCount;
+}
+
+/**
+ * ==============================================================================
+ * WORKING SHEET MODULE (11 TARGET COLUMNS)
+ * ==============================================================================
+ */
+
+/**
+ * Serves only the 11 designated Working Sheet columns to the dashboard
+ */
+function getWorkingSheetData(contents) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sheet = ss.getSheetByName('Twitter Complaint List');
+  if (!sheet) {
+    const sheets = ss.getSheets();
+    for (let s of sheets) {
+      if (String(s.getSheetId()) === '598922870') {
+        sheet = s;
+        break;
+      }
+    }
+  }
+  if (!sheet) sheet = ss.getActiveSheet();
+
+  const lastRow = sheet.getLastRow();
+  const lastCol = sheet.getLastColumn();
+  const targetCols = [
+    'DATE', 'C F', 'LINK URL', 'Twitter Id', 'Picked Status',
+    'Head', 'Untagged Complaint', 'UPPCLLKO Replied (YES/NO)',
+    'Complaint Type', 'District', 'Status'
+  ];
+
+  if (lastRow < 3) {
+    return {
+      status: 'ok',
+      totalRows: 0,
+      headers: targetCols,
+      rows: []
+    };
+  }
+
+  const rawHeaders = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+
+  // Resolve 0-based column indices
+  const colIndices = [];
+  targetCols.forEach(function(target) {
+    var cleanTarget = target.trim().toLowerCase().replace(/[\s_\(\)\/\-]/g, '');
+    var found = -1;
+    for (var c = 0; c < rawHeaders.length; c++) {
+      var h = String(rawHeaders[c] || '').trim().toLowerCase().replace(/[\s_\(\)\/\-]/g, '');
+      if (h === cleanTarget) {
+        found = c;
+        break;
+      }
+    }
+    colIndices.push(found);
+  });
+
+  // Also locate stable identifier columns
+  var linkUrlCol = -1;
+  var twitterIdCol = -1;
+  for (var c = 0; c < rawHeaders.length; c++) {
+    var clean = String(rawHeaders[c] || '').trim().toLowerCase().replace(/[\s_\(\)\/\-]/g, '');
+    if (clean === 'linkurl' || clean === 'posturl' || clean === 'url') linkUrlCol = c;
+    if (clean === 'twitterid' || clean === 'tweetid' || clean === 'snowflakeid') twitterIdCol = c;
+  }
+
+  // Row 2 is blank spacer; data is Row 3 to lastRow
+  var numDataRows = lastRow - 2;
+  var data = sheet.getRange(3, 1, numDataRows, lastCol).getValues();
+  var extractedRows = [];
+
+  for (var r = 0; r < data.length; r++) {
+    var rawRow = data[r];
+    var sheetRowIndex = r + 3; // 1-based row index
+    if (!rawRow || rawRow.every(function(cell) { return String(cell || '').trim() === ''; })) continue;
+
+    var rowObj = {
+      sheet_row_index: sheetRowIndex
+    };
+
+    targetCols.forEach(function(colName, idx) {
+      var cIdx = colIndices[idx];
+      var val = (cIdx >= 0 && cIdx < rawRow.length) ? rawRow[cIdx] : '';
+      if (val instanceof Date) {
+        var day = ('0' + val.getDate()).slice(-2);
+        var month = ('0' + (val.getMonth() + 1)).slice(-2);
+        var year = val.getFullYear();
+        val = day + '-' + month + '-' + year;
+      }
+      rowObj[colName] = (val !== null && val !== undefined) ? String(val).trim() : '';
+    });
+
+    var postUrl = (linkUrlCol >= 0) ? String(rawRow[linkUrlCol] || '').trim() : (rowObj['LINK URL'] || '');
+    var tweetId = '';
+    var m = postUrl.match(/status\/(\d+)/i);
+    if (m) tweetId = m[1];
+    if (!tweetId && twitterIdCol >= 0 && /^\d{15,25}$/.test(String(rawRow[twitterIdCol] || '').trim())) {
+      tweetId = String(rawRow[twitterIdCol]).trim();
+    }
+    rowObj['tweet_id'] = tweetId;
+    rowObj['link_url'] = postUrl;
+
+    extractedRows.push(rowObj);
+  }
+
+  return {
+    status: 'ok',
+    totalRows: extractedRows.length,
+    headers: targetCols,
+    rows: extractedRows
+  };
+}
+
+/**
+ * Updates a single approved cell in Google Sheet and verifies the write
+ */
+function updateWorkingSheetCell(contents) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sheet = ss.getSheetByName('Twitter Complaint List');
+  if (!sheet) {
+    const sheets = ss.getSheets();
+    for (let s of sheets) {
+      if (String(s.getSheetId()) === '598922870') {
+        sheet = s;
+        break;
+      }
+    }
+  }
+  if (!sheet) sheet = ss.getActiveSheet();
+
+  const targetUrl = String(contents.postUrl || '').trim();
+  const targetTweetId = String(contents.tweetId || '').trim();
+  const hintedRowIndex = parseInt(contents.sheetRowIndex, 10);
+  const columnName = String(contents.columnName || '').trim();
+  const rawNewValue = contents.newValue !== undefined ? String(contents.newValue).trim() : '';
+
+  // Allowed editable columns
+  const allowedEditable = [
+    'Picked Status', 'Head', 'Untagged Complaint', 'Complaint Type', 'District', 'Status'
+  ];
+  if (!allowedEditable.includes(columnName)) {
+    return { status: 'error', error: 'Column ' + columnName + ' is not permitted for manual edits.' };
+  }
+
+  const lastRow = sheet.getLastRow();
+  const lastCol = sheet.getLastColumn();
+  if (lastRow < 3) {
+    return { status: 'error', error: 'Sheet has no complaint rows.' };
+  }
+
+  const rawHeaders = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+  const colMap = getSheetColumnMap(sheet);
+  const linkUrlCol = (colMap.linkUrl !== undefined) ? colMap.linkUrl + 1 : 5;
+  const twitterIdCol = (colMap.twitterId !== undefined) ? colMap.twitterId + 1 : 6;
+
+  // Resolve column position
+  var targetCol = -1;
+  var cleanTarget = columnName.trim().toLowerCase().replace(/[\s_\(\)\/\-]/g, '');
+  for (var c = 0; c < rawHeaders.length; c++) {
+    var h = String(rawHeaders[c] || '').trim().toLowerCase().replace(/[\s_\(\)\/\-]/g, '');
+    if (h === cleanTarget) {
+      targetCol = c + 1; // 1-based column
+      break;
+    }
+  }
+  if (targetCol === -1) {
+    return { status: 'error', error: 'Target column ' + columnName + ' not found in sheet headers.' };
+  }
+
+  // Identify target row
+  var targetRow = -1;
+  // 1. Check hinted row
+  if (!isNaN(hintedRowIndex) && hintedRowIndex >= 3 && hintedRowIndex <= lastRow) {
+    var urlAtHint = String(sheet.getRange(hintedRowIndex, linkUrlCol).getValue() || '').trim();
+    var idAtHint = (twitterIdCol > 0) ? String(sheet.getRange(hintedRowIndex, twitterIdCol).getValue() || '').trim() : '';
+    if ((targetUrl && urlAtHint === targetUrl) ||
+        (targetTweetId && (urlAtHint.includes(targetTweetId) || idAtHint === targetTweetId))) {
+      targetRow = hintedRowIndex;
+    }
+  }
+
+  // 2. Scan entire sheet if hint did not match
+  if (targetRow === -1 && (targetTweetId || targetUrl)) {
+    var urlVals = sheet.getRange(3, linkUrlCol, lastRow - 2, 1).getValues();
+    var idVals = (twitterIdCol > 0) ? sheet.getRange(3, twitterIdCol, lastRow - 2, 1).getValues() : null;
+    for (var i = 0; i < urlVals.length; i++) {
+      var u = String(urlVals[i][0] || '').trim();
+      var tid = (idVals && idVals[i]) ? String(idVals[i][0] || '').trim() : '';
+      if ((targetUrl && u === targetUrl) ||
+          (targetTweetId && (u.includes(targetTweetId) || tid === targetTweetId))) {
+        targetRow = i + 3;
+        break;
+      }
+    }
+  }
+
+  if (targetRow === -1 || targetRow < 3) {
+    return { status: 'error', error: 'Complaint record could not be uniquely identified in Google Sheet.' };
+  }
+
+  // Perform single-cell update
+  const cell = sheet.getRange(targetRow, targetCol);
+  cell.setValue(rawNewValue);
+
+  // If District was updated, preserve District-to-DISCOM/Zone automation!
+  var discomVal = null;
+  var zoneVal = null;
+  if (columnName === 'District' && rawNewValue) {
+    var mappingInfo = getDistrictMappingFromListSheet(ss);
+    if (mappingInfo && mappingInfo.map) {
+      var matched = mappingInfo.map[rawNewValue.toUpperCase()];
+      if (matched) {
+        if (colMap.discom !== undefined) {
+          sheet.getRange(targetRow, colMap.discom + 1).setValue(matched.discom);
+          discomVal = matched.discom;
+        }
+        if (colMap.zone !== undefined) {
+          sheet.getRange(targetRow, colMap.zone + 1).setValue(matched.zone);
+          zoneVal = matched.zone;
+        }
+      }
+    }
+  }
+
+  // Flush to make write final in Google Sheets
+  SpreadsheetApp.flush();
+
+  // Verify write
+  var verifiedValue = sheet.getRange(targetRow, targetCol).getValue();
+  if (verifiedValue instanceof Date) {
+    var day = ('0' + verifiedValue.getDate()).slice(-2);
+    var month = ('0' + (verifiedValue.getMonth() + 1)).slice(-2);
+    var year = verifiedValue.getFullYear();
+    verifiedValue = day + '-' + month + '-' + year;
+  }
+  verifiedValue = String(verifiedValue || '').trim();
+
+  // Record manual override in Manual_Overrides sheet
+  try {
+    recordManualOverride(ss, targetTweetId, targetUrl, targetRow, cleanTarget, rawNewValue, contents.userEmail || 'Dashboard User');
+  } catch (e) {}
+
+  return {
+    status: 'ok',
+    verified: true,
+    row: targetRow,
+    col: targetCol,
+    columnName: columnName,
+    value: verifiedValue,
+    discom: discomVal,
+    zone: zoneVal
+  };
+}
+
+/**
+ * Returns dynamic district mapping from Discom_District_List sheet
+ */
+function getDistrictListData() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const mappingInfo = getDistrictMappingFromListSheet(ss);
+  if (!mappingInfo || !mappingInfo.sheet) {
+    return { status: 'error', error: 'Discom_District_List sheet could not be loaded.' };
+  }
+
+  const lastRow = mappingInfo.sheet.getLastRow();
+  if (lastRow < 2) {
+    return { status: 'ok', districts: [] };
+  }
+
+  const data = mappingInfo.sheet.getRange(2, 1, lastRow - 1, 3).getValues();
+  const list = [];
+  for (var i = 0; i < data.length; i++) {
+    var discom = String(data[i][0] || '').trim();
+    var district = String(data[i][1] || '').trim();
+    var zone = String(data[i][2] || '').trim();
+    if (district) {
+      list.push({ discom: discom, district: district, zone: zone });
+    }
+  }
+
+  return {
+    status: 'ok',
+    total: list.length,
+    districts: list
+  };
 }

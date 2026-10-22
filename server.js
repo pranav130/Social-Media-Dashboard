@@ -10,6 +10,7 @@ const db = require('./db');
 const classifier = require('./classifier');
 const XService = require('./x_service');
 const googleSheetsService = require('./google_sheets_service');
+const workingSheetService = require('./working_sheet_service');
 const { TARGET_HANDLES, TARGET_HANDLES_CANONICAL, isPostEligible, getMatchedTargetHandles, resolvePrimaryMonitoredAccount } = require('./eligibility');
 
 const app = express();
@@ -3381,6 +3382,93 @@ app.post('/api/admin/sync-now', authMiddleware, requireRoles('Super Administrato
 app.post('/api/admin/x-verify', authMiddleware, requireRoles('Super Administrator'), async (req, res) => {
   const verification = await XService.verifyConnection();
   res.json({ data: verification });
+});
+
+// -------------------------------------------------------------
+// WORKING SHEET MANAGEMENT ENDPOINTS (11 TARGET COLUMNS)
+// -------------------------------------------------------------
+
+// 1. Fetch Working Sheet Data (Strictly 11 Columns, Search, Filter, Sort, Paginate)
+app.get('/api/working-sheet/data', authMiddleware, async (req, res) => {
+  try {
+    const {
+      page = 1,
+      limit = 50,
+      search = '',
+      sort_by = 'DATE',
+      sort_order = 'DESC',
+      picked_status = 'All',
+      head = 'All',
+      district = 'All',
+      complaint_type = 'All',
+      refresh = 'false'
+    } = req.query;
+
+    const forceRefresh = refresh === 'true' || refresh === true || refresh === '1';
+    const result = await workingSheetService.getWorkingSheetData({
+      page: parseInt(page, 10) || 1,
+      limit: parseInt(limit, 10) || 50,
+      search,
+      sortBy: sort_by,
+      sortOrder: sort_order,
+      pickedStatus: picked_status,
+      head,
+      district,
+      complaintType: complaint_type,
+      forceRefresh
+    });
+
+    res.json(result);
+  } catch (err) {
+    console.error('[Server] Working Sheet fetch error:', err);
+    res.status(500).json({ error: err.message || 'Failed to fetch Working Sheet data' });
+  }
+});
+
+// 2. Dynamic District List (Sourced from Discom_District_List worksheet)
+app.get('/api/working-sheet/districts', authMiddleware, async (req, res) => {
+  try {
+    const forceRefresh = req.query.refresh === 'true';
+    const districts = await workingSheetService.getDistrictList(forceRefresh);
+    res.json(districts);
+  } catch (err) {
+    console.error('[Server] Working Sheet district fetch error:', err);
+    res.status(500).json({ error: err.message || 'Failed to fetch dynamic district list from Google Sheets' });
+  }
+});
+
+// 3. Single-Cell Update Directly to Google Sheets with Verification
+app.post('/api/working-sheet/update-cell', authMiddleware, requireRoles('Super Administrator', 'Social Media Cell Operator', 'Supervisor / Management'), async (req, res) => {
+  try {
+    const { tweet_id, post_url, sheet_row_index, column_name, new_value } = req.body;
+
+    if (!column_name) {
+      return res.status(400).json({ error: 'Column name is required' });
+    }
+
+    const result = await workingSheetService.updateWorkingSheetCell({
+      tweetId: tweet_id,
+      postUrl: post_url,
+      sheetRowIndex: sheet_row_index,
+      columnName: column_name,
+      newValue: new_value,
+      user: req.user
+    });
+
+    logAudit(
+      req,
+      req.user,
+      'WORKING_SHEET_UPDATE',
+      'GOOGLE_SHEETS',
+      sheet_row_index || 0,
+      `Updated ${column_name} to "${new_value}" on Google Sheet Row ${result.row}`
+    );
+
+    res.json(result);
+  } catch (err) {
+    console.error('[Server] Working Sheet cell update error:', err);
+    res.status(400).json({ error: err.message || 'Failed to update cell in Google Sheet' });
+  }
 });
 
 // -------------------------------------------------------------
