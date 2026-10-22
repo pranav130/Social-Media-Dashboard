@@ -64,6 +64,127 @@ function columnLetterToIndex(letter) {
 }
 
 /**
+ * Extracts Twitter Snowflake millisecond epoch from a Tweet ID string or Tweet URL.
+ * Twitter Snowflake epoch: 1288834974657 ms (2010-11-04T01:42:54.657Z).
+ * Formula: (BigInt(tweetId) >> 22n) + 1288834974657n
+ */
+function getSnowflakeEpochMs(idOrUrl) {
+  if (!idOrUrl) return null;
+  const str = String(idOrUrl).trim();
+  const match = str.match(/\d{15,22}/);
+  if (!match) return null;
+  try {
+    const idBigInt = BigInt(match[0]);
+    const epochMs = Number((idBigInt >> 22n) + 1288834974657n);
+    // Sanity check: must be after 2010 and not in far future
+    if (isNaN(epochMs) || epochMs < 1288834974657 || epochMs > Date.now() + 86400000 * 365) {
+      return null;
+    }
+    return epochMs;
+  } catch (err) {
+    return null;
+  }
+}
+
+/**
+ * Parses a variety of date / timestamp inputs into millisecond epoch.
+ * Accepts:
+ * - Twitter Snowflake ID or URL
+ * - ISO date string (e.g. "2026-10-20T18:10:37.000Z")
+ * - Formatted date string (e.g. "21-10-2026 14:30:00" or "2026-10-21 14:30:00")
+ * - JavaScript Date object or existing millisecond epoch
+ */
+function parseTimestampToEpochMs(val) {
+  if (!val) return null;
+  if (typeof val === 'number') {
+    return (val > 1288834974657) ? val : null;
+  }
+  if (val instanceof Date) {
+    const t = val.getTime();
+    return !isNaN(t) ? t : null;
+  }
+
+  const str = String(val).trim();
+  if (!str) return null;
+
+  // 1. Try Snowflake if contains large integer (e.g. status URL or numeric string)
+  if (/\b\d{15,22}\b/.test(str)) {
+    const sf = getSnowflakeEpochMs(str);
+    if (sf) return sf;
+  }
+
+  // 2. Try Standard Date Parse (ISO 8601 or RFC 2822)
+  const parsed = Date.parse(str);
+  if (!isNaN(parsed) && parsed > 1288834974657) {
+    return parsed;
+  }
+
+  // 3. Try DD-MM-YYYY [HH:mm:ss] format common in Indian government records
+  const dmyMatch = str.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})(?:\s+(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?/);
+  if (dmyMatch) {
+    const day = parseInt(dmyMatch[1], 10);
+    const month = parseInt(dmyMatch[2], 10) - 1;
+    const year = parseInt(dmyMatch[3], 10);
+    const hours = dmyMatch[4] ? parseInt(dmyMatch[4], 10) : 0;
+    const mins = dmyMatch[5] ? parseInt(dmyMatch[5], 10) : 0;
+    const secs = dmyMatch[6] ? parseInt(dmyMatch[6], 10) : 0;
+    const d = new Date(Date.UTC(year, month, day, hours, mins, secs));
+    const t = d.getTime();
+    if (!isNaN(t) && t > 1288834974657) return t;
+  }
+
+  return null;
+}
+
+/**
+ * Calculates the authoritative value for REPLY_WITHIN_30_MIN_BY_Laqshya Media
+ * strictly adhering to the mandated 3-Rule business logic:
+ *
+ * Rule 1: If UPPCLLKO Replied (YES/NO) != 'YES' (i.e. 'NO', blank, null):
+ *         Returns '' (blank). NEVER 'YES' or 'NO'.
+ *
+ * Rule 2: If UPPCLLKO Replied (YES/NO) == 'YES':
+ *         - Computes elapsed time in minutes between consumer post and UPPCLLKO reply.
+ *         - Elapsed time <= 30 minutes -> 'YES'
+ *         - Elapsed time > 30 minutes  -> 'NO'
+ *
+ * Rule 3: If UPPCLLKO Replied (YES/NO) == 'YES' but either timestamp is missing, invalid,
+ *         or negative (reply before complaint):
+ *         Returns '' (blank) pending verification.
+ */
+function calculateReplyWithin30Min(uppclReplied, consumerPostTimeOrUrl, uppclReplyTimeOrUrl) {
+  const isReplied = String(uppclReplied || '').trim().toUpperCase() === 'YES';
+
+  // Rule 1: UPPCLLKO Replied = NO (or blank) -> strictly blank
+  if (!isReplied) {
+    return '';
+  }
+
+  // Rule 2 & 3: UPPCLLKO Replied = YES
+  const startEpoch = parseTimestampToEpochMs(consumerPostTimeOrUrl);
+  const endEpoch = parseTimestampToEpochMs(uppclReplyTimeOrUrl);
+
+  // Safe handling of missing or invalid timestamps
+  if (!startEpoch || !endEpoch) {
+    return '';
+  }
+
+  const diffMs = endEpoch - startEpoch;
+
+  // Inconsistent / negative timestamps flag as pending verification (blank)
+  if (diffMs < 0) {
+    return '';
+  }
+
+  // Exact 30-minute threshold: diffMs <= 30 * 60 * 1000 (1,800,000 ms)
+  const diffMinutes = diffMs / 60000;
+  if (diffMinutes <= 30) {
+    return 'YES';
+  }
+  return 'NO';
+}
+
+/**
  * Master Dictionary of Canonical Fields and their recognized aliases.
  * Ordered from most specific alias to general alias to prevent partial mismatch.
  */
@@ -623,6 +744,9 @@ module.exports = {
   normalizeHeaderName,
   indexToColumnLetter,
   columnLetterToIndex,
+  getSnowflakeEpochMs,
+  parseTimestampToEpochMs,
+  calculateReplyWithin30Min,
   CANONICAL_FIELD_DEFINITIONS,
   createHeaderMap
 };

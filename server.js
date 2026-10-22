@@ -507,12 +507,15 @@ app.get('/api/complaints', authMiddleware, (req, res) => {
     }
   }
 
-  const uppcl_replied = req.query.uppcl_replied;
+  const uppcl_replied = req.query.uppcl_replied !== undefined ? req.query.uppcl_replied : req.query.uppcllko_replied;
   if (uppcl_replied !== undefined && uppcl_replied !== 'All' && uppcl_replied !== '') {
-    if (uppcl_replied === '1' || uppcl_replied === 'true' || uppcl_replied.toString().toUpperCase() === 'YES') {
-      whereClauses.push('uppcl_replied = 1');
-    } else if (uppcl_replied === '0' || uppcl_replied === 'false' || uppcl_replied.toString().toUpperCase() === 'NO') {
-      whereClauses.push('(uppcl_replied = 0 OR uppcl_replied IS NULL)');
+    const upStr = uppcl_replied.toString().toUpperCase();
+    if (upStr === '1' || upStr === 'TRUE' || upStr === 'YES') {
+      whereClauses.push('(uppcl_replied = 1 OR uppcllko_replied = "YES")');
+    } else if (upStr === '0' || upStr === 'FALSE' || upStr === 'NO') {
+      whereClauses.push('(uppcl_replied = 0 OR uppcl_replied IS NULL OR uppcllko_replied = "NO")');
+    } else if (upStr === 'UNVERIFIED') {
+      whereClauses.push('(uppcllko_replied IS NULL AND (uppcl_replied IS NULL OR uppcl_replied = 0))');
     }
   }
 
@@ -766,6 +769,98 @@ app.post('/api/complaints', authMiddleware, requireRoles('Super Administrator', 
   res.status(201).json({ message: 'Complaint registered successfully', complaint: created });
 });
 
+// 3b. UPPCLLKO Replied Aggregate Stats (Must precede :id route)
+app.get('/api/complaints/uppcllko-replied-stats', authMiddleware, (req, res) => {
+  try {
+    let whereClauses = [];
+    let params = [];
+
+    // Strictly exclude posts authored by official hierarchy handles
+    whereClauses.push(`(
+      consumer_handle IS NULL OR 
+      REPLACE(LOWER(consumer_handle), '@', '') NOT IN (
+        SELECT REPLACE(LOWER(handle_name), '@', '') FROM x_hierarchy WHERE handle_name IS NOT NULL AND handle_name != ''
+      )
+    )`);
+
+    if (req.user.role === 'DISCOM Nodal Officer') {
+      whereClauses.push('(discom_name = ? OR UPPER(discom_name) = UPPER(?))');
+      params.push(req.user.discom_name, req.user.discom_name);
+    } else if (req.query.discom && req.query.discom !== 'All') {
+      whereClauses.push('discom_name = ?');
+      params.push(req.query.discom);
+    }
+
+    if (req.query.district && req.query.district !== 'All') {
+      whereClauses.push('district_name = ?');
+      params.push(req.query.district);
+    }
+
+    if (req.query.from_date) {
+      whereClauses.push('received_at >= ?');
+      params.push(req.query.from_date + ' 00:00:00');
+    }
+
+    if (req.query.to_date) {
+      whereClauses.push('received_at <= ?');
+      params.push(req.query.to_date + ' 23:59:59');
+    }
+
+    const whereSql = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
+
+    const repliedRow = db.get(`SELECT COUNT(*) as c FROM complaints ${whereSql ? whereSql + ' AND' : 'WHERE'} (uppcl_replied = 1 OR uppcllko_replied = 'YES');`, params);
+    const notRepliedRow = db.get(`SELECT COUNT(*) as c FROM complaints ${whereSql ? whereSql + ' AND' : 'WHERE'} (uppcl_replied = 0 OR uppcllko_replied = 'NO') AND (category_name != 'APPRECIATION' OR category_name IS NULL);`, params);
+    const unverifiedRow = db.get(`SELECT COUNT(*) as c FROM complaints ${whereSql ? whereSql + ' AND' : 'WHERE'} uppcllko_replied IS NULL AND (uppcl_replied IS NULL OR uppcl_replied = 0);`, params);
+
+    res.json({
+      replied: repliedRow ? repliedRow.c : 0,
+      not_replied: notRepliedRow ? notRepliedRow.c : 0,
+      unverified: unverifiedRow ? unverifiedRow.c : 0
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 3c. Bulk Set UPPCLLKO Replied (Super Admin only)
+app.post('/api/complaints/bulk-set-uppcllko-replied', authMiddleware, requireRoles('Super Administrator'), (req, res) => {
+  try {
+    const { updates } = req.body;
+    if (!Array.isArray(updates) || updates.length === 0) {
+      return res.status(400).json({ error: 'Updates must be a non-empty array of { id, replied }' });
+    }
+
+    const nowIst = getIstTimestamp();
+    let updatedCount = 0;
+    const errors = [];
+
+    for (const item of updates) {
+      const id = parseInt(item.id, 10);
+      const replied = String(item.replied || '').toUpperCase().trim();
+      if (!id || (replied !== 'YES' && replied !== 'NO')) {
+        errors.push({ id: item.id, error: 'Invalid id or replied value (must be YES or NO)' });
+        continue;
+      }
+
+      db.run(`
+        UPDATE complaints SET
+          uppcllko_replied = ?,
+          uppcllko_replied_verified_at = ?,
+          uppcl_replied = ?,
+          updated_at = ?
+        WHERE id = ?;
+      `, [replied, nowIst, replied === 'YES' ? 1 : 0, nowIst, id]);
+      updatedCount++;
+    }
+
+    db.saveToDiskSync();
+    logAudit(req, req.user, 'BULK_SET_UPPCLLKO_REPLIED', 'COMPLAINT', null, `Bulk updated ${updatedCount} complaints UPPCLLKO reply status`);
+    res.json({ updated: updatedCount, errors });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // 4. Get Complaint Details & Timeline
 app.get('/api/complaints/:id', authMiddleware, (req, res) => {
   const id = parseInt(req.params.id, 10);
@@ -806,6 +901,37 @@ app.get('/api/complaints/:id', authMiddleware, (req, res) => {
     evidence,
     replies
   });
+});
+
+// 4b. Set UPPCLLKO Replied (Authorized Operators & Admins)
+app.post('/api/complaints/:id/set-uppcllko-replied', authMiddleware, requireRoles('Super Administrator', 'Social Media Cell Operator', 'Supervisor / Management'), (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  const complaint = db.get('SELECT * FROM complaints WHERE id = ?;', [id]);
+  if (!complaint) return res.status(404).json({ error: 'Complaint not found' });
+
+  const { replied } = req.body;
+  const upperReplied = String(replied || '').toUpperCase().trim();
+  if (upperReplied !== 'YES' && upperReplied !== 'NO') {
+    return res.status(400).json({ error: 'Replied status must be either YES or NO' });
+  }
+
+  const nowIst = getIstTimestamp();
+  const uppclReplied = upperReplied === 'YES' ? 1 : 0;
+  const evidence = upperReplied === 'YES' ? `Manually verified as replied by ${req.user.full_name}` : null;
+
+  db.run(`
+    UPDATE complaints SET
+      uppcllko_replied = ?,
+      uppcllko_replied_verified_at = ?,
+      uppcl_replied = ?,
+      reply_evidence = COALESCE(?, reply_evidence),
+      updated_at = ?
+    WHERE id = ?;
+  `, [upperReplied, nowIst, uppclReplied, evidence, nowIst, id]);
+
+  db.saveToDiskSync();
+  logAudit(req, req.user, 'SET_UPPCLLKO_REPLIED', 'COMPLAINT', id, `Set UPPCLLKO Replied status to ${upperReplied} for complaint ${complaint.complaint_no}`);
+  res.json({ message: 'Updated successfully', id, uppcllko_replied: upperReplied });
 });
 
 // 5. Forward Complaint to DISCOM / Nodal Officer
@@ -1507,6 +1633,10 @@ app.get('/api/dashboard/kpis', authMiddleware, (req, res) => {
     pickedAppreciation,
     uppclRepliedCount,
     uppclNotRepliedCount,
+    uppclReplied: uppclRepliedCount,
+    uppclNotReplied: uppclNotRepliedCount,
+    uppcllkoReplied: uppclRepliedCount,
+    uppcllkoNotReplied: uppclNotRepliedCount,
     appreciationCount,
     replyWithin30MinCount,
     replyWithin30MinRate,

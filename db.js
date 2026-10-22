@@ -474,6 +474,12 @@ function createSchema() {
   tryAddColumn('complaints', 'discom_replied INTEGER DEFAULT 0');
   tryAddColumn('complaints', 'discom_reply_evidence TEXT');
   tryAddColumn('complaints', 'last_reply_author TEXT');
+  tryAddColumn('complaints', 'uppcllko_replied TEXT DEFAULT NULL');
+  tryAddColumn('complaints', 'uppcllko_replied_verified_at TEXT DEFAULT NULL');
+  tryAddColumn('complaints', 'post_created_at_utc TEXT');
+  tryAddColumn('complaints', 'first_detected_at_ist TEXT');
+  tryAddColumn('complaints', 'language TEXT');
+  tryAddColumn('complaints', 'routing_confidence TEXT');
 
   // Pre-load verified historical replies from data/verified_replies_seed.json
   try {

@@ -14,3 +14,11 @@ scratch/
 test_*.js
 verify_db.js
 *.log
+*.tmp
+*.bak
+*.backup
+*.csv
+*.xlsx
+scripts/*.csv
+backfill_report.json
+uppcllko_replied_column.txt

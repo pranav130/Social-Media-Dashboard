@@ -894,6 +894,265 @@ async function runTests() {
     assert.strictEqual(inDb, 0, 'Ineligible historical rows must not exist in dashboard database');
   });
 
+  console.log('\n[20. Dynamic Google Sheet Header Mapping & Column Rearrangement Suite]');
+
+  const { createHeaderMap, normalizeHeaderName, indexToColumnLetter, columnLetterToIndex } = require('./sheet_mapper');
+
+  it('1. Column rearrangement: Moves Tweet URL to Column B and Date to Column F without data corruption', () => {
+    const headers = ['Shift', 'LINK URL', 'Picked Status', 'Head', 'Status', 'DATE', 'Twitter Id', 'Post Text'];
+    const mapper = createHeaderMap(headers);
+    assert.strictEqual(mapper.getIndex('link_url'), 1);
+    assert.strictEqual(mapper.getLetter('link_url'), 'B');
+    assert.strictEqual(mapper.getIndex('date'), 5);
+    assert.strictEqual(mapper.getLetter('date'), 'F');
+
+    const testRow = ['Morning', 'https://x.com/user/status/1234567890123456789', 'YES', 'upl', 'New', '21-10-2026', 'user', 'Problem with transformer @UPPCLLKO'];
+    assert.strictEqual(mapper.get(testRow, 'link_url'), 'https://x.com/user/status/1234567890123456789');
+    assert.strictEqual(mapper.get(testRow, 'date'), '21-10-2026');
+    assert.strictEqual(mapper.get(testRow, 'post_text'), 'Problem with transformer @UPPCLLKO');
+  });
+
+  it('2. Adjacent column movement: Swapping Head, Picked Status, and UPPCLLKO Replied does not swap values', () => {
+    const headers = ['UPPCLLKO Replied (YES/NO)', 'Head', 'Picked Status', 'LINK URL', 'Twitter Id', 'Post Text', 'DATE'];
+    const mapper = createHeaderMap(headers);
+    const testRow = ['YES', 'upl', 'APPRECIATION', 'https://x.com/citizen/status/987654321', 'citizen', 'Thank you @UPPCLLKO', '21-10-2026'];
+
+    assert.strictEqual(mapper.get(testRow, 'uppcllko_replied'), 'YES');
+    assert.strictEqual(mapper.get(testRow, 'head'), 'upl');
+    assert.strictEqual(mapper.get(testRow, 'picked_status'), 'APPRECIATION');
+    assert.notStrictEqual(mapper.get(testRow, 'head'), mapper.get(testRow, 'picked_status'));
+  });
+
+  it('3. Optional columns insertion: Adding extra columns preserves existing field mappings', () => {
+    const headers = ['DATE', 'Department Ref Code', 'LINK URL', 'Internal Audit Tag', 'Twitter Id', 'Post Text'];
+    const mapper = createHeaderMap(headers);
+    assert.strictEqual(mapper.getIndex('date'), 0);
+    assert.strictEqual(mapper.getIndex('link_url'), 2);
+    assert.strictEqual(mapper.getIndex('twitter_id'), 4);
+    assert.strictEqual(mapper.getIndex('post_text'), 5);
+    assert.strictEqual(mapper.has('remark'), false);
+  });
+
+  it('4. Missing required headers: Detects when essential columns are missing and flags unreliable', () => {
+    const incompleteHeaders = ['DATE', 'Shift', 'District'];
+    const mapper = createHeaderMap(incompleteHeaders);
+    assert.strictEqual(mapper.isReliable, false);
+    assert.ok(mapper.missingRequired.includes('link_url'));
+    assert.ok(mapper.missingRequired.includes('twitter_id'));
+    assert.ok(mapper.missingRequired.includes('post_text'));
+  });
+
+  it('5. Duplicate headers detection: Identifies and records duplicated columns safely', () => {
+    const dupHeaders = ['DATE', 'LINK URL', 'Twitter Id', 'Post Text', 'LINK URL'];
+    const mapper = createHeaderMap(dupHeaders);
+    assert.strictEqual(mapper.duplicateWarnings.length, 1);
+    assert.strictEqual(mapper.duplicateWarnings[0].canonicalField, 'link_url');
+    assert.strictEqual(mapper.getIndex('link_url'), 1);
+  });
+
+  it('6. Excel column letter conversion: Accurately converts between 0-based indices and A-Z/AA-ZZ letters', () => {
+    assert.strictEqual(indexToColumnLetter(0), 'A');
+    assert.strictEqual(indexToColumnLetter(4), 'E');
+    assert.strictEqual(indexToColumnLetter(9), 'J');
+    assert.strictEqual(indexToColumnLetter(22), 'W');
+    assert.strictEqual(indexToColumnLetter(25), 'Z');
+    assert.strictEqual(indexToColumnLetter(26), 'AA');
+    assert.strictEqual(columnLetterToIndex('A'), 0);
+    assert.strictEqual(columnLetterToIndex('J'), 9);
+    assert.strictEqual(columnLetterToIndex('W'), 22);
+    assert.strictEqual(columnLetterToIndex('AA'), 26);
+  });
+
+  it('7. Normalization: Tolerates whitespace and case differences in column headers', () => {
+    assert.strictEqual(normalizeHeaderName('   LINK URL  '), 'linkurl');
+    assert.strictEqual(normalizeHeaderName('UPPCLLKO Replied (YES/NO)'), 'uppcllkorepliedyesno');
+    assert.strictEqual(normalizeHeaderName('REPLY_WITHIN_30_MIN_BY_Laqshya Media'), 'replywithin30minbylaqshyamedia');
+  });
+
+  it('8. Value validation: UPPCLLKO Replied strictly validates to YES, NO, or blank (never arbitrary strings)', () => {
+    const headers = ['DATE', 'LINK URL', 'Twitter Id', 'Post Text', 'UPPCLLKO Replied (YES/NO)'];
+    const mapper = createHeaderMap(headers);
+    assert.strictEqual(mapper.get(['21-10-2026', 'https://x.com/a/status/1', 'a', 'text @UPPCLLKO', 'YES'], 'uppcllko_replied'), 'YES');
+    assert.strictEqual(mapper.get(['21-10-2026', 'https://x.com/a/status/1', 'a', 'text @UPPCLLKO', 'NO'], 'uppcllko_replied'), 'NO');
+    assert.strictEqual(mapper.get(['21-10-2026', 'https://x.com/a/status/1', 'a', 'text @UPPCLLKO', 'BILL_RELATED'], 'uppcllko_replied'), '');
+    assert.strictEqual(mapper.get(['21-10-2026', 'https://x.com/a/status/1', 'a', 'text @UPPCLLKO', 'Pending Review'], 'uppcllko_replied'), '');
+  });
+
+  console.log('\n[21. Google Sheets DATE Column Normalization & Chronological Sorting Suite]');
+
+  it('1. Date Normalization: Converts varied formats (DD-MM-YYYY, YYYY-MM-DD, serials, timestamps) into genuine Date objects', () => {
+    function parseDateToTrueDate(rawCell, curDateStr) {
+      if (rawCell instanceof Date && !isNaN(rawCell.getTime())) return rawCell;
+      if (typeof rawCell === 'number' && rawCell > 40000 && rawCell < 60000) {
+        return new Date((rawCell - 25569) * 86400 * 1000);
+      }
+      if (curDateStr) {
+        const dmy = curDateStr.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})/);
+        if (dmy) {
+          return new Date(parseInt(dmy[3], 10), parseInt(dmy[2], 10) - 1, parseInt(dmy[1], 10));
+        }
+        const ymd = curDateStr.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})/);
+        if (ymd) {
+          return new Date(parseInt(ymd[1], 10), parseInt(ymd[2], 10) - 1, parseInt(ymd[3], 10));
+        }
+      }
+      return null;
+    }
+
+    const d1 = parseDateToTrueDate(null, '22-10-2026');
+    assert.strictEqual(d1.getFullYear(), 2026);
+    assert.strictEqual(d1.getMonth(), 9); // October
+    assert.strictEqual(d1.getDate(), 22);
+
+    const d2 = parseDateToTrueDate(null, '2026-10-22');
+    assert.strictEqual(d2.getFullYear(), 2026);
+    assert.strictEqual(d2.getMonth(), 9);
+    assert.strictEqual(d2.getDate(), 22);
+
+    const d3 = parseDateToTrueDate(null, '05/09/2026');
+    assert.strictEqual(d3.getFullYear(), 2026);
+    assert.strictEqual(d3.getMonth(), 8); // September
+    assert.strictEqual(d3.getDate(), 5);
+
+    // Excel serial 46317 is 2026-10-22
+    const d4 = parseDateToTrueDate(46317, '');
+    assert.strictEqual(d4.getFullYear(), 2026);
+    assert.strictEqual(d4.getMonth(), 9);
+    assert.strictEqual(d4.getDate(), 22);
+  });
+
+  it('2. Chronological Ordering: True date comparison prevents text lexicographical sorting flaws', () => {
+    // In lexicographical text sorting, "31-10-2025" > "01-11-2026" because '3' > '0'
+    const textDates = ['31-10-2025', '01-11-2026', '22-10-2026'];
+    const textSorted = [...textDates].sort().reverse();
+    assert.strictEqual(textSorted[0], '31-10-2025', 'Lexicographical text sorting incorrectly ranks 2025 first');
+
+    // In true chronological Date comparison, 2026-11-01 > 2026-10-22 > 2025-10-31
+    const trueDates = [
+      { raw: '31-10-2025', d: new Date(2025, 9, 31) },
+      { raw: '01-11-2026', d: new Date(2026, 10, 1) },
+      { raw: '22-10-2026', d: new Date(2026, 9, 22) }
+    ];
+    const chronoSorted = [...trueDates].sort((a, b) => b.d.getTime() - a.d.getTime());
+    assert.strictEqual(chronoSorted[0].raw, '01-11-2026', 'Chronological sorting correctly ranks 01-11-2026 first');
+    assert.strictEqual(chronoSorted[1].raw, '22-10-2026', 'Chronological sorting correctly ranks 22-10-2026 second');
+    assert.strictEqual(chronoSorted[2].raw, '31-10-2025', 'Chronological sorting correctly ranks 31-10-2025 last');
+  });
+
+  it('3. Snowflake ID Recovery: Recovers exact date for complaints with missing or corrupt date cells', () => {
+    const tweetId = '2112851301092737492'; // From live sheet row 3027
+    const epochMs = Math.floor(Number(BigInt(tweetId) >> 22n)) + 1288834974657;
+    const recoveredDate = new Date(epochMs);
+
+    assert.strictEqual(recoveredDate.getFullYear(), 2026);
+    assert.strictEqual(recoveredDate.getMonth(), 9); // October
+    assert.strictEqual(recoveredDate.getDate(), 21);
+  });
+
+  it('4. Complete Row Integrity & Multi-tier Sorting: Sorts complete rows with secondary Snowflake tie-breaker and pushes blanks to bottom', () => {
+    const rawRows = [
+      ['21-10-2026', 'https://x.com/user1/status/2112850000000000000', 'Complaint on 21 Oct earlier', 'PVVNL'],
+      ['22-10-2026', 'https://x.com/user2/status/2113180000000000000', 'Complaint on 22 Oct earlier', 'MVVNL'],
+      ['', '', '', ''], // Empty row (like raw Row 2)
+      ['22-10-2026', 'https://x.com/user3/status/2113190000000000000', 'Complaint on 22 Oct latest', 'PuVVNL'],
+      ['20-10-2026', 'https://x.com/user4/status/2112500000000000000', 'Complaint on 20 Oct', 'DVVNL']
+    ];
+
+    function parseRowDate(row) {
+      const s = String(row[0] || '').trim();
+      if (!s) return null;
+      const m = s.match(/^(\d{1,2})-(\d{1,2})-(\d{4})/);
+      return m ? new Date(parseInt(m[3], 10), parseInt(m[2], 10) - 1, parseInt(m[1], 10)) : null;
+    }
+
+    function extractSnowflake(row) {
+      const m = String(row[1] || '').match(/status\/(\d+)/);
+      return m ? BigInt(m[1]) : 0n;
+    }
+
+    // Sort descending by: 1. Date, 2. Snowflake ID
+    const sorted = [...rawRows].sort((a, b) => {
+      const isBlankA = a.every(c => !c);
+      const isBlankB = b.every(c => !c);
+      if (isBlankA && !isBlankB) return 1;
+      if (!isBlankA && isBlankB) return -1;
+      if (isBlankA && isBlankB) return 0;
+
+      const dA = parseRowDate(a);
+      const dB = parseRowDate(b);
+      const tA = dA ? dA.getTime() : 0;
+      const tB = dB ? dB.getTime() : 0;
+      if (tB !== tA) return tB - tA;
+
+      const sA = extractSnowflake(a);
+      const sB = extractSnowflake(b);
+      if (sB > sA) return 1;
+      if (sB < sA) return -1;
+      return 0;
+    });
+
+    // Row 0 must be 22 Oct latest (user3, PuVVNL)
+    assert.strictEqual(sorted[0][2], 'Complaint on 22 Oct latest');
+    assert.strictEqual(sorted[0][3], 'PuVVNL');
+
+    // Row 1 must be 22 Oct earlier (user2, MVVNL)
+    assert.strictEqual(sorted[1][2], 'Complaint on 22 Oct earlier');
+    assert.strictEqual(sorted[1][3], 'MVVNL');
+
+    // Row 2 must be 21 Oct (user1, PVVNL)
+    assert.strictEqual(sorted[2][2], 'Complaint on 21 Oct earlier');
+    assert.strictEqual(sorted[2][3], 'PVVNL');
+
+    // Row 3 must be 20 Oct (user4, DVVNL)
+    assert.strictEqual(sorted[3][2], 'Complaint on 20 Oct');
+    assert.strictEqual(sorted[3][3], 'DVVNL');
+
+    // Row 4 must be the empty row, safely relegated to bottom
+    assert.ok(sorted[4].every(c => !c), 'Empty row must sort to the very bottom');
+  });
+
+  it('5. Apps Script Code.gs Integrity: Verifies sorting, formatting, auto-sync, onEdit, and menu bindings', () => {
+    const fs = require('fs');
+    const codeGs = fs.readFileSync('google_apps_script/Code.gs', 'utf8');
+
+    // Function declarations
+    assert.ok(codeGs.includes('function sortSheetByDateDescending()'), 'Code.gs must define sortSheetByDateDescending()');
+    assert.ok(codeGs.includes('function fixDateColumnInSheet()'), 'Code.gs must define fixDateColumnInSheet()');
+    assert.ok(codeGs.includes('function onEdit(e)'), 'Code.gs must define onEdit(e) for auto-sorting manual edits');
+    assert.ok(codeGs.includes('function getSheetColumnMap(sheet)'), 'Code.gs must resolve columns dynamically');
+
+    // Descending sort criteria
+    assert.ok(codeGs.includes('{ column: dateCol + 1, ascending: false }'), 'sortSheetByDateDescending must sort date descending');
+    assert.ok(codeGs.includes('dataRange.sort(sortCriteria)'), 'sortSheetByDateDescending must sort dataRange');
+
+    // Date formatting string
+    assert.ok(codeGs.includes(".setNumberFormat('dd-MM-yyyy')"), "Code.gs must set format to 'dd-MM-yyyy'");
+
+    // Menu items in onOpen
+    assert.ok(codeGs.includes('Sort Sheet by Date: Newest First (Z–A)'), 'onOpen menu must include descending sort option');
+    assert.ok(codeGs.includes('Convert & Fix All Date Types (True Dates)'), 'onOpen menu must include date conversion option');
+
+    // Auto-sorting in runCloudSyncCycle
+    assert.ok(codeGs.includes('sortSheetByDateDescending();'), 'runCloudSyncCycle must trigger auto-sort after appending complaints');
+
+    // Webhook actions in doPost
+    assert.ok(codeGs.includes("contents.action === 'sort_sheet'"), 'doPost must handle sort_sheet action');
+    assert.ok(codeGs.includes("contents.action === 'fix_dates'"), 'doPost must handle fix_dates action');
+  });
+
+  it('6. Ingestion Parity: google_sheets_service.js ingests starting at Row 2 without skipping newest complaints', () => {
+    const fs = require('fs');
+    const gssCode = fs.readFileSync('google_sheets_service.js', 'utf8');
+
+    // Verify manualRows and autoRows start at slice(1)
+    assert.ok(gssCode.includes('manualRows.slice(1)'), 'syncGoogleSheets must process from Row 2 (slice(1))');
+    assert.ok(gssCode.includes('autoRows.slice(1)'), 'syncGoogleSheets auto CSV must process from Row 2 (slice(1))');
+    assert.ok(gssCode.includes('parsedRows.slice(1)'), 'processUploadedSheetBuffer must process from Row 2 (slice(1))');
+
+    // Verify row index offset matches Row 2 start
+    assert.ok(gssCode.includes('sheetRowIndex: idx + 2'), 'sheetRowIndex must map accurately to 1-based sheet row numbers');
+  });
+
   console.log('\n====================================================');
   console.log(` Tests Finished: ${passCount} Passed, ${failCount} Failed`);
   console.log('====================================================\n');

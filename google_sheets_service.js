@@ -25,6 +25,7 @@ const {
   getMatchedTargetHandles,
   resolvePrimaryMonitoredAccount
 } = require('./eligibility');
+const { createHeaderMap, calculateReplyWithin30Min } = require('./sheet_mapper');
 
 // Primary: Operational Working Sheet (Authoritative Google Sheet)
 const MANUAL_SPREADSHEET_ID = process.env.GOOGLE_MANUAL_SPREADSHEET_ID || '10_210Ynr_F0Pj1Yov_pqjVZ1kaYIEWrbGF1jn16sgNY';
@@ -204,48 +205,22 @@ function extractExactTimestampIST(linkUrl, rawDate, shift = '') {
  * Normalize and canonicalize column headers
  */
 function buildHeaderIndexMap(headers) {
+  if (!headers || !headers.length) return {};
+  const mapper = createHeaderMap(headers);
   const map = {};
-  if (!headers || !headers.length) return map;
-
-  headers.forEach((h, idx) => {
-    if (!h) return;
-    const raw = String(h).trim();
-    const clean = raw.toLowerCase().replace(/[^a-z0-9]/g, '');
-    if (!clean) return;
-
-    // Map canonical fields
-    if (clean === 'date' || clean === 'receiveddate') map['date'] = idx;
-    else if (clean === 'linkshift') map['link_shift'] = idx;
-    else if (clean === 'replyshift') map['reply_shift'] = idx;
-    else if (clean === 'cf' || clean === 'cfstatus') map['c_f'] = idx;
-    else if (clean.includes('30min') || clean.includes('reply30') || (clean.includes('replywithin') && clean.includes('30'))) map['reply_within_30_min'] = idx;
-    else if (clean.includes('60min') || clean.includes('reply60') || (clean.includes('replywithin') && clean.includes('60'))) map['reply_within_60_min'] = idx;
-    else if (clean === 'linkurl' || clean === 'posturl' || clean === 'tweeturl' || (clean.includes('link') && clean.includes('url')) || clean === 'url') map['link_url'] = idx;
-    else if (clean === 'twitterid' || clean === 'twitterhandle' || clean === 'consumerhandle' || clean === 'handle' || clean === 'author' || clean === 'account') map['twitter_id'] = idx;
-    else if (clean === 'pickedstatus' || clean === 'picked') map['picked_status'] = idx;
-    else if (clean === 'head') map['head'] = idx;
-    else if (clean === 'untaggedcomplaint' || clean.includes('untagged')) map['untagged_complaint'] = idx;
-    else if ((clean.includes('uppcl') || clean.includes('replied')) && (clean.includes('yesno') || clean.includes('replied'))) map['uppcl_replied'] = idx;
-    else if (clean === 'complainttype' || clean === 'category' || clean === 'complainttypename') map['complaint_type'] = idx;
-    else if (clean === 'discom') map['discom'] = idx;
-    else if (clean === 'zone') map['zone'] = idx;
-    else if (clean === 'district') map['district'] = idx;
-    else if (clean === 'remark' || clean === 'remarks') map['remark'] = idx;
-    else if (clean === 'status') map['status'] = idx;
-    else if (clean.includes('complaintno') || clean === 'cno') map['complaint_no'] = idx;
-    else if (clean === 'sts') map['sts'] = idx;
-    else if (clean === 'postid' || clean === 'tweetid' || (clean.includes('postid') && !clean.includes('reply'))) map['post_id'] = idx;
-    else if (clean.includes('posttext') || clean.includes('tweettext') || clean === 'complaintdetail' || clean === 'text') map['post_text'] = idx;
-    else if (clean.includes('postcreated') || clean.includes('createdat')) map['post_created_at'] = idx;
-    else if (clean.includes('firstdetected') || clean.includes('detectedat')) map['first_detected_at'] = idx;
-    else if (clean === 'language' || clean === 'lang') map['language'] = idx;
-    else if (clean.includes('routingconfidence') || clean.includes('confidence')) map['routing_confidence'] = idx;
-    else if (clean.includes('suggestedreplydraft') || clean.includes('draftreply') || clean.includes('draft')) map['draft_reply'] = idx;
-    else if (clean.includes('replyapprovalstatus') || clean.includes('approvalstatus') || clean.includes('approval')) map['approval_status'] = idx;
-    else if (clean.includes('replyposturl')) map['reply_post_url'] = idx;
-    else if (clean.includes('replypostid')) map['reply_post_id'] = idx;
-  });
-
+  for (const [canonical, colInfo] of Object.entries(mapper.fieldToCol)) {
+    map[canonical] = colInfo.index;
+  }
+  // Compatibility aliases for legacy references
+  if (map['post_created_at_utc'] !== undefined && map['post_created_at'] === undefined) {
+    map['post_created_at'] = map['post_created_at_utc'];
+  }
+  if (map['first_detected_at_ist'] !== undefined && map['first_detected_at'] === undefined) {
+    map['first_detected_at'] = map['first_detected_at_ist'];
+  }
+  if (map['uppcllko_replied'] !== undefined && map['uppcl_replied'] === undefined) {
+    map['uppcl_replied'] = map['uppcllko_replied'];
+  }
   return map;
 }
 
@@ -586,7 +561,7 @@ async function fetchSheetMatrix() {
       };
 
       // 1. Process manual working sheet first (authoritative human-classified values)
-      for (let r = 2; r < manualRows.length; r++) {
+      for (let r = 1; r < manualRows.length; r++) {
         const row = manualRows[r];
         const url = getValFromMap(row, manualHeaderMap, 'link_url', 4);
         const handle = getValFromMap(row, manualHeaderMap, 'twitter_id', 5);
@@ -621,7 +596,7 @@ async function fetchSheetMatrix() {
       }
 
       // 2. Append any unique non-official complaints from auto monitoring sheet
-      for (let r = 2; r < autoRows.length; r++) {
+      for (let r = 1; r < autoRows.length; r++) {
         const row = autoRows[r];
         const url = getValFromMap(row, autoHeaderMap, 'link_url', 4);
         const handle = getValFromMap(row, autoHeaderMap, 'twitter_id', 5);
@@ -670,8 +645,8 @@ async function fetchSheetMatrix() {
       const frivolousSet = getFrivolousIdentifiersSet();
       const validData = [];
       const mHeaderMap = buildHeaderIndexMap(manualRows[0]);
-      for (let idx = 0; idx < manualRows.slice(2).length; idx++) {
-        const row = manualRows[idx + 2];
+      for (let idx = 0; idx < manualRows.slice(1).length; idx++) {
+        const row = manualRows[idx + 1];
         const url = getValFromMap(row, mHeaderMap, 'link_url', 4);
         const handle = getValFromMap(row, mHeaderMap, 'twitter_id', 5);
         const text = getValFromMap(row, mHeaderMap, 'post_text', 16);
@@ -687,7 +662,7 @@ async function fetchSheetMatrix() {
         if (url && frivolousSet.has(url.toLowerCase())) continue;
         if (shouldDeleteOrOmitPost({ remark, status, reply30, reply60, tweetId: tid }).shouldOmit) continue;
 
-        validData.push({ row, source: 'MANUAL_SHEET', sheetRowIndex: idx + 3 });
+        validData.push({ row, source: 'MANUAL_SHEET', sheetRowIndex: idx + 2 });
       }
 
       return {
@@ -702,8 +677,8 @@ async function fetchSheetMatrix() {
       const frivolousSet = getFrivolousIdentifiersSet();
       const validData = [];
       const aHeaderMap = buildHeaderIndexMap(autoRows[0]);
-      for (let idx = 0; idx < autoRows.slice(2).length; idx++) {
-        const row = autoRows[idx + 2];
+      for (let idx = 0; idx < autoRows.slice(1).length; idx++) {
+        const row = autoRows[idx + 1];
         const url = getValFromMap(row, aHeaderMap, 'link_url', 4);
         const handle = getValFromMap(row, aHeaderMap, 'twitter_id', 5);
         const text = getValFromMap(row, aHeaderMap, 'post_text', 16);
@@ -719,7 +694,7 @@ async function fetchSheetMatrix() {
         if (url && frivolousSet.has(url.toLowerCase())) continue;
         if (shouldDeleteOrOmitPost({ remark, status, reply30, reply60, tweetId: tid }).shouldOmit) continue;
 
-        validData.push({ row, source: 'AUTO_SHEET', sheetRowIndex: idx + 3 });
+        validData.push({ row, source: 'AUTO_SHEET', sheetRowIndex: idx + 2 });
       }
 
       return {
@@ -747,7 +722,7 @@ async function fetchSheetMatrix() {
         if (json.status === 'ok' && Array.isArray(json.data) && json.data.length > 0) {
           return {
             headers: json.headers || [],
-            data: json.data.map((row, idx) => ({ row, source: 'WEBHOOK', sheetRowIndex: idx + 3 })),
+            data: json.data.map((row, idx) => ({ row, source: 'WEBHOOK', sheetRowIndex: idx + 2 })),
             method: 'APPS_SCRIPT_WEBHOOK_POST'
           };
         }
@@ -866,6 +841,7 @@ async function syncGoogleSheets(isManual = false) {
  * Process normalized sheet matrix (headers + data rows) into SQLite database
  */
 function processSheetMatrix(headers, data, method, startTime = Date.now()) {
+  const mapper = createHeaderMap(headers);
   const headerMap = buildHeaderIndexMap(headers);
   const nowIst = getIstTimestamp();
   const frivolousSet = getFrivolousIdentifiersSet();
@@ -910,7 +886,9 @@ function processSheetMatrix(headers, data, method, startTime = Date.now()) {
       picked_status, complaint_type, reply_within_30_min, reply_within_60_min,
       draft_reply, approval_status, data_quality_flags,
       uppcl_replied, reply_evidence, first_replied_at, discom_tagged_in_reply,
-      target_mentions
+      target_mentions,
+      uppcllko_replied, uppcllko_replied_verified_at,
+      post_created_at_utc, first_detected_at_ist, language, routing_confidence
     ) VALUES (
       ?, ?, ?, ?, ?,
       ?, ?, ?, ?, ?,
@@ -921,7 +899,9 @@ function processSheetMatrix(headers, data, method, startTime = Date.now()) {
       ?, ?, ?, ?,
       ?, ?, ?,
       ?, ?, ?, ?,
-      ?
+      ?,
+      ?, ?,
+      ?, ?, ?, ?
     );
   `;
 
@@ -933,45 +913,34 @@ function processSheetMatrix(headers, data, method, startTime = Date.now()) {
       continue;
     }
 
-    const rowIndex = (item && item.sheetRowIndex) ? item.sheetRowIndex : (r + 3);
+    const rowIndex = (item && item.sheetRowIndex) ? item.sheetRowIndex : (r + 2);
 
-    // Extract values using headerMap with index fallbacks (0-indexed)
-    const getVal = (canonicalKey, fallbackIdx) => {
-      if (headerMap[canonicalKey] !== undefined && row[headerMap[canonicalKey]] !== undefined && String(row[headerMap[canonicalKey]]).trim() !== '') {
-        return String(row[headerMap[canonicalKey]]).trim();
-      }
-      if (fallbackIdx !== undefined && row[fallbackIdx] !== undefined) {
-        return String(row[fallbackIdx] || '').trim();
-      }
-      return '';
-    };
-
-    const rawDate = getVal('date', 0);
-    const linkShift = getVal('link_shift', 1);
-    const replyShift = getVal('reply_shift', 2);
-    const cf = getVal('c_f', 2) || getVal('c_f', 3);
-    let linkUrl = getVal('link_url', 4);
-    let twitterId = getVal('twitter_id', 5);
-    const rawPickedStatus = getVal('picked_status', 6) || getVal('picked_status', 8);
-    const head = getVal('head', 7) || getVal('head', 6);
-    const untagged = getVal('untagged_complaint', 8) || getVal('untagged_complaint', 7);
-    const sheetUppclReplied = getVal('uppcl_replied', 9);
-    const rawCategory = getVal('complaint_type', 10) || getVal('complaint_type', 9) || 'DISSATISFIED_CONSUMER';
-    const rawDiscom = getVal('discom', 11) || getVal('discom', 10);
-    const rawZone = getVal('zone', 12) || getVal('zone', 11);
-    const rawDistrict = getVal('district', 13) || getVal('district', 12);
-    const remark = getVal('remark');
-    const rawStatus = getVal('status', 14) || 'Pending';
-    const reply30 = getVal('reply_within_30_min', 3) || getVal('reply_within_30_min', 15);
-    const reply60 = getVal('reply_within_60_min');
-    const rawComplaintNo = getVal('complaint_no', 15) || getVal('complaint_no', 17);
-    const rawPostText = getVal('post_text', 16) || remark;
-    const postCreatedAt = getVal('post_created_at', 17) || getVal('post_created_at', 21);
-    const firstDetectedAt = getVal('first_detected_at', 18) || getVal('first_detected_at', 22);
-    const language = getVal('language', 19) || getVal('language', 23);
-    const routingConfidence = getVal('routing_confidence', 20) || getVal('routing_confidence', 24);
-    const draftReply = getVal('draft_reply', 21) || getVal('draft_reply', 25) || getVal('draft_reply', 26);
-    const approvalStatus = getVal('approval_status', 22) || getVal('approval_status', 26) || getVal('approval_status', 27) || 'DRAFT_READY';
+    const rawDate = mapper.get(row, 'date');
+    const linkShift = mapper.get(row, 'link_shift');
+    const replyShift = mapper.get(row, 'reply_shift');
+    const cf = mapper.get(row, 'c_f');
+    let linkUrl = mapper.get(row, 'link_url');
+    let twitterId = mapper.get(row, 'twitter_id');
+    const rawPickedStatus = mapper.get(row, 'picked_status');
+    const head = mapper.get(row, 'head');
+    const untagged = mapper.get(row, 'untagged_complaint');
+    const sheetUppclReplied = mapper.get(row, 'uppcllko_replied');
+    const rawCategory = mapper.get(row, 'complaint_type') || 'DISSATISFIED_CONSUMER';
+    const rawDiscom = mapper.get(row, 'discom');
+    const rawZone = mapper.get(row, 'zone');
+    const rawDistrict = mapper.get(row, 'district');
+    const remark = mapper.get(row, 'remark');
+    const rawStatus = mapper.get(row, 'status') || 'Pending';
+    const reply30 = mapper.get(row, 'reply_within_30_min');
+    const reply60 = mapper.get(row, 'reply_within_60_min');
+    const rawComplaintNo = mapper.get(row, 'complaint_no');
+    const rawPostText = mapper.get(row, 'post_text') || remark;
+    const postCreatedAt = mapper.get(row, 'post_created_at_utc');
+    const firstDetectedAt = mapper.get(row, 'first_detected_at_ist');
+    const language = mapper.get(row, 'language') || 'hi';
+    const routingConfidence = mapper.get(row, 'routing_confidence');
+    const draftReply = mapper.get(row, 'draft_reply');
+    const approvalStatus = mapper.get(row, 'approval_status') || 'DRAFT_READY';
 
     // Bulletproof URL auto-recovery
     if (!linkUrl || !linkUrl.startsWith('http')) {
@@ -1111,9 +1080,9 @@ function processSheetMatrix(headers, data, method, startTime = Date.now()) {
     // UPPCLLKO verified reply is strictly explicit UPPCLLKO reply tweet data,
     // or verified historical reply in thread from complaint_replies.
     // NEVER treat reply30 (Laqshya SLA tag) as proof of UPPCLLKO reply!
-    const hasIncomingVerifiedReply = Boolean(getVal('reply_post_id', 27)) ||
-                                     Boolean(getVal('reply_post_url', 28)) ||
-                                     Boolean(getVal('reply_posted_at', 29));
+    const hasIncomingVerifiedReply = Boolean(mapper.get(row, 'reply_post_id')) ||
+                                     Boolean(mapper.get(row, 'reply_post_url')) ||
+                                     Boolean(mapper.get(row, 'reply_posted_at'));
 
     // Permanent status retention: once verified in history, never revoked even if DISCOM or consumer replies later!
     const isHistoricallyReplied = Boolean(
@@ -1132,8 +1101,9 @@ function processSheetMatrix(headers, data, method, startTime = Date.now()) {
     if (hasIncomingVerifiedReply) {
       firstRepliedAt = firstRepliedAt || nowIst;
       if (!replyEvidence) {
-        if (getVal('reply_post_url', 28)) {
-          replyEvidence = 'Verified reply URL: ' + getVal('reply_post_url', 28);
+        const rUrl = mapper.get(row, 'reply_post_url');
+        if (rUrl) {
+          replyEvidence = 'Verified reply URL: ' + rUrl;
         } else {
           replyEvidence = 'Verified UPPCLLKO reply on record';
         }
@@ -1203,6 +1173,27 @@ function processSheetMatrix(headers, data, method, startTime = Date.now()) {
       status = 'Appreciation';
     }
 
+    // Authoritative calculation of REPLY_WITHIN_30_MIN_BY_Laqshya Media:
+    // Rule 1: UPPCLLKO Replied = NO (or blank) -> strictly blank ("")
+    // Rule 2: UPPCLLKO Replied = YES -> elapsed time <= 30 min ? 'YES' : 'NO'
+    // Rule 3: UPPCLLKO Replied = YES but timestamps missing/invalid/negative -> strictly blank ("")
+    let calculatedReply30 = '';
+    if (uppclReplied === 1) {
+      const compTime = rowTid || linkUrl || postCreatedAt || receivedAt;
+      const replyTime = mapper.get(row, 'reply_post_id') ||
+                        mapper.get(row, 'reply_post_url') ||
+                        mapper.get(row, 'reply_posted_at') ||
+                        (existingComp && existingComp.published_reply_id) ||
+                        firstRepliedAt;
+      calculatedReply30 = calculateReplyWithin30Min('YES', compTime, replyTime);
+      if (!calculatedReply30 && (reply30 === 'YES' || reply30 === 'NO')) {
+        calculatedReply30 = reply30;
+      }
+    } else {
+      // Rule 1: strictly blank when UPPCLLKO has not replied
+      calculatedReply30 = '';
+    }
+
     db.run(insertStmt, [
       complaintNo,
       receivedAt,
@@ -1236,7 +1227,7 @@ function processSheetMatrix(headers, data, method, startTime = Date.now()) {
       untagged,
       normalizedPickedStatus,
       rawCategory,
-      reply30,
+      calculatedReply30,
       reply60,
       draftReply,
       approvalStatus,
@@ -1245,7 +1236,13 @@ function processSheetMatrix(headers, data, method, startTime = Date.now()) {
       replyEvidence,
       firstRepliedAt,
       discomTaggedInReply,
-      targetMentions
+      targetMentions,
+      uppclReplied === 1 ? 'YES' : 'NO',
+      nowIst,
+      postCreatedAt || null,
+      firstDetectedAt || null,
+      language || 'hi',
+      routingConfidence || null
     ]);
 
   }
@@ -1273,6 +1270,8 @@ function processSheetMatrix(headers, data, method, startTime = Date.now()) {
     UPDATE complaints
     SET has_historical_reply = 1,
         uppcl_replied = 1,
+        uppcllko_replied = 'YES',
+        uppcllko_replied_verified_at = COALESCE(uppcllko_replied_verified_at, datetime('now')),
         picked_status = NULL,
         reply_evidence = (
           SELECT 'Verified historical @UPPCLLKO reply in thread (Tweet ID: ' || reply_tweet_id || ')' 
@@ -1290,8 +1289,11 @@ function processSheetMatrix(headers, data, method, startTime = Date.now()) {
     UPDATE complaints
     SET has_historical_reply = 0,
         uppcl_replied = 0,
+        uppcllko_replied = 'NO',
+        uppcllko_replied_verified_at = COALESCE(uppcllko_replied_verified_at, datetime('now')),
         picked_status = NULL,
-        reply_evidence = NULL
+        reply_evidence = NULL,
+        reply_within_30_min = ''
     WHERE (id NOT IN (SELECT DISTINCT complaint_id FROM complaint_replies WHERE is_uppcl_reply = 1))
       AND (published_reply_id IS NULL OR published_reply_id = '')
       AND (id NOT IN (SELECT DISTINCT complaint_id FROM x_outgoing_replies WHERE status IN ('Published', 'SENT')))
@@ -1409,7 +1411,7 @@ function syncFromFile(filePath) {
     throw new Error('Uploaded file must contain a header row and at least one data row.');
   }
   const headers = parsedRows[0];
-  const data = parsedRows.slice(2).map((row, idx) => ({ row, source: 'UPLOAD', sheetRowIndex: idx + 3 }));
+  const data = parsedRows.slice(1).map((row, idx) => ({ row, source: 'UPLOAD', sheetRowIndex: idx + 2 }));
   return processSheetMatrix(headers, data, 'MANUAL_SHEET_UPLOAD', Date.now());
 }
 
@@ -1433,7 +1435,13 @@ function ensureSchemaExtensions() {
       { name: 'draft_reply', type: 'TEXT' },
       { name: 'approval_status', type: 'TEXT' },
       { name: 'data_quality_flags', type: 'TEXT' },
-      { name: 'target_mentions', type: 'TEXT' }
+      { name: 'target_mentions', type: 'TEXT' },
+      { name: 'uppcllko_replied', type: 'TEXT' },
+      { name: 'uppcllko_replied_verified_at', type: 'TEXT' },
+      { name: 'post_created_at_utc', type: 'TEXT' },
+      { name: 'first_detected_at_ist', type: 'TEXT' },
+      { name: 'language', type: 'TEXT' },
+      { name: 'routing_confidence', type: 'TEXT' }
     ];
 
     for (const c of newCols) {

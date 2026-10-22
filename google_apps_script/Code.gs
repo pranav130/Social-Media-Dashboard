@@ -56,11 +56,550 @@ function getSheetColumnMap(sheet) {
 }
 
 /**
+ * ==============================================================================
+ * MASTER DROPDOWNS, DATA VALIDATIONS & MANUAL OVERRIDE PERSISTENCE ENGINE
+ * ==============================================================================
+ */
+
+// Master list of 29 complaint types as specified
+const COMPLAINT_TYPE_DROPDOWN_VALUES = [
+  'SUPPLY_OUTAGE',
+  'SUPPLY_VOLTAGE',
+  'BREAKDOWN_LT',
+  'BREAKDOWN_HT',
+  'BREAKDOWN_POLE',
+  'TRANSFORMER_DAMAGE',
+  'TRANSFORMER_NEW',
+  'THEFT',
+  'EMPLOYEE_RELATED',
+  'DISSATISFIED_CONSUMER',
+  'BILL_RELATED',
+  'CONNECTION_NEW',
+  'ACCIDENT_PRONE_TO_OCCURED',
+  'ACCIDENT_OCCURED',
+  'INFO_AND_SUGG',
+  'METER_RELATED',
+  'PTW',
+  'DISCONNECTION',
+  'LOAD ENHANCEMENT',
+  'POLE_RELATED',
+  'OTS',
+  'APP RELATED',
+  'SMART_METER_PAYMENT',
+  'SMART_METER',
+  'SMART_METER_APP_RELATED',
+  'SMART_METER_PREPAID_TO_POSTPAID',
+  'SMART_METER_BILL',
+  'SMART_CHECK_METER',
+  'T/F CAPACITY INCREASE'
+];
+
+// Picked status dropdown values
+const PICKED_STATUS_DROPDOWN_VALUES = ['YES', 'NO', 'TROLL', 'APPRECIATION'];
+
+// Untagged complaint dropdown values
+const UNTAGGED_DROPDOWN_VALUES = ['YES', 'NO'];
+
+// Head dropdown values
+const HEAD_DROPDOWN_VALUES = [
+  'akm', 'akc', 'emm', 'emc', 'mdc', 'mdm',
+  'upm', 'upc', 'cmc', 'cmm', 'ako', 'NEWS', 'GROK'
+];
+
+// Status dropdown values
+const STATUS_DROPDOWN_VALUES = [
+  'Forwarded to Discom',
+  'Reply to Consumer',
+  'DM',
+  'Discom follow-up',
+  'Problem not Solved',
+  'Information Needed'
+];
+
+/**
+ * Retrieves the Discom_District_List sheet and parses the 75-district mapping.
+ * Uses header names to resolve column positions dynamically.
+ */
+function getDistrictMappingFromListSheet(ss) {
+  ss = ss || SpreadsheetApp.getActiveSpreadsheet();
+  let listSheet = ss.getSheetByName('Discom_District_List');
+  if (!listSheet) {
+    const sheets = ss.getSheets();
+    for (let s of sheets) {
+      if (String(s.getSheetId()) === '958127386' || s.getName().toLowerCase().includes('district')) {
+        listSheet = s;
+        break;
+      }
+    }
+  }
+  if (!listSheet) return null;
+
+  const lastRow = listSheet.getLastRow();
+  const lastCol = listSheet.getLastColumn();
+  if (lastRow < 2 || lastCol < 2) return null;
+
+  const headers = listSheet.getRange(1, 1, 1, lastCol).getValues()[0];
+  let discomCol = -1, districtCol = -1, zoneCol = -1;
+  for (let c = 0; c < headers.length; c++) {
+    const h = String(headers[c] || '').trim().toLowerCase();
+    if (h === 'discom') discomCol = c;
+    else if (h === 'district') districtCol = c;
+    else if (h === 'zone') zoneCol = c;
+  }
+
+  if (districtCol === -1) return null;
+
+  const data = listSheet.getRange(2, 1, lastRow - 1, lastCol).getValues();
+  const map = {};
+  const districtList = [];
+
+  for (let r = 0; r < data.length; r++) {
+    const distRaw = String(data[r][districtCol] || '').trim();
+    if (!distRaw) continue;
+    const discomVal = (discomCol !== -1) ? String(data[r][discomCol] || '').trim() : '';
+    const zoneVal = (zoneCol !== -1) ? String(data[r][zoneCol] || '').trim() : '';
+    map[distRaw.toUpperCase()] = {
+      district: distRaw,
+      discom: discomVal,
+      zone: zoneVal
+    };
+    if (!districtList.includes(distRaw)) {
+      districtList.push(distRaw);
+    }
+  }
+
+  return {
+    sheet: listSheet,
+    districtCol: districtCol,
+    discomCol: discomCol,
+    zoneCol: zoneCol,
+    lastRow: lastRow,
+    map: map,
+    districtList: districtList
+  };
+}
+
+/**
+ * Gets or creates the Manual_Overrides tracking sheet.
+ * Records all user manual selections to guarantee they are never overwritten.
+ */
+function getOrCreateOverridesSheet(ss) {
+  ss = ss || SpreadsheetApp.getActiveSpreadsheet();
+  let sheet = ss.getSheetByName('Manual_Overrides');
+  if (!sheet) {
+    sheet = ss.insertSheet('Manual_Overrides');
+    const headers = ['KEY', 'TWEET_ID', 'POST_URL', 'FIELD_NAME', 'MANUAL_VALUE', 'UPDATED_AT', 'UPDATED_BY'];
+    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+    sheet.getRange(1, 1, 1, headers.length)
+      .setFontWeight('bold')
+      .setBackground('#4DD0E1')
+      .setFontColor('#1A2F40');
+    sheet.autoResizeColumns(1, headers.length);
+  }
+  return sheet;
+}
+
+/**
+ * Reads all manual overrides into a fast in-memory Map.
+ */
+function getManualOverridesMap(ss) {
+  ss = ss || SpreadsheetApp.getActiveSpreadsheet();
+  const overridesSheet = ss.getSheetByName('Manual_Overrides');
+  const map = new Map();
+  if (!overridesSheet || overridesSheet.getLastRow() < 2) return map;
+
+  const lastRow = overridesSheet.getLastRow();
+  const data = overridesSheet.getRange(2, 1, lastRow - 1, 7).getValues();
+  for (let i = 0; i < data.length; i++) {
+    const key = String(data[i][0] || '').trim();
+    if (key) {
+      map.set(key, {
+        tweetId: String(data[i][1] || '').trim(),
+        postUrl: String(data[i][2] || '').trim(),
+        field: String(data[i][3] || '').trim(),
+        value: data[i][4],
+        updatedAt: data[i][5],
+        updatedBy: data[i][6]
+      });
+    }
+  }
+  return map;
+}
+
+/**
+ * Records or updates a manual override in the Manual_Overrides sheet.
+ */
+function recordManualOverride(ss, tweetId, postUrl, rowNumber, fieldKey, manualValue, userEmail) {
+  ss = ss || SpreadsheetApp.getActiveSpreadsheet();
+  const overridesSheet = getOrCreateOverridesSheet(ss);
+  const identifier = tweetId || postUrl || ('ROW_' + rowNumber);
+  const key = identifier + '_' + fieldKey;
+  const now = Utilities.formatDate(new Date(), 'Asia/Kolkata', 'yyyy-MM-dd HH:mm:ss');
+  userEmail = userEmail || Session.getActiveUser().getEmail() || 'User';
+
+  const lastRow = overridesSheet.getLastRow();
+  let foundRow = -1;
+  if (lastRow >= 2) {
+    const keys = overridesSheet.getRange(2, 1, lastRow - 1, 1).getValues();
+    for (let i = 0; i < keys.length; i++) {
+      if (String(keys[i][0] || '').trim() === key) {
+        foundRow = i + 2;
+        break;
+      }
+    }
+  }
+
+  const record = [key, tweetId || '', postUrl || '', fieldKey, String(manualValue), now, userEmail];
+  if (foundRow > 0) {
+    overridesSheet.getRange(foundRow, 1, 1, 7).setValues([record]);
+  } else {
+    overridesSheet.appendRow(record);
+  }
+}
+
+/**
+ * Checks whether a specific field on a row has an active manual override.
+ */
+function isFieldManuallyOverridden(overridesMap, tweetId, postUrl, rowNumber, fieldKey) {
+  if (!overridesMap) return false;
+  if (tweetId && overridesMap.has(tweetId + '_' + fieldKey)) return true;
+  if (postUrl && overridesMap.has(postUrl + '_' + fieldKey)) return true;
+  if (rowNumber && overridesMap.has('ROW_' + rowNumber + '_' + fieldKey)) return true;
+  return false;
+}
+
+/**
+ * Applies dropdown validation rules to a given range of rows.
+ */
+function setupRowDropdowns(sheet, startRow, count, colMap, ss) {
+  if (!sheet || count < 1) return;
+  ss = ss || sheet.getParent();
+  colMap = colMap || getSheetColumnMap(sheet);
+
+  // 1. Picked Status
+  if (colMap.pickedStatus !== undefined) {
+    const pickedRule = SpreadsheetApp.newDataValidation()
+      .requireValueInList(PICKED_STATUS_DROPDOWN_VALUES, true)
+      .setAllowInvalid(true)
+      .build();
+    sheet.getRange(startRow, colMap.pickedStatus + 1, count, 1).setDataValidation(pickedRule);
+  }
+
+  // 2. Complaint Type
+  if (colMap.complaintType !== undefined) {
+    const compTypeRule = SpreadsheetApp.newDataValidation()
+      .requireValueInList(COMPLAINT_TYPE_DROPDOWN_VALUES, true)
+      .setAllowInvalid(true)
+      .build();
+    sheet.getRange(startRow, colMap.complaintType + 1, count, 1).setDataValidation(compTypeRule);
+  }
+
+  // 3. Untagged Complaint
+  if (colMap.untagged !== undefined) {
+    const untaggedRule = SpreadsheetApp.newDataValidation()
+      .requireValueInList(UNTAGGED_DROPDOWN_VALUES, true)
+      .setAllowInvalid(true)
+      .build();
+    sheet.getRange(startRow, colMap.untagged + 1, count, 1).setDataValidation(untaggedRule);
+  }
+
+  // 4. Head
+  if (colMap.head !== undefined) {
+    const headRule = SpreadsheetApp.newDataValidation()
+      .requireValueInList(HEAD_DROPDOWN_VALUES, true)
+      .setAllowInvalid(true)
+      .build();
+    sheet.getRange(startRow, colMap.head + 1, count, 1).setDataValidation(headRule);
+  }
+
+  // 5. District (dynamically linked to Discom_District_List)
+  if (colMap.district !== undefined) {
+    const mappingInfo = getDistrictMappingFromListSheet(ss);
+    if (mappingInfo && mappingInfo.sheet && mappingInfo.lastRow >= 2) {
+      const districtRange = mappingInfo.sheet.getRange(2, mappingInfo.districtCol + 1, mappingInfo.lastRow - 1, 1);
+      const districtRule = SpreadsheetApp.newDataValidation()
+        .requireValueInRange(districtRange, true)
+        .setAllowInvalid(true)
+        .build();
+      sheet.getRange(startRow, colMap.district + 1, count, 1).setDataValidation(districtRule);
+    }
+  }
+
+  // 6. Status
+  if (colMap.status !== undefined) {
+    const statusRule = SpreadsheetApp.newDataValidation()
+      .requireValueInList(STATUS_DROPDOWN_VALUES, true)
+      .setAllowInvalid(true)
+      .build();
+    sheet.getRange(startRow, colMap.status + 1, count, 1).setDataValidation(statusRule);
+  }
+}
+
+/**
+ * Master function to set up dropdowns across all existing rows (and buffer for new rows).
+ * Non-destructive: preserves all existing cell values.
+ */
+function setupSheetDropdownsAndValidations(sheet) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  if (!sheet) {
+    sheet = ss.getSheetByName('Twitter Complaint List');
+    if (!sheet) sheet = ss.getActiveSheet();
+  }
+
+  const colMap = getSheetColumnMap(sheet);
+  const lastRow = Math.max(sheet.getLastRow(), 3000);
+  const numRows = lastRow - 2; // Data rows start at Row 3
+  if (numRows < 1) return;
+
+  setupRowDropdowns(sheet, 3, numRows, colMap, ss);
+  SpreadsheetApp.flush();
+
+  const msg = 'Dropdowns and Data Validations have been successfully applied!\n\n' +
+    '• Picked Status: YES, NO, TROLL, APPRECIATION\n' +
+    '• Complaint Type: 29 Standard Categories\n' +
+    '• Untagged Complaint: YES, NO\n' +
+    '• Head: 13 Monitored Codes\n' +
+    '• District: Dynamically sourced from Discom_District_List\n' +
+    '• Status: 6 Standard Workflow Options\n\n' +
+    'All existing cell data was preserved intact.';
+  try { SpreadsheetApp.getUi().alert(msg); } catch (e) { Logger.log(msg); }
+}
+
+/**
+ * Global edit event handler:
+ * - Detects manual user edits to District, DISCOM, Zone, Picked Status, Complaint Type, Untagged, Head.
+ * - Updates DISCOM & Zone when District changes, UNLESS DISCOM/Zone was manually overridden.
+ * - Records all manual edits to Manual_Overrides sheet to prevent automated overwrite.
+ */
+function onEdit(e) {
+  if (!e || !e.range) return;
+
+  const range = e.range;
+  const sheet = range.getSheet();
+  const sheetName = sheet.getName();
+
+  // Only handle edits in Twitter Complaint List
+  if (sheetName !== 'Twitter Complaint List' && String(sheet.getSheetId()) !== '598922870') {
+    return;
+  }
+
+  const row = range.getRow();
+  if (row < 3) return; // Ignore headers / metadata
+
+  const col = range.getColumn();
+  const colIndex = col - 1; // 0-based
+  const colMap = getSheetColumnMap(sheet);
+  const ss = sheet.getParent();
+
+  const newValue = String(e.value !== undefined ? e.value : (range.getValue() || '')).trim();
+
+  // Retrieve Tweet ID and URL for permanent identification
+  const linkUrlCol = (colMap.linkUrl !== undefined) ? colMap.linkUrl + 1 : 5;
+  const postIdCol = (colMap.postId !== undefined) ? colMap.postId + 1 : -1;
+  const postUrl = String(sheet.getRange(row, linkUrlCol).getValue() || '').trim();
+  let tweetId = '';
+  if (postIdCol > 0) {
+    tweetId = String(sheet.getRange(row, postIdCol).getValue() || '').trim();
+  }
+  if (!tweetId && postUrl) {
+    const m = postUrl.match(/status\/(\d+)/i);
+    if (m) tweetId = m[1];
+  }
+
+  const userEmail = (e.user && e.user.getEmail) ? e.user.getEmail() : (Session.getActiveUser().getEmail() || 'User');
+  const overridesMap = getManualOverridesMap(ss);
+
+  // A. DISTRICT EDITED
+  if (colIndex === colMap.district) {
+    recordManualOverride(ss, tweetId, postUrl, row, 'district', newValue, userEmail);
+
+    if (newValue) {
+      const mappingInfo = getDistrictMappingFromListSheet(ss);
+      if (mappingInfo && mappingInfo.map) {
+        const matched = mappingInfo.map[newValue.toUpperCase()];
+        if (matched) {
+          // Rule 4: Update DISCOM if NOT manually overridden
+          if (colMap.discom !== undefined) {
+            const discomOverridden = isFieldManuallyOverridden(overridesMap, tweetId, postUrl, row, 'discom');
+            if (!discomOverridden) {
+              const discomCell = sheet.getRange(row, colMap.discom + 1);
+              discomCell.setValue(matched.discom);
+            }
+          }
+
+          // Rule 4: Update Zone if NOT manually overridden
+          if (colMap.zone !== undefined) {
+            const zoneOverridden = isFieldManuallyOverridden(overridesMap, tweetId, postUrl, row, 'zone');
+            if (!zoneOverridden) {
+              const zoneCell = sheet.getRange(row, colMap.zone + 1);
+              zoneCell.setValue(matched.zone);
+            }
+          }
+        }
+      }
+    }
+    return;
+  }
+
+  // B. DISCOM MANUALLY EDITED DIRECTLY
+  if (colIndex === colMap.discom) {
+    recordManualOverride(ss, tweetId, postUrl, row, 'discom', newValue, userEmail);
+    range.setNote('Manual Override: Set to ' + newValue + ' by ' + userEmail);
+    return;
+  }
+
+  // C. ZONE MANUALLY EDITED DIRECTLY
+  if (colIndex === colMap.zone) {
+    recordManualOverride(ss, tweetId, postUrl, row, 'zone', newValue, userEmail);
+    range.setNote('Manual Override: Set to ' + newValue + ' by ' + userEmail);
+    return;
+  }
+
+  // D. PICKED STATUS MANUALLY EDITED
+  if (colIndex === colMap.pickedStatus) {
+    recordManualOverride(ss, tweetId, postUrl, row, 'pickedStatus', newValue, userEmail);
+    return;
+  }
+
+  // E. COMPLAINT TYPE MANUALLY EDITED
+  if (colIndex === colMap.complaintType) {
+    recordManualOverride(ss, tweetId, postUrl, row, 'complaintType', newValue, userEmail);
+    return;
+  }
+
+  // F. UNTAGGED COMPLAINT MANUALLY EDITED
+  if (colIndex === colMap.untagged) {
+    recordManualOverride(ss, tweetId, postUrl, row, 'untagged', newValue, userEmail);
+    return;
+  }
+
+  // G. HEAD MANUALLY EDITED
+  if (colIndex === colMap.head) {
+    recordManualOverride(ss, tweetId, postUrl, row, 'head', newValue, userEmail);
+    return;
+  }
+
+  // H. STATUS MANUALLY EDITED
+  if (colIndex === colMap.status) {
+    recordManualOverride(ss, tweetId, postUrl, row, 'status', newValue, userEmail);
+    return;
+  }
+}
+
+/**
+ * Scans existing rows in 'Twitter Complaint List'.
+ * For any row that has a District value, but DISCOM or Zone is blank,
+ * populates the missing values automatically from Discom_District_List.
+ *
+ * CRITICAL RULE:
+ * Strictly respects manual overrides. Never overwrites a manual value or existing DISCOM/Zone.
+ */
+function populateBlankDiscomAndZoneFromDistrict(sheet) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  if (!sheet) {
+    sheet = ss.getSheetByName('Twitter Complaint List');
+    if (!sheet) sheet = ss.getActiveSheet();
+  }
+
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 3) return 0;
+  const numRows = lastRow - 2;
+  const colMap = getSheetColumnMap(sheet);
+  const totalCols = sheet.getLastColumn();
+
+  if (colMap.district === undefined || (colMap.discom === undefined && colMap.zone === undefined)) {
+    return 0;
+  }
+
+  const mappingInfo = getDistrictMappingFromListSheet(ss);
+  if (!mappingInfo || !mappingInfo.map) return 0;
+
+  const overridesMap = getManualOverridesMap(ss);
+  const data = sheet.getRange(3, 1, numRows, totalCols).getValues();
+
+  let populatedCount = 0;
+
+  for (let i = 0; i < data.length; i++) {
+    const row = data[i];
+    const sheetRowNumber = i + 3;
+
+    const districtVal = String(row[colMap.district] || '').trim();
+    if (!districtVal) continue;
+
+    const curDiscom = (colMap.discom !== undefined) ? String(row[colMap.discom] || '').trim() : '';
+    const curZone = (colMap.zone !== undefined) ? String(row[colMap.zone] || '').trim() : '';
+
+    const matched = mappingInfo.map[districtVal.toUpperCase()];
+    if (!matched) continue;
+
+    const linkUrl = (colMap.linkUrl !== undefined) ? String(row[colMap.linkUrl] || '').trim() : '';
+    const postId = (colMap.postId !== undefined) ? String(row[colMap.postId] || '').trim() : '';
+
+    let changed = false;
+
+    // Populate blank DISCOM if not manually overridden
+    if (colMap.discom !== undefined && (!curDiscom || curDiscom === '')) {
+      const isOverridden = isFieldManuallyOverridden(overridesMap, postId, linkUrl, sheetRowNumber, 'discom');
+      if (!isOverridden) {
+        sheet.getRange(sheetRowNumber, colMap.discom + 1).setValue(matched.discom);
+        changed = true;
+      }
+    }
+
+    // Populate blank Zone if not manually overridden
+    if (colMap.zone !== undefined && (!curZone || curZone === '')) {
+      const isOverridden = isFieldManuallyOverridden(overridesMap, postId, linkUrl, sheetRowNumber, 'zone');
+      if (!isOverridden) {
+        sheet.getRange(sheetRowNumber, colMap.zone + 1).setValue(matched.zone);
+        changed = true;
+      }
+    }
+
+    if (changed) populatedCount++;
+  }
+
+  SpreadsheetApp.flush();
+  const alertMsg = 'Mapping Complete!\n\nPopulated blank DISCOM / Zone fields for ' + populatedCount + ' row(s) based on Discom_District_List.\nAll existing and manual values were preserved.';
+  try { SpreadsheetApp.getUi().alert(alertMsg); } catch (e) { Logger.log(alertMsg); }
+  return populatedCount;
+}
+
+/**
+ * Displays summary of protected manual overrides in the sheet.
+ */
+function showManualOverridesSummary() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const map = getManualOverridesMap(ss);
+  const total = map.size;
+
+  const countsByField = {};
+  for (const [k, v] of map.entries()) {
+    const f = v.field || 'other';
+    countsByField[f] = (countsByField[f] || 0) + 1;
+  }
+
+  let details = 'Protected Manual Overrides: ' + total + '\n\n';
+  for (const [f, count] of Object.entries(countsByField)) {
+    details += '• ' + f + ': ' + count + ' record(s)\n';
+  }
+  details += '\nAll manual overrides are permanent and protected from automated overwrite.';
+
+  SpreadsheetApp.getUi().alert(details);
+}
+
+/**
  * Creates custom menu when spreadsheet is opened.
  */
 function onOpen() {
   const ui = SpreadsheetApp.getUi();
   ui.createMenu('UPPCL Automation')
+    .addItem('⚡ Sort Sheet by Date: Newest First (Z–A)', 'sortSheetByDateDescending')
+    .addItem('📅 Convert & Fix All Date Types (True Dates)', 'fixDateColumnInSheet')
+    .addSeparator()
+    .addItem('⚙ Setup Dropdowns & Validations', 'setupSheetDropdownsAndValidations')
+    .addItem('🔄 Map Blank DISCOM & Zone from District', 'populateBlankDiscomAndZoneFromDistrict')
+    .addItem('📋 View Protected Manual Overrides', 'showManualOverridesSummary')
+    .addSeparator()
     .addItem('🛑 STOP All X Fetching Permanently', 'permanentlyStopXSync')
     .addItem('▶ Resume 24/7 Cloud Sync', 'resumeXSync')
     .addItem('⏹ Disable 24/7 Cloud Sync', 'disable247CloudSync')
@@ -396,6 +935,10 @@ function syncFromWorkingSheet() {
   }
   sheet.getRange(3, 5, totalCount, 1).setRichTextValues(richTexts);
 
+  // Apply dropdown data validations to newly appended rows
+  const colMap = getSheetColumnMap(sheet);
+  setupRowDropdowns(sheet, startAppendRow, numToAppend, colMap, ss);
+
   SpreadsheetApp.flush();
   SpreadsheetApp.getUi().alert('Success!\n\nSynchronized ' + numToAppend + ' complaints from working sheet (19-10-26).\nTotal complaints now in sheet: ' + totalCount);
 }
@@ -614,6 +1157,7 @@ function fixMisclassifiedComplaints() {
   const values = dataRange.getValues();
 
   let correctedCount = 0;
+  const overridesMap = getManualOverridesMap(ss);
 
   const twitterIdCol = (colMap.twitterId !== undefined) ? colMap.twitterId : 5;
   const pickedStatusCol = (colMap.pickedStatus !== undefined) ? colMap.pickedStatus : 6;
@@ -625,9 +1169,20 @@ function fixMisclassifiedComplaints() {
 
   for (let i = 0; i < values.length; i++) {
     const row = values[i];
+    const rowIndex = i + 3;
     const twitterId = String(row[twitterIdCol] || '').toLowerCase().replace('@', '').trim();
     const pickedStatus = String(row[pickedStatusCol] || '').trim().toUpperCase();
-    const fullText = (String(row[postTextCol] || '') + ' ' + String(row[linkUrlCol] || '')).toLowerCase();
+    const linkUrl = String(row[linkUrlCol] || '').trim();
+    const fullText = (String(row[postTextCol] || '') + ' ' + linkUrl).toLowerCase();
+
+    // Extract Tweet ID for override check
+    const tidMatch = linkUrl.match(/status\/(\d+)/i);
+    const tid = tidMatch ? tidMatch[1] : '';
+
+    // RULE 2 & 3: Never overwrite a user's manual selection on Picked Status
+    if (isFieldManuallyOverridden(overridesMap, tid, linkUrl, rowIndex, 'pickedStatus')) {
+      continue;
+    }
 
     const isOfficial = isOfficialAccountInScript(twitterId);
     const endsWithOfficial = endsWithOfficialHandleInScript(String(row[postTextCol] || ''));
@@ -635,14 +1190,17 @@ function fixMisclassifiedComplaints() {
 
     // If marked APPRECIATION but is an official handle, ends with official handles, or is official reply:
     if (pickedStatus === 'APPRECIATION' && (isOfficial || endsWithOfficial || hasReplyOrComplaintMarkers)) {
-      const rowIndex = i + 3;
       sheet.getRange(rowIndex, pickedStatusCol + 1).setValue('YES');
       if (!row[complaintTypeCol] || String(row[complaintTypeCol]).trim() === '') {
-        const compType = (fullText.includes('ots') || fullText.includes('बकाया')) ? 'BILL_RELATED' : 'DISSATISFIED_CONSUMER';
-        sheet.getRange(rowIndex, complaintTypeCol + 1).setValue(compType);
+        if (!isFieldManuallyOverridden(overridesMap, tid, linkUrl, rowIndex, 'complaintType')) {
+          const compType = (fullText.includes('ots') || fullText.includes('बकाया')) ? 'BILL_RELATED' : 'DISSATISFIED_CONSUMER';
+          sheet.getRange(rowIndex, complaintTypeCol + 1).setValue(compType);
+        }
       }
       if (colMap.status !== undefined) {
-        sheet.getRange(rowIndex, statusCol + 1).setValue('Forwarded to Discom');
+        if (!isFieldManuallyOverridden(overridesMap, tid, linkUrl, rowIndex, 'status')) {
+          sheet.getRange(rowIndex, statusCol + 1).setValue('Forwarded to Discom');
+        }
       }
       if (colMap.reply30 !== undefined) {
         sheet.getRange(rowIndex, reply30Col + 1).setValue('YES');
@@ -654,11 +1212,6 @@ function fixMisclassifiedComplaints() {
   SpreadsheetApp.flush();
   try {
     SpreadsheetApp.getUi().alert(`Completed: Corrected ${correctedCount} misclassified complaint rows to 'Picked Status: YES' and 'DISSATISFIED_CONSUMER'.`);
-  } catch (e) {
-    // Webhook execution context without active UI
-  }
-  return correctedCount;
-}
   } catch (e) {
     // Webhook execution context without active UI
   }
@@ -687,7 +1240,7 @@ function doGet(e) {
     const lastRow = sheet.getLastRow();
     const lastCol = sheet.getLastColumn();
 
-    if (lastRow < 3) {
+    if (lastRow < 2) {
       return ContentService.createTextOutput(JSON.stringify({
         status: 'ok',
         sheetTitle: sheet.getName(),
@@ -700,7 +1253,7 @@ function doGet(e) {
     }
 
     const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
-    const data = sheet.getRange(3, 1, lastRow - 2, lastCol).getValues();
+    const data = sheet.getRange(2, 1, lastRow - 1, lastCol).getValues();
 
     return ContentService.createTextOutput(JSON.stringify({
       status: 'ok',
@@ -735,6 +1288,11 @@ function doPost(e) {
       return ContentService.createTextOutput(JSON.stringify({ status: 'ok', action: contents.action, repairedCount: fixed }))
         .setMimeType(ContentService.MimeType.JSON);
     }
+    if (contents.action === 'sort_sheet' || contents.action === 'sort_dates') {
+      sortSheetByDateDescending();
+      return ContentService.createTextOutput(JSON.stringify({ status: 'ok', action: contents.action }))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
     if (contents.action === 'fix_dates' || contents.action === 'correct_dates') {
       const fixed = fixDateColumnInSheet();
       return ContentService.createTextOutput(JSON.stringify({ status: 'ok', action: contents.action, fixedCount: fixed }))
@@ -743,6 +1301,25 @@ function doPost(e) {
     if (contents.action === 'fix_misclassified') {
       const fixed = fixMisclassifiedComplaints();
       return ContentService.createTextOutput(JSON.stringify({ status: 'ok', action: contents.action, fixedCount: fixed }))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+    if (contents.action === 'setup_dropdowns' || contents.action === 'setup_validations') {
+      setupSheetDropdownsAndValidations();
+      return ContentService.createTextOutput(JSON.stringify({ status: 'ok', action: contents.action }))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+    if (contents.action === 'sync_district_mapping' || contents.action === 'map_discom_zone') {
+      const fixed = populateBlankDiscomAndZoneFromDistrict();
+      return ContentService.createTextOutput(JSON.stringify({ status: 'ok', action: contents.action, populatedCount: fixed }))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+    if (contents.action === 'get_overrides') {
+      const map = getManualOverridesMap();
+      const records = [];
+      for (const [k, v] of map.entries()) {
+        records.push({ key: k, ...v });
+      }
+      return ContentService.createTextOutput(JSON.stringify({ status: 'ok', count: records.length, overrides: records }))
         .setMimeType(ContentService.MimeType.JSON);
     }
     if (contents.action === 'delete_frivolous' || contents.action === 'delete_complaint') {
@@ -765,7 +1342,25 @@ function doPost(e) {
 
     const colMap = getSheetColumnMap(sheet);
     const linkUrlCol = (colMap.linkUrl !== undefined) ? colMap.linkUrl : 4;
-    const startRow = Math.max(sheet.getLastRow() + 1, 3);
+    const dateCol = (colMap.date !== undefined) ? colMap.date : 0;
+
+    // Normalize date column in incoming rows to genuine Date objects
+    for (let r = 0; r < rows.length; r++) {
+      const dVal = rows[r][dateCol];
+      if (typeof dVal === 'string' && dVal.trim()) {
+        const dmy = dVal.trim().match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})/);
+        if (dmy) {
+          rows[r][dateCol] = new Date(parseInt(dmy[3], 10), parseInt(dmy[2], 10) - 1, parseInt(dmy[1], 10));
+        } else {
+          const ymd = dVal.trim().match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})/);
+          if (ymd) {
+            rows[r][dateCol] = new Date(parseInt(ymd[1], 10), parseInt(ymd[2], 10) - 1, parseInt(ymd[3], 10));
+          }
+        }
+      }
+    }
+
+    const startRow = Math.max(sheet.getLastRow() + 1, 2);
     const range = sheet.getRange(startRow, 1, rows.length, rows[0].length);
     range.setValues(rows);
     range.setFontFamily('Verdana');
@@ -774,6 +1369,11 @@ function doPost(e) {
     range.setVerticalAlignment('middle');
     range.setWrapStrategy(SpreadsheetApp.WrapStrategy.WRAP);
     range.setBorder(true, true, true, true, true, true, '#000000', SpreadsheetApp.BorderStyle.SOLID);
+
+    // Apply Date number format
+    if (colMap.date !== undefined) {
+      sheet.getRange(startRow, colMap.date + 1, rows.length, 1).setNumberFormat('dd-MM-yyyy');
+    }
 
     // Set row height to 45px matching original format
     for (let i = 0; i < rows.length; i++) {
@@ -809,6 +1409,10 @@ function doPost(e) {
     }
 
     SpreadsheetApp.flush();
+
+    // Automatically sort entire sheet by DATE descending (Z-A, latest complaints at top)
+    sortSheetByDateDescending();
+
     return ContentService.createTextOutput(JSON.stringify({ status: 'ok', inserted: rows.length, startRow: startRow }))
       .setMimeType(ContentService.MimeType.JSON);
   } catch (err) {
@@ -1163,7 +1767,7 @@ function runCloudSyncCycle() {
 
       // Build row array dynamically using colMap (matches exact sheet headers)
       const row = new Array(totalCols).fill('');
-      if (colMap.date !== undefined) row[colMap.date] = dStr;
+      if (colMap.date !== undefined) row[colMap.date] = tweetDate; // Store genuine Date object
       if (colMap.linkShift !== undefined) row[colMap.linkShift] = shift;
       if (colMap.replyShift !== undefined) row[colMap.replyShift] = shift;
       if (colMap.cf !== undefined) row[colMap.cf] = '';
@@ -1251,7 +1855,19 @@ function runCloudSyncCycle() {
       sheet.getRange(insertStartRow, colMap.draftReply + 1, rowsToInsert.length, 1).setHorizontalAlignment('left');
     }
 
+    // Apply dropdown data validations to newly appended rows
+    setupRowDropdowns(sheet, insertStartRow, rowsToInsert.length, colMap, ss);
+
+    // Ensure DATE column has genuine date display format
+    if (colMap.date !== undefined) {
+      sheet.getRange(insertStartRow, colMap.date + 1, rowsToInsert.length, 1).setNumberFormat('dd-MM-yyyy');
+    }
+
     SpreadsheetApp.flush();
+
+    // Automatically sort entire sheet by DATE descending (Z-A, latest complaints at top)
+    sortSheetByDateDescending();
+
     Logger.log('Successfully appended ' + rowsToInsert.length + ' new complaints from the 5 Monitored Handles.');
   } else {
     Logger.log('Sync cycle complete: No new complaints found for the 5 Monitored Handles.');
@@ -1273,26 +1889,21 @@ function classifyTweetInScript(text, username) {
   const isOfficial = isOfficialAccountInScript(username);
   const endsWithOfficial = endsWithOfficialHandleInScript(text);
 
-  // DISCOM Mapping
-  let discom = '';
-  if (/pvvnl|meerut|noida|ghaziabad|moradabad|saharanpur|aligarh|bulandshahr|muzaffarnagar|baghpat/i.test(lowerText)) {
-    discom = 'PVVNL';
-  } else if (/puvvnl|varanasi|prayagraj|gorakhpur|ayodhya|azamgarh|mirzapur|jaunpur|basti/i.test(lowerText)) {
-    discom = 'PuVVNL';
-  } else if (/mvvnl|lucknow|bareilly|faizabad|sitapur|lakhimpur|hardoi|raebareli|unnao/i.test(lowerText)) {
-    discom = 'MVVNL';
-  } else if (/dvvnl|agra|mathura|firozabad|jhansi|banda|etawah|mainpuri/i.test(lowerText)) {
-    discom = 'DVVNL';
-  } else if (/kesco|kanpur/i.test(lowerText)) {
-    discom = 'KESCo';
-  }
-
-  // District Mapping
+  // District Mapping (All 75 UP Districts recognized)
   let district = '';
   const districts = [
-    'Lucknow', 'Kanpur', 'Varanasi', 'Agra', 'Meerut', 'Noida', 'Ghaziabad', 'Prayagraj',
-    'Gorakhpur', 'Bareilly', 'Aligarh', 'Moradabad', 'Saharanpur', 'Jhansi', 'Ayodhya',
-    'Muzaffarnagar', 'Mathura', 'Budaun', 'Rampur', 'Shahjahanpur', 'Farrukhabad', 'Firozabad'
+    'Agra', 'Aligarh', 'Auraiya', 'Banda', 'Chitrakoot', 'Etah', 'Etawah', 'Farrukhabad',
+    'Firozabad', 'Hamirpur', 'Hathras', 'Jalaun', 'Jhansi', 'Kannauj', 'Kanpur Dehat',
+    'Kasganj', 'Lalitpur', 'Mahoba', 'Mainpuri', 'Mathura', 'Kanpur City', 'Kanpur',
+    'Ambedkar Nagar', 'Amethi', 'Ayodhya', 'Badaun', 'Bahraich', 'Balrampur', 'Barabanki',
+    'Bareilly', 'Gonda', 'Hardoi', 'Lakhimpur', 'Lucknow', 'Pilibhit', 'Raebareli',
+    'Shajahanpur', 'Shahjahanpur', 'Shravasti', 'Sitapur', 'Sultanpur', 'Unnao', 'Amroha',
+    'Baghpat', 'Bijnor', 'Bulandshahr', 'Bulandsahar', 'Gautam Budh Nagar', 'Noida',
+    'Ghaziabad', 'Hapur', 'Meerut', 'Moradabad', 'Muzaffarnagar', 'Rampur', 'Saharanpur',
+    'Sambhal', 'Shamli', 'Azamgarh', 'Ballia', 'Basti', 'Bhadohi', 'Chandauli', 'Deoria',
+    'Fatehpur', 'Ghazipur', 'Gorakhpur', 'Jaunpur', 'Kaushambi', 'Kushinagar', 'Maharajganj',
+    'Mau', 'Mirzapur', 'Pratapgarh', 'Prayagraj', 'Sant Kabir Nagar', 'Siddharth Nagar',
+    'Sonbhadra', 'Varanasi'
   ];
   for (let d of districts) {
     if (new RegExp('\\b' + d.toLowerCase() + '\\b', 'i').test(lowerText)) {
@@ -1301,32 +1912,79 @@ function classifyTweetInScript(text, username) {
     }
   }
 
-  // Grievance Category
+  // DISCOM & Zone Mapping: Resolve dynamically from Discom_District_List if available
+  let discom = '';
+  let zone = '';
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const mappingInfo = getDistrictMappingFromListSheet(ss);
+    if (district && mappingInfo && mappingInfo.map) {
+      // Normalize district name variations
+      let lookupKey = district.toUpperCase();
+      if (lookupKey === 'NOIDA') lookupKey = 'GAUTAM BUDH NAGAR';
+      if (lookupKey === 'BULANDSHAHR') lookupKey = 'BULANDSAHAR';
+      if (lookupKey === 'SHAHJAHANPUR') lookupKey = 'SHAJAHANPUR';
+      if (lookupKey === 'KANPUR') lookupKey = 'KANPUR CITY';
+      if (lookupKey === 'RAEBARELI') lookupKey = 'RAEBAREILY';
+
+      const matched = mappingInfo.map[lookupKey];
+      if (matched) {
+        district = matched.district;
+        discom = matched.discom;
+        zone = matched.zone;
+      }
+    }
+  } catch (e) {}
+
+  // Fallback DISCOM detection if district didn't match
+  if (!discom) {
+    if (/pvvnl|meerut|noida|ghaziabad|moradabad|saharanpur|aligarh|bulandshahr|muzaffarnagar|baghpat/i.test(lowerText)) {
+      discom = 'PVVNL';
+    } else if (/puvvnl|varanasi|prayagraj|gorakhpur|ayodhya|azamgarh|mirzapur|jaunpur|basti/i.test(lowerText)) {
+      discom = 'PuVVNL';
+    } else if (/mvvnl|lucknow|bareilly|faizabad|sitapur|lakhimpur|hardoi|raebareli|unnao/i.test(lowerText)) {
+      discom = 'MVVNL';
+    } else if (/dvvnl|agra|mathura|firozabad|jhansi|banda|etawah|mainpuri/i.test(lowerText)) {
+      discom = 'DVVNL';
+    } else if (/kesco|kanpur/i.test(lowerText)) {
+      discom = 'KESCo';
+    }
+  }
+
+  // Grievance Category (Canonical 29 dropdown options)
   let complaintType = 'DISSATISFIED_CONSUMER';
   if (/बिजली\s*गायब|आपूर्ति\s*ठप|no\s*power|no\s*electricity|power\s*cut|outage|blackout|बिजली\s*कटौ|बिजली\s*नहीं/i.test(lowerText)) {
     complaintType = 'SUPPLY_OUTAGE';
+  } else if (/लो\s*वोल्टेज|high\s*voltage|low\s*voltage|वोल्टेज/i.test(lowerText)) {
+    complaintType = 'SUPPLY_VOLTAGE';
   } else if (/ट्रांसफार्मर|transformer|फुंक|ब्लास्ट/i.test(lowerText)) {
-    complaintType = 'TRANSFORMER_ISSUE';
-  } else if (/बिल|bill|billing|मीटर\s*रीडिंग|overcharge|ots|बकाया/i.test(lowerText)) {
+    complaintType = 'TRANSFORMER_DAMAGE';
+  } else if (/बिल|bill|billing|मीटर\s*रीडिंग|overcharge|बकाया/i.test(lowerText)) {
     complaintType = 'BILL_RELATED';
-  } else if (/तार\s*टू|करंट|करंट\s*आ\s*रहा|spark|wire\s*break|danger|हादसा|खंभा|पोल/i.test(lowerText)) {
-    complaintType = 'SAFETY_HAZARD';
+  } else if (/ots|ओटीएस|one\s*time\s*settlement/i.test(lowerText)) {
+    complaintType = 'OTS';
+  } else if (/तार\s*टू|करंट|करंट\s*आ\s*रहा|spark|wire\s*break|danger|हादसा/i.test(lowerText)) {
+    complaintType = 'ACCIDENT_PRONE_TO_OCCURED';
+  } else if (/खंभा|पोल|pole/i.test(lowerText)) {
+    complaintType = 'POLE_RELATED';
+  } else if (/smart\s*meter|स्मार्ट\s*मीटर/i.test(lowerText)) {
+    complaintType = 'SMART_METER';
   } else if (/meter|मीटर\s*खराब|मीटर\s*बदल/i.test(lowerText)) {
-    complaintType = 'METER_FAULT';
+    complaintType = 'METER_RELATED';
   } else if (/नया\s*कनेक्शन|new\s*connection/i.test(lowerText)) {
-    complaintType = 'NEW_CONNECTION';
+    complaintType = 'CONNECTION_NEW';
+  } else if (/चोरी|कटिया|बिजली\s*चोरी|theft/i.test(lowerText)) {
+    complaintType = 'THEFT';
   }
 
-  // Determine Picked Status (YES, NO, APPRECIATION)
-  // Rule: Picked: YES only when UPPCLLKO replied; initially NO for incoming consumer complaints
+  // Determine Picked Status (YES, NO, TROLL, APPRECIATION)
   let pickedStatus = isOfficial ? 'YES' : 'NO';
   const hasPureAppreciation = /बहुत\s*बहुत\s*धन्यवाद|उत्कृष्ट\s*कार्य|सराहनीय|great\s*job|thank\s*you\s*so\s*much|thanks\s*for\s*quick/i.test(lowerText) &&
                               !/समस्या|शिकायत|बिजली|outage|complaint|अधिकारी|प्रिय\s*उपभोक्ता/i.test(lowerText);
 
-  // Exclude from Appreciation if authored by official, ends with official handles, or has complaint/request markers
   if (hasPureAppreciation && !isOfficial && !endsWithOfficial) {
     pickedStatus = 'APPRECIATION';
-    complaintType = 'APPRECIATION';
+    complaintType = 'INFO_AND_SUGG';
   }
 
   const discomHandle = discom ? ('@' + discom + 'HQ') : '@UPPCLLKO';
@@ -1335,7 +1993,7 @@ function classifyTweetInScript(text, username) {
   return {
     discom: discom || 'UPPCL',
     district: district,
-    zone: district ? district + ' Zone' : '',
+    zone: zone || (district ? district + ' Zone' : ''),
     complaintType: complaintType,
     pickedStatus: pickedStatus,
     replyWithin30Min: isOfficial ? 'YES' : 'NO',
@@ -1533,22 +2191,76 @@ function fixMalformedUrlsInSheet() {
 }
 
 /**
+ * Sorts the entire complaint dataset by DATE descending (Z–A, newest complaint first).
+ * Ensures:
+ * 1. Complete rows move together (all columns remain strictly attached).
+ * 2. Header row (Row 1) remains frozen at the top and excluded from the sort.
+ * 3. Secondary tie-breaking by Snowflake ID / LINK URL maintains chronological order
+ *    down to the second for complaints on the same calendar day.
+ * 4. Empty rows naturally sort to the very bottom.
+ */
+function sortSheetByDateDescending() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sheet = ss.getSheetByName('Twitter Complaint List');
+  if (!sheet) sheet = ss.getActiveSheet();
+
+  const lastRow = sheet.getLastRow();
+  const lastCol = sheet.getLastColumn();
+  if (lastRow < 2) return;
+
+  // Pin Row 1 header row permanently
+  if (sheet.getFrozenRows() < 1) {
+    sheet.setFrozenRows(1);
+  }
+
+  const colMap = getSheetColumnMap(sheet);
+  const dateCol = (colMap.date !== undefined) ? colMap.date : 0;
+  const linkUrlCol = (colMap.linkUrl !== undefined) ? colMap.linkUrl : 4;
+
+  const startRow = 2;
+  const numRows = lastRow - 1;
+  const dataRange = sheet.getRange(startRow, 1, numRows, lastCol);
+
+  // Multi-tier complete-row sort:
+  // Primary: DATE column descending (latest date first, Z-A)
+  // Secondary: LINK URL column descending (latest Snowflake ID = latest tweet within same date)
+  const sortCriteria = [
+    { column: dateCol + 1, ascending: false }
+  ];
+  if (linkUrlCol !== -1 && linkUrlCol !== dateCol) {
+    sortCriteria.push({ column: linkUrlCol + 1, ascending: false });
+  }
+
+  dataRange.sort(sortCriteria);
+  SpreadsheetApp.flush();
+  Logger.log('Successfully sorted ' + numRows + ' rows by DATE (Z-A, newest first).');
+}
+
+/**
  * Automatically fixes and normalizes the DATE column across all rows in 'Twitter Complaint List'.
- * Replaces 1900/1901/1902/1903/1904 numbers, long GMT timestamp strings (e.g. "Tue Oct 20 2026 12:30:00 GMT+0530"),
- * and raw Date objects with strictly normalized "DD-MM-YYYY" strings (e.g. 18-10-2026, 19-10-2026, 20-10-2026, 21-10-2026).
+ * Converts string dates into genuine Google Sheets Date objects with uniform 'dd-MM-yyyy' formatting.
+ * Handles DD-MM-YYYY, YYYY-MM-DD, timestamps, serial numbers, and recovers missing dates via Tweet Snowflake ID.
+ * Follows by sorting complete rows descending (newest first).
  */
 function fixDateColumnInSheet() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   let sheet = ss.getSheetByName('Twitter Complaint List');
   if (!sheet) sheet = ss.getActiveSheet();
 
+  // Pin Row 1 header permanently
+  if (sheet.getFrozenRows() < 1) {
+    sheet.setFrozenRows(1);
+  }
+
   const lastRow = sheet.getLastRow();
-  if (lastRow < 3) return 0;
-  const numRows = lastRow - 2;
+  if (lastRow < 2) return 0;
 
   const colMap = getSheetColumnMap(sheet);
   const lastCol = sheet.getLastColumn();
-  const data = sheet.getRange(3, 1, numRows, lastCol).getValues();
+  const startRow = 2;
+  const numRows = lastRow - 1;
+
+  const data = sheet.getRange(startRow, 1, numRows, lastCol).getValues();
   const dateValues = [];
   let fixCount = 0;
 
@@ -1560,82 +2272,130 @@ function fixDateColumnInSheet() {
   for (let i = 0; i < data.length; i++) {
     const row = data[i];
     const rawCell = row[dateCol];
-    const curDate = String(rawCell || '').trim();
+    const curDateStr = String(rawCell || '').trim();
     const url = String(row[linkUrlCol] || '').trim();
     const tidCol = (postIdCol !== -1) ? String(row[postIdCol] || '').trim() : '';
     const colDetected = (detectedCol !== -1) ? String(row[detectedCol] || '').trim() : '';
 
-    let resolvedDate = null;
+    // If entire row is blank, keep it empty so it sorts to bottom
+    const isRowBlank = row.every(cell => String(cell || '').trim() === '');
+    if (isRowBlank) {
+      dateValues.push(['']);
+      continue;
+    }
 
-    // 1. If it is already strictly DD-MM-YYYY (e.g. "20-10-2026"), keep it
-    if (/^\d{2}-\d{2}-\d{4}$/.test(curDate)) {
-      resolvedDate = curDate;
-    }
-    // 2. If it is a native Date object from Google Sheets
-    else if (rawCell instanceof Date) {
-      resolvedDate = Utilities.formatDate(rawCell, 'Asia/Kolkata', 'dd-MM-yyyy');
-    }
-    // 3. If it is a long GMT/IST timestamp string (e.g. "Tue Oct 20 2026 12:30:00 GMT+0530")
-    else if (curDate.includes('GMT') || curDate.includes('Standard Time') || /[a-zA-Z]{3}\s+[a-zA-Z]{3}\s+\d+/.test(curDate)) {
-      const parsed = new Date(curDate);
-      if (!isNaN(parsed.getTime())) {
-        resolvedDate = Utilities.formatDate(parsed, 'Asia/Kolkata', 'dd-MM-yyyy');
+    let dObj = null;
+
+    // 1. If it is already a genuine native Date object
+    if (rawCell instanceof Date && !isNaN(rawCell.getTime())) {
+      const yr = rawCell.getFullYear();
+      if (yr >= 2020 && yr <= 2035) {
+        dObj = rawCell;
       }
     }
-    // 4. If it is YYYY-MM-DD or D-M-YYYY
-    else if (/^\d{1,4}[-\/]\d{1,2}[-\/]\d{1,4}$/.test(curDate) && !/190[0-9]/.test(curDate)) {
-      const parts = curDate.split(/[-\/]/);
-      if (parts.length === 3) {
-        if (parts[0].length === 4) {
-          // YYYY-MM-DD -> DD-MM-YYYY
-          resolvedDate = ('0' + parts[2]).slice(-2) + '-' + ('0' + parts[1]).slice(-2) + '-' + parts[0];
-        } else {
-          // D-M-YYYY -> DD-MM-YYYY
-          resolvedDate = ('0' + parts[0]).slice(-2) + '-' + ('0' + parts[1]).slice(-2) + '-' + parts[2];
+
+    // 2. If it is an Excel / Sheets serial number (e.g. 40000 - 60000)
+    if (!dObj && typeof rawCell === 'number' && rawCell > 40000 && rawCell < 60000) {
+      const epochMs = (rawCell - 25569) * 86400 * 1000;
+      const parsed = new Date(epochMs);
+      if (!isNaN(parsed.getTime())) {
+        dObj = parsed;
+      }
+    }
+
+    // 3. String date formats
+    if (!dObj && curDateStr) {
+      // 3a. Strict DD-MM-YYYY or DD/MM/YYYY
+      const dmy = curDateStr.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})/);
+      if (dmy) {
+        const day = parseInt(dmy[1], 10);
+        const month = parseInt(dmy[2], 10) - 1;
+        const year = parseInt(dmy[3], 10);
+        if (year >= 2020 && year <= 2035 && month >= 0 && month <= 11 && day >= 1 && day <= 31) {
+          // Extract time if present
+          let h = 0, m = 0, s = 0;
+          const timeMatch = curDateStr.match(/\s+(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?/);
+          if (timeMatch) {
+            h = parseInt(timeMatch[1], 10);
+            m = parseInt(timeMatch[2], 10);
+            s = timeMatch[3] ? parseInt(timeMatch[3], 10) : 0;
+          }
+          dObj = new Date(year, month, day, h, m, s);
+        }
+      }
+
+      // 3b. Strict YYYY-MM-DD or YYYY/MM/DD
+      if (!dObj) {
+        const ymd = curDateStr.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})/);
+        if (ymd) {
+          const year = parseInt(ymd[1], 10);
+          const month = parseInt(ymd[2], 10) - 1;
+          const day = parseInt(ymd[3], 10);
+          if (year >= 2020 && year <= 2035) {
+            dObj = new Date(year, month, day);
+          }
+        }
+      }
+
+      // 3c. ISO or standard string parse fallback
+      if (!dObj && (curDateStr.includes('GMT') || curDateStr.includes('T') || /[a-zA-Z]{3}/.test(curDateStr))) {
+        const parsed = new Date(curDateStr);
+        if (!isNaN(parsed.getTime()) && parsed.getFullYear() >= 2020 && parsed.getFullYear() <= 2035) {
+          dObj = parsed;
         }
       }
     }
 
-    // 5. If still not resolved or corrupted (1900-1904, plain integer counter like "1", "2"):
-    // Derive from Twitter Snowflake ID in Link URL or Tweet ID column
-    if (!resolvedDate || resolvedDate.includes('190') || !resolvedDate.includes('202')) {
+    // 4. Missing / Corrupted / Blank Date Recovery via Twitter Snowflake ID in Link URL or Tweet ID column
+    if (!dObj) {
       const m = url.match(/status\/(\d+)/i);
       const tid = m ? m[1] : (tidCol && /^\d{15,25}$/.test(tidCol) ? tidCol : null);
 
       if (tid) {
         try {
-          // Snowflake timestamp ms = Math.floor(id / 4194304) + 1288834974657
-          const epochMs = Math.floor(Number(tid) / 4194304) + 1288834974657;
-          const d = new Date(epochMs);
-          if (!isNaN(d.getTime()) && d.getFullYear() >= 2020 && d.getFullYear() <= 2030) {
-            resolvedDate = Utilities.formatDate(d, 'Asia/Kolkata', 'dd-MM-yyyy');
+          // Twitter Snowflake epoch: ms = (id >> 22) + 1288834974657
+          const epochMs = Math.floor(Number(BigInt(tid) >> 22n)) + 1288834974657;
+          const parsed = new Date(epochMs);
+          if (!isNaN(parsed.getTime()) && parsed.getFullYear() >= 2020 && parsed.getFullYear() <= 2035) {
+            dObj = parsed;
           }
-        } catch (e) {}
-      }
-
-      // Secondary fallback to First Detected At IST
-      if (!resolvedDate && colDetected) {
-        const dMatch = colDetected.match(/(\d{1,2})[-\/](\d{1,2})[-\/](\d{4})/);
-        if (dMatch) {
-          resolvedDate = ('0' + dMatch[1]).slice(-2) + '-' + ('0' + dMatch[2]).slice(-2) + '-' + dMatch[3];
+        } catch (e) {
+          try {
+            const epochMs = Math.floor(Number(tid) / 4194304) + 1288834974657;
+            const parsed = new Date(epochMs);
+            if (!isNaN(parsed.getTime()) && parsed.getFullYear() >= 2020 && parsed.getFullYear() <= 2035) {
+              dObj = parsed;
+            }
+          } catch (e2) {}
         }
       }
+    }
 
-      // Tertiary default
-      if (!resolvedDate) {
-        resolvedDate = '19-10-2026';
+    // 5. Secondary fallback to First Detected At IST
+    if (!dObj && colDetected) {
+      const dMatch = colDetected.match(/(\d{1,2})[-/](\d{1,2})[-/](\d{4})(?:\s+(\d{1,2}):(\d{1,2}))?/);
+      if (dMatch) {
+        const day = parseInt(dMatch[1], 10);
+        const month = parseInt(dMatch[2], 10) - 1;
+        const year = parseInt(dMatch[3], 10);
+        const h = dMatch[4] ? parseInt(dMatch[4], 10) : 0;
+        const min = dMatch[5] ? parseInt(dMatch[5], 10) : 0;
+        dObj = new Date(year, month, day, h, min, 0);
       }
     }
 
-    if (resolvedDate !== curDate) {
-      fixCount++;
+    // 6. Safe final default for valid complaints with no parseable date
+    if (!dObj) {
+      dObj = new Date(2026, 9, 19); // 19-10-2026
     }
-    dateValues.push([resolvedDate]);
+
+    fixCount++;
+    dateValues.push([dObj]);
   }
 
-  // Write batch values back into DATE column with text format to prevent Google Sheets from re-converting to 1900 serials
-  const dateRange = sheet.getRange(3, dateCol + 1, numRows, 1);
-  dateRange.setNumberFormat('@');
+  // Write batch genuine Date objects back into DATE column with 'dd-MM-yyyy' formatting
+  const dateRange = sheet.getRange(startRow, dateCol + 1, numRows, 1);
+  dateRange.setNumberFormat('dd-MM-yyyy');
   dateRange.setValues(dateValues);
   dateRange.setHorizontalAlignment('center');
   dateRange.setVerticalAlignment('middle');
@@ -1645,13 +2405,62 @@ function fixDateColumnInSheet() {
 
   SpreadsheetApp.flush();
 
-  const msg = 'Successfully normalized ' + fixCount + ' date entries in DATE column to uniform DD-MM-YYYY format!';
+  // Execute complete-row descending sort
+  sortSheetByDateDescending();
+
+  const msg = 'Successfully converted ' + fixCount + ' records to genuine Date values and sorted complete rows descending (Z-A, latest date first)!';
   try {
-    SpreadsheetApp.getUi().alert('Date Column Normalization\n\n' + msg);
+    SpreadsheetApp.getUi().alert('Date Normalization & Descending Sort\n\n' + msg);
   } catch (e) {
     Logger.log(msg);
   }
   return fixCount;
+}
+
+/**
+ * Automatically triggers whenever a user manually edits a cell in the sheet.
+ * If the DATE column is edited, normalizes the input to a genuine Date and re-sorts.
+ */
+function onEdit(e) {
+  if (!e || !e.range) return;
+  try {
+    const sheet = e.range.getSheet();
+    if (sheet.getName() !== 'Twitter Complaint List') return;
+
+    const row = e.range.getRow();
+    if (row < 2) return; // Ignore header row
+
+    const colMap = getSheetColumnMap(sheet);
+    const dateCol = (colMap.date !== undefined) ? colMap.date + 1 : 1;
+
+    // Check if the edited column is the DATE column
+    if (e.range.getColumn() === dateCol) {
+      const val = e.value;
+      if (!val) return;
+
+      // If entered as text string like "22-10-2026" or "2026-10-22", convert to genuine Date
+      if (typeof val === 'string' && /^\d{1,4}[-\/]\d{1,2}[-\/]\d{1,4}/.test(val.trim())) {
+        const parts = val.trim().split(/[-\/]/);
+        let dObj = null;
+        if (parts[0].length === 4) {
+          // YYYY-MM-DD
+          dObj = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+        } else {
+          // DD-MM-YYYY
+          dObj = new Date(parseInt(parts[2], 10), parseInt(parts[1], 10) - 1, parseInt(parts[0], 10));
+        }
+        if (dObj && !isNaN(dObj.getTime())) {
+          e.range.setNumberFormat('dd-MM-yyyy');
+          e.range.setValue(dObj);
+        }
+      }
+
+      // Re-sort complete rows descending so edited row lands in correct position
+      sortSheetByDateDescending();
+    }
+  } catch (err) {
+    Logger.log('onEdit error: ' + err);
+  }
 }
 
 /**
@@ -1666,17 +2475,18 @@ function repairMisalignedRowsInSheet() {
   if (!sheet) sheet = ss.getActiveSheet();
 
   const lastRow = sheet.getLastRow();
-  if (lastRow < 3) return 0;
-  const numRows = lastRow - 2;
+  if (lastRow < 2) return 0;
+  const numRows = lastRow - 1;
   const colMap = getSheetColumnMap(sheet);
   const totalCols = sheet.getLastColumn();
-  const data = sheet.getRange(3, 1, numRows, totalCols).getValues();
+  const data = sheet.getRange(2, 1, numRows, totalCols).getValues();
+  const overridesMap = getManualOverridesMap(ss);
 
   let repairedCount = 0;
 
   for (let i = 0; i < data.length; i++) {
     const row = data[i];
-    const sheetRowNumber = i + 3;
+    const sheetRowNumber = i + 2;
 
     const curText = (colMap.postText !== undefined) ? String(row[colMap.postText] || '').trim() : '';
     const curReply30 = (colMap.reply30 !== undefined) ? String(row[colMap.reply30] || '').trim() : '';
@@ -1753,16 +2563,38 @@ function repairMisalignedRowsInSheet() {
     if (colMap.reply30 !== undefined) cleanRow[colMap.reply30] = c.replyWithin30Min;
     if (colMap.linkUrl !== undefined) cleanRow[colMap.linkUrl] = recoveredUrl;
     if (colMap.twitterId !== undefined) cleanRow[colMap.twitterId] = recoveredHandle;
-    if (colMap.pickedStatus !== undefined) cleanRow[colMap.pickedStatus] = c.pickedStatus;
-    if (colMap.head !== undefined) cleanRow[colMap.head] = recoveredHead;
-    if (colMap.untagged !== undefined) cleanRow[colMap.untagged] = 'NO';
-    if (colMap.uppclReplied !== undefined) cleanRow[colMap.uppclReplied] = '';
-    if (colMap.complaintType !== undefined) cleanRow[colMap.complaintType] = c.complaintType;
-    if (colMap.discom !== undefined) cleanRow[colMap.discom] = c.discom;
-    if (colMap.zone !== undefined) cleanRow[colMap.zone] = c.zone;
-    if (colMap.district !== undefined) cleanRow[colMap.district] = c.district;
+    const tid = recoveredTweetId || '';
+    const url = recoveredUrl || '';
+
+    // Respect manual user overrides and existing values
+    if (colMap.pickedStatus !== undefined) {
+      cleanRow[colMap.pickedStatus] = isFieldManuallyOverridden(overridesMap, tid, url, sheetRowNumber, 'pickedStatus') ? row[colMap.pickedStatus] : c.pickedStatus;
+    }
+    if (colMap.head !== undefined) {
+      cleanRow[colMap.head] = isFieldManuallyOverridden(overridesMap, tid, url, sheetRowNumber, 'head') ? row[colMap.head] : recoveredHead;
+    }
+    if (colMap.untagged !== undefined) {
+      cleanRow[colMap.untagged] = isFieldManuallyOverridden(overridesMap, tid, url, sheetRowNumber, 'untagged') ? row[colMap.untagged] : 'NO';
+    }
+    if (colMap.uppclReplied !== undefined) cleanRow[colMap.uppclReplied] = (colMap.uppclReplied !== undefined && row[colMap.uppclReplied]) ? row[colMap.uppclReplied] : '';
+    if (colMap.complaintType !== undefined) {
+      cleanRow[colMap.complaintType] = isFieldManuallyOverridden(overridesMap, tid, url, sheetRowNumber, 'complaintType') ? row[colMap.complaintType] : c.complaintType;
+    }
+    if (colMap.discom !== undefined) {
+      cleanRow[colMap.discom] = isFieldManuallyOverridden(overridesMap, tid, url, sheetRowNumber, 'discom') ? row[colMap.discom] : c.discom;
+    }
+    if (colMap.zone !== undefined) {
+      cleanRow[colMap.zone] = isFieldManuallyOverridden(overridesMap, tid, url, sheetRowNumber, 'zone') ? row[colMap.zone] : c.zone;
+    }
+    if (colMap.district !== undefined) {
+      cleanRow[colMap.district] = isFieldManuallyOverridden(overridesMap, tid, url, sheetRowNumber, 'district') ? row[colMap.district] : c.district;
+    }
     if (colMap.remark !== undefined) cleanRow[colMap.remark] = '';
-    if (colMap.status !== undefined) cleanRow[colMap.status] = (c.pickedStatus === 'APPRECIATION') ? 'Appreciation' : (c.pickedStatus === 'YES' ? 'Forwarded to Discom' : 'Pending Review');
+    if (colMap.status !== undefined) {
+      cleanRow[colMap.status] = isFieldManuallyOverridden(overridesMap, tid, url, sheetRowNumber, 'status')
+        ? row[colMap.status]
+        : ((c.pickedStatus === 'APPRECIATION') ? 'Appreciation' : (c.pickedStatus === 'YES' ? 'Forwarded to Discom' : 'Pending Review'));
+    }
     if (colMap.complaintNo !== undefined) cleanRow[colMap.complaintNo] = '';
     if (colMap.postId !== undefined && recoveredTweetId) cleanRow[colMap.postId] = recoveredTweetId;
     if (colMap.postText !== undefined) cleanRow[colMap.postText] = recoveredText;
