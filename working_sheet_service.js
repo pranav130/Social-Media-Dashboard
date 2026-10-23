@@ -185,7 +185,7 @@ function postJson(targetUrl, payload, options = {}) {
 
     const req = https.request(reqOptions, (res) => {
       if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-        return resolve(postJson(res.headers.location, payload, options));
+        return resolve(fetchUrl(res.headers.location, options));
       }
       let data = '';
       res.on('data', chunk => data += chunk);

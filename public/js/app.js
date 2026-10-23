@@ -204,12 +204,31 @@ const App = {
 
     this.startClock();
     if (this.token) {
+      this.startWorkingSheetPoller();
       const curRole = (this.user?.role || '').toLowerCase();
       const curUser = (this.user?.username || '').toLowerCase();
       if (curRole !== 'operator' && curRole !== 'social media cell operator' && curUser !== 'smc_operator' && curUser !== 'operator') {
         this.startNotificationPoller();
         this.startSyncPoller();
       }
+    }
+
+    if (!this._visibilityListenerBound) {
+      this._visibilityListenerBound = true;
+      document.addEventListener('visibilitychange', () => {
+        if (!document.hidden && this.token && this.currentPage === 'working-sheet') {
+          const activeTag = document.activeElement ? document.activeElement.tagName.toLowerCase() : '';
+          if (activeTag !== 'select' && activeTag !== 'input') {
+            this.loadWorkingSheetData();
+            this.api('/api/dashboard/kpis').then(kpis => {
+              if (kpis) {
+                this.latestKpis = kpis;
+                this.updateWorkingSheetMetricCards();
+              }
+            }).catch(() => {});
+          }
+        }
+      });
     }
 
     if (this.token && this.user) {
@@ -278,6 +297,23 @@ const App = {
     this._syncPollerTimer = setInterval(() => {
       if (this.token) this.pollSyncStatus();
     }, 20000);
+  },
+
+  startWorkingSheetPoller() {
+    if (this._wsPollerTimer) clearInterval(this._wsPollerTimer);
+    this._wsPollerTimer = setInterval(() => {
+      if (this.token && this.currentPage === 'working-sheet' && !document.hidden) {
+        const activeTag = document.activeElement ? document.activeElement.tagName.toLowerCase() : '';
+        if (activeTag === 'select' || activeTag === 'input') return;
+        this.loadWorkingSheetData();
+        this.api('/api/dashboard/kpis').then(kpis => {
+          if (kpis) {
+            this.latestKpis = kpis;
+            this.updateWorkingSheetMetricCards();
+          }
+        }).catch(() => {});
+      }
+    }, 30000);
   },
 
   async pollSyncStatus() {
@@ -525,6 +561,7 @@ const App = {
     this.user = user;
     localStorage.setItem('uppcl_smc_token', token);
     localStorage.setItem('uppcl_smc_user', JSON.stringify(user));
+    this.startWorkingSheetPoller();
     const loginRole = (user?.role || '').toLowerCase();
     const loginUser = (user?.username || '').toLowerCase();
     if (loginRole !== 'operator' && loginRole !== 'social media cell operator' && loginUser !== 'smc_operator' && loginUser !== 'operator') {
@@ -549,6 +586,10 @@ const App = {
     if (this._notifPollerTimer) {
       clearInterval(this._notifPollerTimer);
       this._notifPollerTimer = null;
+    }
+    if (this._wsPollerTimer) {
+      clearInterval(this._wsPollerTimer);
+      this._wsPollerTimer = null;
     }
     if (this.currentPage !== 'login' || wasLoggedIn) {
       this.currentPage = 'login';
