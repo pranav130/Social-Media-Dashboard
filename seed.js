@@ -393,8 +393,8 @@ async function runSeed() {
     {
       username: 'operator',
       password: 'operator123',
-      full_name: 'Rajesh Verma (SMC Operator)',
-      email: 'rajesh.operator@uppcl.org',
+      full_name: 'SMC-Operator',
+      email: 'operator@uppcl.org',
       role: 'Social Media Cell Operator',
       discom_name: 'All DISCOMs',
       designation: 'Senior Social Media Specialist',
@@ -556,13 +556,13 @@ async function runSeed() {
         db.run(`
           INSERT INTO complaint_timeline (complaint_id, action_type, old_status, new_status, user_id, user_name, user_role, remarks, created_at)
           VALUES (?, 'Forwarded', 'New', 'Forwarded', ?, ?, 'Social Media Cell Operator', ?, ?);
-        `, [compId, c.assigned_operator_id || 2, c.assigned_operator_name || 'Rajesh Verma (SMC Operator)', c.forwarding_remarks || 'Forwarded to concerned DISCOM', c.forwarding_date]);
+        `, [compId, c.assigned_operator_id || 2, c.assigned_operator_name || 'SMC-Operator', c.forwarding_remarks || 'Forwarded to concerned DISCOM', c.forwarding_date]);
 
         db.run(`
           INSERT INTO complaint_forwarding_logs (complaint_id, forwarded_by, forwarded_to_officer, discom_name, district_name, channel, ref_no, remarks, expected_response_date, created_at)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
         `, [
-          compId, c.assigned_operator_name || 'Rajesh Verma', c.assigned_nodal_officer_name || 'Nodal Officer',
+          compId, c.assigned_operator_name || 'SMC-Operator', c.assigned_nodal_officer_name || 'Nodal Officer',
           c.discom_name, c.district_name, c.forwarding_channel || 'e-Office', c.forwarding_ref_no || 'REF-1',
           c.forwarding_remarks || '', c.expected_response_date || '', c.forwarding_date
         ]);
@@ -572,12 +572,12 @@ async function runSeed() {
       if (c.current_status === 'DISCOM Follow Up') {
         db.run(`
           INSERT INTO complaint_timeline (complaint_id, action_type, old_status, new_status, user_id, user_name, user_role, remarks, created_at)
-          VALUES (?, 'Follow-Up', 'Forwarded', 'DISCOM Follow Up', 2, 'Rajesh Verma (SMC Operator)', 'Social Media Cell Operator', 'Followed up via telephone with SE Bareilly. Action promised today.', ?);
+          VALUES (?, 'Follow-Up', 'Forwarded', 'DISCOM Follow Up', 2, 'SMC-Operator', 'Social Media Cell Operator', 'Followed up via telephone with SE Bareilly. Action promised today.', ?);
         `, [compId, c.last_action_date]);
 
         db.run(`
           INSERT INTO complaint_followup_logs (complaint_id, followed_up_by, officer_contacted, channel, remarks, next_followup_date, created_at)
-          VALUES (?, 'Rajesh Verma', 'SE Bareilly', 'Phone Call', 'Informed about voltage surge; technical team reached substation.', '2026-10-18 10:00:00', ?);
+          VALUES (?, 'SMC-Operator', 'SE Bareilly', 'Phone Call', 'Informed about voltage surge; technical team reached substation.', '2026-10-18 10:00:00', ?);
         `, [compId, c.last_action_date]);
       }
 
@@ -614,7 +614,7 @@ async function runSeed() {
       if (c.current_status === 'Reopened') {
         db.run(`
           INSERT INTO complaint_timeline (complaint_id, action_type, old_status, new_status, user_id, user_name, user_role, remarks, created_at)
-          VALUES (?, 'Reopened', 'Closed', 'Reopened', 2, 'Rajesh Verma (SMC Operator)', 'Social Media Cell Operator', ?, ?);
+          VALUES (?, 'Reopened', 'Closed', 'Reopened', 2, 'SMC-Operator', 'Social Media Cell Operator', ?, ?);
         `, [compId, c.reopen_reason, c.last_action_date]);
       }
 

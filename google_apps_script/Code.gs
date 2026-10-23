@@ -2136,7 +2136,7 @@ function doPost(e) {
       return ContentService.createTextOutput(JSON.stringify({ status: 'ok', count: records.length, overrides: records }))
         .setMimeType(ContentService.MimeType.JSON);
     }
-    if (contents.action === 'delete_frivolous' || contents.action === 'delete_complaint') {
+    if (contents.action === 'delete_frivolous' || contents.action === 'delete_complaint' || contents.action === 'delete_row') {
       const deleteResult = deleteComplaintFromSheet(contents);
       return ContentService.createTextOutput(JSON.stringify(deleteResult))
         .setMimeType(ContentService.MimeType.JSON);
@@ -3069,6 +3069,19 @@ function deleteComplaintFromSheet(contents) {
       const val = String(urlValues[i][0] || '').trim();
       if ((targetUrl && val === targetUrl) || (targetTweetId && val.includes(targetTweetId))) {
         deletedRow = i + 3; // 1-based row number
+        break;
+      }
+    }
+  }
+
+  // 2b. Scan Twitter ID column if not matched via URL
+  if (deletedRow === -1 && targetTweetId && colMap.twitterId !== undefined) {
+    const tidCol = colMap.twitterId + 1;
+    const tidValues = sheet.getRange(3, tidCol, lastRow - 2, 1).getValues();
+    for (let i = 0; i < tidValues.length; i++) {
+      const val = String(tidValues[i][0] || '').trim();
+      if (val === targetTweetId || val.includes(targetTweetId)) {
+        deletedRow = i + 3;
         break;
       }
     }

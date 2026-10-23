@@ -1174,6 +1174,279 @@ function syncWorkingEditToSqlite({
   }
 }
 
+/**
+ * Permanently deletes a complaint row from Google Sheet and synchronizes SQLite & cache
+ */
+async function deleteWorkingSheetRow({
+  tweetId,
+  postUrl,
+  sheetRowIndex,
+  user
+}) {
+  const cleanTweetId = extractTweetId(tweetId || postUrl);
+  const cleanUrl = String(postUrl || '').trim();
+  const hintedRow = parseInt(sheetRowIndex, 10);
+
+  if (!cleanTweetId && !cleanUrl && (!hintedRow || hintedRow < 3)) {
+    throw new Error('Complaint cannot be safely identified for deletion. A valid Tweet ID or Post URL is required.');
+  }
+
+  let deleted = false;
+  let resolvedRow = (hintedRow >= 3) ? hintedRow : -1;
+  let deleteError = null;
+
+  // 1. Check if Google Sheets API v4 can be used
+  let googleToken = null;
+  try {
+    googleToken = await getGoogleApiAccessToken();
+  } catch (e) {}
+
+  if (googleToken) {
+    try {
+      const headerUrl = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/'${encodeURIComponent(WORKSHEET_NAME)}'!1:1`;
+      const headerRes = await fetchUrl(headerUrl, { headers: { 'Authorization': `Bearer ${googleToken}` } });
+      const headerJson = await headerRes.json();
+      const rawHeaders = (headerJson.values && headerJson.values[0]) ? headerJson.values[0] : [];
+
+      let linkUrlColIdx = -1;
+      let twitterIdColIdx = -1;
+
+      for (let c = 0; c < rawHeaders.length; c++) {
+        const norm = normalizeHeader(rawHeaders[c]);
+        if (norm === 'linkurl' || norm === 'posturl' || norm === 'url') linkUrlColIdx = c;
+        if (norm === 'twitterid' || norm === 'tweetid' || norm === 'snowflakeid') twitterIdColIdx = c;
+      }
+
+      let verifiedRow = -1;
+
+      // Verify hinted row
+      if (hintedRow >= 3) {
+        const checkRange = `'${encodeURIComponent(WORKSHEET_NAME)}'!A${hintedRow}:Z${hintedRow}`;
+        const checkRes = await fetchUrl(`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${checkRange}`, {
+          headers: { 'Authorization': `Bearer ${googleToken}` }
+        });
+        const checkJson = await checkRes.json();
+        const rowVals = (checkJson.values && checkJson.values[0]) ? checkJson.values[0] : [];
+        const u = linkUrlColIdx >= 0 ? String(rowVals[linkUrlColIdx] || '').trim() : '';
+        const tid = twitterIdColIdx >= 0 ? String(rowVals[twitterIdColIdx] || '').trim() : '';
+        if ((cleanUrl && u === cleanUrl) || (cleanTweetId && (u.includes(cleanTweetId) || tid === cleanTweetId))) {
+          verifiedRow = hintedRow;
+        }
+      }
+
+      // If hinted row didn't match, scan Link URL column
+      if (verifiedRow === -1 && linkUrlColIdx >= 0) {
+        const letter = getColumnLetter(linkUrlColIdx);
+        const colRes = await fetchUrl(`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/'${encodeURIComponent(WORKSHEET_NAME)}'!${letter}3:${letter}`, {
+          headers: { 'Authorization': `Bearer ${googleToken}` }
+        });
+        const colJson = await colRes.json();
+        const vals = colJson.values || [];
+        for (let i = 0; i < vals.length; i++) {
+          const u = String(vals[i][0] || '').trim();
+          if ((cleanUrl && u === cleanUrl) || (cleanTweetId && u.includes(cleanTweetId))) {
+            verifiedRow = i + 3;
+            break;
+          }
+        }
+      }
+
+      // Scan Twitter ID column if still not found
+      if (verifiedRow === -1 && twitterIdColIdx >= 0 && cleanTweetId) {
+        const letter = getColumnLetter(twitterIdColIdx);
+        const colRes = await fetchUrl(`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/'${encodeURIComponent(WORKSHEET_NAME)}'!${letter}3:${letter}`, {
+          headers: { 'Authorization': `Bearer ${googleToken}` }
+        });
+        const colJson = await colRes.json();
+        const vals = colJson.values || [];
+        for (let i = 0; i < vals.length; i++) {
+          const tid = String(vals[i][0] || '').trim();
+          if (tid === cleanTweetId || tid.includes(cleanTweetId)) {
+            verifiedRow = i + 3;
+            break;
+          }
+        }
+      }
+
+      if (verifiedRow >= 3) {
+        resolvedRow = verifiedRow;
+        const batchReq = {
+          requests: [
+            {
+              deleteDimension: {
+                range: {
+                  sheetId: parseInt(WORKSHEET_GID, 10),
+                  dimension: 'ROWS',
+                  startIndex: resolvedRow - 1,
+                  endIndex: resolvedRow
+                }
+              }
+            }
+          ]
+        };
+
+        const batchRes = await postJson(`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}:batchUpdate`, batchReq, {
+          headers: { 'Authorization': `Bearer ${googleToken}` }
+        });
+        const json = await batchRes.json();
+        if (json && !json.error) {
+          deleted = true;
+        } else {
+          console.warn('[WorkingSheet] Sheets API deleteDimension response error:', json?.error?.message || json);
+        }
+      }
+    } catch (apiErr) {
+      console.warn('[WorkingSheet] Sheets API delete failed; trying Webhook transport:', apiErr.message);
+    }
+  }
+
+  // 2. Fallback / Hybrid Transport: Google Apps Script Webhook
+  if (!deleted && WEBHOOK_URL) {
+    try {
+      const payload = {
+        action: 'delete_row',
+        sheetRowIndex: resolvedRow >= 3 ? resolvedRow : hintedRow,
+        postUrl: cleanUrl,
+        tweetId: cleanTweetId,
+        userEmail: user ? (user.email || user.username) : 'Operator'
+      };
+
+      const webhookRes = await postJson(WEBHOOK_URL, payload, { timeout: 15000 });
+      const json = await webhookRes.json();
+      if (json && (json.deleted || json.status === 'ok')) {
+        deleted = true;
+        if (json.deletedRow) resolvedRow = json.deletedRow;
+      } else if (json && json.status === 'not_found') {
+        deleted = true;
+      } else {
+        deleteError = json?.message || json?.error || 'Google Apps Script deletion failed';
+      }
+    } catch (whErr) {
+      deleteError = whErr.message;
+    }
+  }
+
+  if (!deleted) {
+    throw new Error(deleteError || 'Failed to delete complaint from Google Sheet. Please check sheet permissions and connection.');
+  }
+
+  // 3. Update In-Memory Cache
+  if (cachedWorkingData && Array.isArray(cachedWorkingData.records)) {
+    const idx = cachedWorkingData.records.findIndex(r =>
+      (cleanTweetId && r.tweet_id === cleanTweetId) ||
+      (cleanUrl && r.link_url === cleanUrl) ||
+      (resolvedRow >= 3 && r.sheet_row_index === resolvedRow)
+    );
+    if (idx !== -1) {
+      cachedWorkingData.records.splice(idx, 1);
+      // Decrement subsequent row indices
+      for (let i = idx; i < cachedWorkingData.records.length; i++) {
+        if (cachedWorkingData.records[i].sheet_row_index > resolvedRow) {
+          cachedWorkingData.records[i].sheet_row_index -= 1;
+        }
+      }
+    }
+  }
+  lastFetchTimestamp = Date.now();
+
+  // 4. Cascade delete in local SQLite & ledger
+  try {
+    syncWorkingDeleteToSqlite({
+      tweetId: cleanTweetId,
+      postUrl: cleanUrl,
+      user
+    });
+  } catch (dbErr) {
+    console.warn('[WorkingSheet] SQLite delete sync warning (non-fatal):', dbErr.message);
+  }
+
+  return {
+    success: true,
+    deleted: true,
+    deletedRow: resolvedRow,
+    tweetId: cleanTweetId,
+    message: `Complaint (Row ${resolvedRow}) successfully and permanently deleted from Google Sheet.`
+  };
+}
+
+/**
+ * Syncs the verified Google Sheet deletion into SQLite database and frivolous ledger
+ */
+function syncWorkingDeleteToSqlite({ tweetId, postUrl, user }) {
+  let complaint = null;
+  if (tweetId) {
+    complaint = db.get("SELECT id, complaint_no, consumer_handle, post_url FROM complaints WHERE post_url LIKE ?;", [`%${tweetId}%`]);
+  }
+  if (!complaint && postUrl) {
+    complaint = db.get("SELECT id, complaint_no, consumer_handle, post_url FROM complaints WHERE post_url = ?;", [postUrl]);
+  }
+
+  const istTime = getIstTimestamp();
+  const userName = user ? (user.full_name || user.username) : 'Operator';
+  const cNo = complaint ? complaint.complaint_no : (tweetId ? `TWEET-${tweetId}` : 'COMPLAINT');
+  const cUrl = complaint ? complaint.post_url : postUrl;
+
+  try {
+    db.run(`
+      CREATE TABLE IF NOT EXISTS frivolous_complaints (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        post_url TEXT UNIQUE,
+        tweet_id TEXT,
+        complaint_no TEXT,
+        deleted_at TEXT NOT NULL,
+        deleted_by_name TEXT,
+        reason TEXT DEFAULT 'Deleted from Working Sheet'
+      );
+    `);
+    db.run(`
+      INSERT OR REPLACE INTO frivolous_complaints (post_url, tweet_id, complaint_no, deleted_at, deleted_by_name, reason)
+      VALUES (?, ?, ?, ?, ?, ?);
+    `, [cUrl, tweetId, cNo, istTime, userName, 'Deleted from Working Sheet']);
+
+    try {
+      const fs = require('fs');
+      const path = require('path');
+      const ledgerPath = path.join(__dirname, 'data', 'frivolous_ledger.json');
+      let ledger = [];
+      if (fs.existsSync(ledgerPath)) {
+        try { ledger = JSON.parse(fs.readFileSync(ledgerPath, 'utf8')); } catch (e) {}
+      }
+      if (!Array.isArray(ledger)) ledger = [];
+      const exists = ledger.some(x => (tweetId && x.tweet_id === tweetId) || (cUrl && x.post_url === cUrl));
+      if (!exists) {
+        ledger.push({
+          tweet_id: tweetId,
+          post_url: cUrl,
+          complaint_no: cNo,
+          deleted_at: istTime,
+          deleted_by: userName,
+          reason: 'Deleted from Working Sheet'
+        });
+        fs.writeFileSync(ledgerPath, JSON.stringify(ledger, null, 2), 'utf8');
+      }
+    } catch (e) {}
+  } catch (e) {}
+
+  if (complaint && complaint.id) {
+    const safeDeleteFrom = (table, col = 'complaint_id') => {
+      try { db.run(`DELETE FROM ${table} WHERE ${col} = ?;`, [complaint.id]); } catch (e) {}
+    };
+    safeDeleteFrom('complaint_timeline');
+    safeDeleteFrom('complaint_forwarding_logs');
+    safeDeleteFrom('complaint_followup_logs');
+    safeDeleteFrom('complaint_escalation_logs');
+    safeDeleteFrom('complaint_evidence');
+    safeDeleteFrom('x_outgoing_replies');
+    safeDeleteFrom('notifications');
+    safeDeleteFrom('complaints', 'id');
+  }
+
+  try {
+    if (typeof db.flush === 'function') db.flush();
+    else if (typeof db.saveToDiskSync === 'function') db.saveToDiskSync();
+  } catch (e) {}
+}
+
 module.exports = {
   WORKING_SHEET_COLUMNS,
   EDITABLE_COLUMNS,
@@ -1187,6 +1460,8 @@ module.exports = {
   getWorkingSheetData,
   getDistrictList,
   updateWorkingSheetCell,
+  deleteWorkingSheetRow,
+  syncWorkingDeleteToSqlite,
   getColumnLetter,
   normalizeHeader,
   extractTweetId,

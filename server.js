@@ -3515,6 +3515,119 @@ app.post('/api/working-sheet/update-cell', authMiddleware, requireRoles('Super A
   }
 });
 
+// 4. Permanent Row Deletion Directly from Google Sheet
+app.post('/api/working-sheet/delete-row', authMiddleware, requireRoles('Super Administrator', 'Social Media Cell Operator', 'Supervisor / Management', 'operator', 'Operator'), async (req, res) => {
+  try {
+    const { tweet_id, post_url, sheet_row_index } = req.body;
+
+    if (!tweet_id && !post_url && (!sheet_row_index || sheet_row_index < 3)) {
+      return res.status(400).json({ error: 'Tweet ID or Post URL is required to safely identify the complaint for deletion.' });
+    }
+
+    const result = await workingSheetService.deleteWorkingSheetRow({
+      tweetId: tweet_id,
+      postUrl: post_url,
+      sheetRowIndex: sheet_row_index,
+      user: req.user
+    });
+
+    logAudit(
+      req,
+      req.user,
+      'WORKING_SHEET_ROW_DELETE',
+      'GOOGLE_SHEETS',
+      result.deletedRow || sheet_row_index || 0,
+      `Permanently deleted complaint ${tweet_id || post_url} from Google Sheet Row ${result.deletedRow || sheet_row_index}`
+    );
+
+    res.json(result);
+  } catch (err) {
+    console.error('[Server] Working Sheet row delete error:', err);
+    res.status(500).json({ error: err.message || 'Failed to delete complaint from Google Sheet' });
+  }
+});
+
+// 5. Download WORKING SHEET as Excel (.xlsx)
+app.get('/api/working-sheet/export-excel', authMiddleware, async (req, res) => {
+  try {
+    const {
+      search = '',
+      sort_by = 'DATE',
+      sort_order = 'DESC',
+      picked_status = 'All',
+      head = 'All',
+      district = 'All',
+      complaint_type = 'All'
+    } = req.query;
+
+    const result = await workingSheetService.getWorkingSheetData({
+      page: 1,
+      limit: 100000, // Export all matching rows across all pages
+      search,
+      sortBy: sort_by,
+      sortOrder: sort_order,
+      pickedStatus: picked_status,
+      head,
+      district,
+      complaintType: complaint_type,
+      forceRefresh: false
+    });
+
+    const rows = result.rows || [];
+    const exportRows = rows.map(r => ({
+      'DATE': sanitizeForExcel(r['DATE'] || ''),
+      'C F': sanitizeForExcel(r['C F'] || ''),
+      'LINK URL': sanitizeForExcel(r['LINK URL'] || r.link_url || ''),
+      'Twitter Id': sanitizeForExcel(r['Twitter Id'] || ''),
+      'Picked Status': sanitizeForExcel(r['Picked Status'] || ''),
+      'Head': sanitizeForExcel(r['Head'] || ''),
+      'Untagged Complaint': sanitizeForExcel(r['Untagged Complaint'] || ''),
+      'UPPCLLKO Replied (YES/NO)': sanitizeForExcel(r['UPPCLLKO Replied (YES/NO)'] || ''),
+      'Complaint Type': sanitizeForExcel(r['Complaint Type'] || ''),
+      'District': sanitizeForExcel(r['District'] || ''),
+      'Status': sanitizeForExcel(r['Status'] || '')
+    }));
+
+    const ws = XLSX.utils.json_to_sheet(exportRows, { header: workingSheetService.WORKING_SHEET_COLUMNS });
+    ws['!cols'] = [
+      { wch: 14 }, // DATE
+      { wch: 8 },  // C F
+      { wch: 48 }, // LINK URL
+      { wch: 20 }, // Twitter Id
+      { wch: 16 }, // Picked Status
+      { wch: 12 }, // Head
+      { wch: 20 }, // Untagged Complaint
+      { wch: 28 }, // UPPCLLKO Replied (YES/NO)
+      { wch: 28 }, // Complaint Type
+      { wch: 20 }, // District
+      { wch: 24 }  // Status
+    ];
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'WORKING SHEET');
+    const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+
+    const todayDate = new Date().toISOString().substring(0, 10);
+    const fileName = `UPPCL_Working_Sheet_${todayDate}.xlsx`;
+
+    logAudit(
+      req,
+      req.user,
+      'REPORT_EXPORTED',
+      'WORKING_SHEET',
+      'excel',
+      `Exported ${exportRows.length} working sheet records to Excel (${fileName})`
+    );
+
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+    return res.send(buf);
+  } catch (err) {
+    console.error('[Server] Working Sheet excel export error:', err);
+    res.status(500).json({ error: err.message || 'Failed to export Working Sheet to Excel' });
+  }
+});
+
 // -------------------------------------------------------------
 // OPERATIONAL HEALTH & SLA MONITORING
 // -------------------------------------------------------------

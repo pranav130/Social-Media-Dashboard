@@ -1,4 +1,4 @@
-﻿/* UPPCL Social Media Cell - Enterprise Operations Theme */
+/* UPPCL Social Media Cell - Enterprise Operations Theme */
 :root,
 [data-theme="light"] {
   --primary-dark: #0b1f36;
@@ -1696,17 +1696,45 @@ body {
 }
 
 /* Proportional Column Widths for Perfect Page Fit */
-.ws-col-date { width: 9%; }
-.ws-col-cf { width: 4.5%; text-align: center; }
-.ws-col-link { width: 5.5%; text-align: center; }
-.ws-col-twitter { width: 10.5%; }
-.ws-col-picked { width: 9%; }
-.ws-col-head { width: 7.5%; }
-.ws-col-untagged { width: 7%; }
-.ws-col-replied { width: 9%; text-align: center; }
-.ws-col-type { width: 15%; }
-.ws-col-district { width: 11%; }
-.ws-col-status { width: 12%; }
+.ws-col-date { width: 8.5%; }
+.ws-col-cf { width: 4%; text-align: center; }
+.ws-col-link { width: 5%; text-align: center; }
+.ws-col-twitter { width: 9.5%; }
+.ws-col-picked { width: 8.5%; }
+.ws-col-head { width: 6.5%; }
+.ws-col-untagged { width: 6.5%; }
+.ws-col-replied { width: 8.5%; text-align: center; }
+.ws-col-type { width: 14%; }
+.ws-col-district { width: 10%; }
+.ws-col-status { width: 11%; }
+.ws-col-delete { width: 8%; text-align: center; }
+
+.btn-ws-delete {
+  background-color: #ef4444 !important;
+  border-color: #dc2626 !important;
+  color: #ffffff !important;
+  font-weight: 600 !important;
+  padding: 3px 8px !important;
+  font-size: 11px !important;
+  white-space: nowrap !important;
+  border-radius: 4px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 4px !important;
+  cursor: pointer !important;
+  transition: all 0.2s ease !important;
+}
+
+.btn-ws-delete:hover:not(:disabled) {
+  background-color: #dc2626 !important;
+  border-color: #b91c1c !important;
+  box-shadow: 0 1px 3px rgba(239, 68, 68, 0.4) !important;
+}
+
+.btn-ws-delete:disabled {
+  opacity: 0.6 !important;
+  cursor: not-allowed !important;
+}
 
 .ws-select {
   font-size: 13px !important;

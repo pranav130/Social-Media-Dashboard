@@ -162,48 +162,57 @@ function getIstTimestamp(dateObj = new Date()) {
 }
 
 /**
- * Parse any date format into standard YYYY-MM-DD (IST)
+ * Parse any date format into standard YYYY-MM-DD (IST).
+ * Returns null if the date is invalid or missing (does not default to today).
  */
 function parseDateIST(dateVal, timeVal = '') {
-  if (!dateVal) return getIstTimestamp().split(' ')[0];
+  if (!dateVal) return null;
   const str = String(dateVal).trim();
+  if (!str) return null;
 
   // Excel serial number (e.g. 45584)
   if (/^\d{4,5}$/.test(str)) {
     const serial = parseInt(str, 10);
-    if (serial > 40000) {
+    if (serial >= 40000 && serial <= 50000) {
       const epoch = new Date((serial - 25569) * 86400 * 1000);
       return getIstTimestamp(epoch).split(' ')[0];
     }
   }
 
-  // YYYY-MM-DD
-  if (/^\d{4}-\d{2}-\d{2}/.test(str)) {
-    const y = parseInt(str.substring(0, 4), 10);
-    if (y >= 2020 && y <= 2030) return str.substring(0, 10);
-  }
-
-  // DD-MM-YYYY or DD/MM/YYYY
-  const dmy = str.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})/);
+  // DD-MM-YYYY or DD/MM/YYYY or DD.MM.YYYY
+  const dmy = str.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})/);
   if (dmy) {
+    const d = parseInt(dmy[1], 10);
+    const m = parseInt(dmy[2], 10);
     const y = parseInt(dmy[3], 10);
-    if (y >= 2020 && y <= 2030) {
-      const d = String(dmy[1]).padStart(2, '0');
-      const m = String(dmy[2]).padStart(2, '0');
-      return `${y}-${m}-${d}`;
+    if (d >= 1 && d <= 31 && m >= 1 && m <= 12 && y >= 2020 && y <= 2030) {
+      return `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
     }
   }
 
-  // General Date parse fallback
-  const parsed = new Date(str);
-  if (!isNaN(parsed.getTime())) {
-    const y = parsed.getFullYear();
-    if (y >= 2020 && y <= 2030) {
-      return getIstTimestamp(parsed).split(' ')[0];
+  // YYYY-MM-DD or YYYY/MM/DD or YYYY.MM.DD
+  const ymd = str.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/);
+  if (ymd) {
+    const y = parseInt(ymd[1], 10);
+    const m = parseInt(ymd[2], 10);
+    const d = parseInt(ymd[3], 10);
+    if (d >= 1 && d <= 31 && m >= 1 && m <= 12 && y >= 2020 && y <= 2030) {
+      return `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
     }
   }
 
-  return getIstTimestamp().split(' ')[0];
+  // General Date parse fallback for standard date strings
+  if (str.length >= 8 && !/^\d+$/.test(str)) {
+    const parsed = new Date(str);
+    if (!isNaN(parsed.getTime())) {
+      const y = parsed.getFullYear();
+      if (y >= 2020 && y <= 2030) {
+        return getIstTimestamp(parsed).split(' ')[0];
+      }
+    }
+  }
+
+  return null;
 }
 
 /**
@@ -216,31 +225,51 @@ function extractTweetId(url) {
 }
 
 /**
- * Extract exact IST creation timestamp down to the second from Twitter Snowflake ID.
- * Falls back to shift approximate time if ID is absent, never flat 12:00:00.
+ * Extract exact IST creation timestamp down to the second.
+ * The Google Sheet DATE column is strictly authoritative for the calendar date (YYYY-MM-DD).
+ * The Twitter Snowflake ID supplies the exact second-level time of day (HH:MM:SS).
+ * Falls back to shift approximate time if Snowflake ID is absent.
  */
 function extractExactTimestampIST(linkUrl, rawDate, shift = '') {
-  if (linkUrl) {
-    const tweetId = extractTweetId(linkUrl);
-    if (tweetId) {
-      try {
-        const tweetIdBig = BigInt(tweetId);
-        const epochMs = (tweetIdBig >> 22n) + 1288834974657n;
-        const d = new Date(Number(epochMs));
-        if (!isNaN(d.getTime()) && d.getFullYear() >= 2020 && d.getFullYear() <= 2030) {
-          return getIstTimestamp(d);
-        }
-      } catch (e) {}
-    }
+  const sheetDate = parseDateIST(rawDate);
+  const tweetId = extractTweetId(linkUrl);
+
+  let snowflakeTimestamp = null;
+  if (tweetId) {
+    try {
+      const tweetIdBig = BigInt(tweetId);
+      const epochMs = (tweetIdBig >> 22n) + 1288834974657n;
+      const d = new Date(Number(epochMs));
+      if (!isNaN(d.getTime()) && d.getFullYear() >= 2020 && d.getFullYear() <= 2030) {
+        snowflakeTimestamp = getIstTimestamp(d);
+      }
+    } catch (e) {}
   }
 
-  const istDate = parseDateIST(rawDate);
-  const s = String(shift || '').toUpperCase();
-  let timeStr = '12:00:00';
-  if (s.includes('NIGHT')) timeStr = '02:30:00';
-  else if (s.includes('MORNING')) timeStr = '09:30:00';
-  else if (s.includes('EVENING')) timeStr = '17:30:00';
-  return `${istDate} ${timeStr}`;
+  // 1. Authoritative: If Google Sheet DATE column contains a valid operational date,
+  // that date strictly defines the calendar date portion.
+  if (sheetDate) {
+    if (snowflakeTimestamp) {
+      // Use exact second-level time of day (HH:MM:SS) decoded from Twitter Snowflake ID
+      const timePart = snowflakeTimestamp.substring(11);
+      return `${sheetDate} ${timePart}`;
+    }
+    // No Snowflake ID available: derive time of day from shift
+    const s = String(shift || '').toUpperCase();
+    let timeStr = '12:00:00';
+    if (s.includes('NIGHT')) timeStr = '02:30:00';
+    else if (s.includes('MORNING')) timeStr = '09:30:00';
+    else if (s.includes('EVENING')) timeStr = '17:30:00';
+    return `${sheetDate} ${timeStr}`;
+  }
+
+  // 2. Fallback: If Google Sheet DATE column is missing or corrupt, use Snowflake timestamp
+  if (snowflakeTimestamp) {
+    return snowflakeTimestamp;
+  }
+
+  // 3. Historical safe fallback
+  return '2026-10-17 12:00:00';
 }
 
 /**
@@ -1111,9 +1140,9 @@ function processSheetMatrix(headers, data, method, startTime = Date.now()) {
       }
     }
 
-    // Normalization & Exact IST Timestamp (calculated from Twitter Snowflake ID down to second)
-    const istDate = parseDateIST(rawDate);
+    // Normalization & Exact IST Timestamp (Google Sheet DATE is strictly authoritative for calendar date)
     const receivedAt = extractExactTimestampIST(linkUrl, rawDate, linkShift);
+    const istDate = parseDateIST(rawDate) || receivedAt.substring(0, 10);
     const discom = normalizeDiscom(rawDiscom, rawPostText);
     const consumerHandle = twitterId.startsWith('@') ? twitterId : ('@' + twitterId);
     const consumerName = consumerHandle.replace('@', '');
