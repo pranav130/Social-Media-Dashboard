@@ -130,7 +130,8 @@ const READONLY_COLUMNS = [
 // In-memory cache
 let cachedWorkingData = null;
 let lastFetchTimestamp = 0;
-const CACHE_TTL_MS = 30000; // 30 seconds TTL
+const CACHE_TTL_MS = 60000; // 60 seconds fresh TTL (with Stale-While-Revalidate)
+let isBackgroundRefreshing = false;
 
 let cachedDistricts = null;
 let lastDistrictsTimestamp = 0;
@@ -489,6 +490,178 @@ function parseCsvToRows(text) {
 /**
  * Main Data Fetcher: Retrieves ONLY the 11 designated columns
  */
+/**
+ * Fetches fresh working data from Google Sheets (via API or CSV export)
+ */
+async function fetchFreshWorkingDataFromGoogle() {
+  let googleToken = null;
+  try {
+    googleToken = await getGoogleApiAccessToken();
+  } catch (e) {
+    console.warn('[WorkingSheet] Google Sheets API token not configured; using CSV/Webhook transport.');
+  }
+
+  let allRecords = null;
+  let headers = null;
+
+  if (googleToken) {
+    try {
+      const headerUrl = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/'${encodeURIComponent(WORKSHEET_NAME)}'!1:1`;
+      const headerRes = await fetchUrl(headerUrl, {
+        headers: { 'Authorization': `Bearer ${googleToken}` }
+      });
+      const headerJson = await headerRes.json();
+      const rawHeaders = (headerJson.values && headerJson.values[0]) ? headerJson.values[0] : [];
+
+      if (rawHeaders.length > 0) {
+        headers = rawHeaders;
+        const targetColLetters = [];
+        const targetIndices = [];
+
+        WORKING_SHEET_COLUMNS.forEach(colName => {
+          const normTarget = normalizeHeader(colName);
+          let idx = -1;
+          for (let c = 0; c < rawHeaders.length; c++) {
+            if (normalizeHeader(rawHeaders[c]) === normTarget) {
+              idx = c;
+              break;
+            }
+          }
+          targetIndices.push(idx);
+          if (idx >= 0) {
+            const letter = getColumnLetter(idx);
+            targetColLetters.push(`'${encodeURIComponent(WORKSHEET_NAME)}'!${letter}3:${letter}`);
+          }
+        });
+
+        let linkUrlCol = -1;
+        let twitterIdCol = -1;
+        for (let c = 0; c < rawHeaders.length; c++) {
+          const norm = normalizeHeader(rawHeaders[c]);
+          if (norm === 'linkurl' || norm === 'posturl' || norm === 'url') linkUrlCol = c;
+          if (norm === 'twitterid' || norm === 'tweetid' || norm === 'snowflakeid') twitterIdCol = c;
+        }
+
+        if (linkUrlCol >= 0 && !targetIndices.includes(linkUrlCol)) {
+          const letter = getColumnLetter(linkUrlCol);
+          targetColLetters.push(`'${encodeURIComponent(WORKSHEET_NAME)}'!${letter}3:${letter}`);
+        }
+        if (twitterIdCol >= 0 && !targetIndices.includes(twitterIdCol)) {
+          const letter = getColumnLetter(twitterIdCol);
+          targetColLetters.push(`'${encodeURIComponent(WORKSHEET_NAME)}'!${letter}3:${letter}`);
+        }
+
+        const batchUrl = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values:batchGet?ranges=${targetColLetters.join('&ranges=')}`;
+        const batchRes = await fetchUrl(batchUrl, {
+          headers: { 'Authorization': `Bearer ${googleToken}` }
+        });
+        const batchJson = await batchRes.json();
+        const valueRanges = batchJson.valueRanges || [];
+
+        const colDataMap = {};
+        let vrIndex = 0;
+        WORKING_SHEET_COLUMNS.forEach((colName, idx) => {
+          if (targetIndices[idx] >= 0 && vrIndex < valueRanges.length) {
+            colDataMap[colName] = valueRanges[vrIndex].values || [];
+            vrIndex++;
+          } else {
+            colDataMap[colName] = [];
+          }
+        });
+
+        let maxRows = 0;
+        WORKING_SHEET_COLUMNS.forEach(colName => {
+          if (colDataMap[colName].length > maxRows) maxRows = colDataMap[colName].length;
+        });
+
+        const parsedRecords = [];
+        for (let r = 0; r < maxRows; r++) {
+          const sheetRowIndex = r + 3;
+          const record = { sheet_row_index: sheetRowIndex };
+          let allEmpty = true;
+          WORKING_SHEET_COLUMNS.forEach(colName => {
+            const cellArr = colDataMap[colName][r];
+            const cellVal = (cellArr && cellArr[0] !== undefined) ? String(cellArr[0]).trim() : '';
+            record[colName] = cellVal;
+            if (cellVal) allEmpty = false;
+          });
+          if (allEmpty) continue;
+          const postUrl = record['LINK URL'] || '';
+          let tweetId = extractTweetId(postUrl) || extractTweetId(record['Twitter Id']);
+          record['tweet_id'] = tweetId;
+          record['link_url'] = postUrl;
+          parsedRecords.push(record);
+        }
+        allRecords = parsedRecords;
+      }
+    } catch (err) {
+      console.warn('[WorkingSheet] Google Sheets API batchGet failed, falling back to CSV export:', err.message);
+    }
+  }
+
+  // Fallback: Read via CSV export
+  if (!allRecords) {
+    const csvRows = await fetchSheetCsvLines();
+    if (!csvRows || csvRows.length < 2) {
+      throw new Error('Google Sheet returned insufficient rows.');
+    }
+
+    headers = csvRows[0];
+    const targetIndices = [];
+    WORKING_SHEET_COLUMNS.forEach(colName => {
+      const normTarget = normalizeHeader(colName);
+      let idx = -1;
+      for (let c = 0; c < headers.length; c++) {
+        if (normalizeHeader(headers[c]) === normTarget) {
+          idx = c;
+          break;
+        }
+      }
+      targetIndices.push(idx);
+    });
+
+    let linkUrlCol = -1;
+    let twitterIdCol = -1;
+    for (let c = 0; c < headers.length; c++) {
+      const norm = normalizeHeader(headers[c]);
+      if (norm === 'linkurl' || norm === 'posturl' || norm === 'url') linkUrlCol = c;
+      if (norm === 'twitterid' || norm === 'tweetid' || norm === 'snowflakeid') twitterIdCol = c;
+    }
+
+    const parsedRecords = [];
+    for (let r = 2; r < csvRows.length; r++) {
+      const row = csvRows[r];
+      const sheetRowIndex = r + 1;
+      if (!row || row.every(c => String(c || '').trim() === '')) continue;
+      const record = { sheet_row_index: sheetRowIndex };
+      let allEmpty = true;
+      WORKING_SHEET_COLUMNS.forEach((colName, cIdx) => {
+        const colPos = targetIndices[cIdx];
+        const cellVal = (colPos >= 0 && colPos < row.length) ? String(row[colPos] || '').trim() : '';
+        record[colName] = cellVal;
+        if (cellVal) allEmpty = false;
+      });
+      if (allEmpty) continue;
+      const postUrl = record['LINK URL'] || (linkUrlCol >= 0 ? String(row[linkUrlCol] || '').trim() : '');
+      let tweetId = extractTweetId(postUrl) || extractTweetId(record['Twitter Id'] || (twitterIdCol >= 0 ? String(row[twitterIdCol] || '').trim() : ''));
+      record['tweet_id'] = tweetId;
+      record['link_url'] = postUrl;
+      parsedRecords.push(record);
+    }
+    allRecords = parsedRecords;
+  }
+
+  cachedWorkingData = {
+    records: allRecords,
+    headers: headers || WORKING_SHEET_COLUMNS
+  };
+  lastFetchTimestamp = Date.now();
+  return allRecords;
+}
+
+/**
+ * Returns the filtered and paginated records for WORKING SHEET
+ */
 async function getWorkingSheetData({
   page = 1,
   limit = 50,
@@ -502,201 +675,24 @@ async function getWorkingSheetData({
   forceRefresh = false
 } = {}) {
   const now = Date.now();
-
-  // 1. Check in-memory cache
   let allRecords = null;
-  if (!forceRefresh && cachedWorkingData && (now - lastFetchTimestamp < CACHE_TTL_MS)) {
+  const isCacheFresh = cachedWorkingData && (now - lastFetchTimestamp < CACHE_TTL_MS);
+
+  if (!forceRefresh && isCacheFresh) {
+    // 1. Fast Path: Cache is fresh, return immediately (< 30ms)
     allRecords = cachedWorkingData.records;
+  } else if (!forceRefresh && cachedWorkingData && cachedWorkingData.records && cachedWorkingData.records.length > 0) {
+    // 2. Stale-While-Revalidate: Return cached records immediately, refresh asynchronously in background
+    allRecords = cachedWorkingData.records;
+    if (!isBackgroundRefreshing) {
+      isBackgroundRefreshing = true;
+      fetchFreshWorkingDataFromGoogle()
+        .catch(err => console.warn('[WorkingSheet] Background refresh failed:', err.message))
+        .finally(() => { isBackgroundRefreshing = false; });
+    }
   } else {
-    // 2. Fetch fresh from Google Sheets
-    let rows = null;
-    let headers = null;
-
-    // Check if Google Sheets API v4 can be used with batchGet
-    let googleToken = null;
-    try {
-      googleToken = await getGoogleApiAccessToken();
-    } catch (e) {
-      console.warn('[WorkingSheet] Google Sheets API token not configured; using CSV/Webhook transport.');
-    }
-
-    if (googleToken) {
-      try {
-        // Fetch Header Row
-        const headerUrl = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/'${encodeURIComponent(WORKSHEET_NAME)}'!1:1`;
-        const headerRes = await fetchUrl(headerUrl, {
-          headers: { 'Authorization': `Bearer ${googleToken}` }
-        });
-        const headerJson = await headerRes.json();
-        const rawHeaders = (headerJson.values && headerJson.values[0]) ? headerJson.values[0] : [];
-
-        if (rawHeaders.length > 0) {
-          headers = rawHeaders;
-          // Map the 11 target columns to their letters
-          const targetColLetters = [];
-          const targetIndices = [];
-
-          WORKING_SHEET_COLUMNS.forEach(colName => {
-            const normTarget = normalizeHeader(colName);
-            let idx = -1;
-            for (let c = 0; c < rawHeaders.length; c++) {
-              if (normalizeHeader(rawHeaders[c]) === normTarget) {
-                idx = c;
-                break;
-              }
-            }
-            targetIndices.push(idx);
-            if (idx >= 0) {
-              const letter = getColumnLetter(idx);
-              targetColLetters.push(`'${encodeURIComponent(WORKSHEET_NAME)}'!${letter}3:${letter}`);
-            }
-          });
-
-          // Also locate Link URL and Twitter Id for record identification
-          let linkUrlCol = -1;
-          let twitterIdCol = -1;
-          for (let c = 0; c < rawHeaders.length; c++) {
-            const norm = normalizeHeader(rawHeaders[c]);
-            if (norm === 'linkurl' || norm === 'posturl' || norm === 'url') linkUrlCol = c;
-            if (norm === 'twitterid' || norm === 'tweetid' || norm === 'snowflakeid') twitterIdCol = c;
-          }
-
-          if (linkUrlCol >= 0 && !targetIndices.includes(linkUrlCol)) {
-            const letter = getColumnLetter(linkUrlCol);
-            targetColLetters.push(`'${encodeURIComponent(WORKSHEET_NAME)}'!${letter}3:${letter}`);
-          }
-          if (twitterIdCol >= 0 && !targetIndices.includes(twitterIdCol)) {
-            const letter = getColumnLetter(twitterIdCol);
-            targetColLetters.push(`'${encodeURIComponent(WORKSHEET_NAME)}'!${letter}3:${letter}`);
-          }
-
-          // Issue batchGet for strictly the required columns
-          const batchUrl = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values:batchGet?ranges=${targetColLetters.join('&ranges=')}`;
-          const batchRes = await fetchUrl(batchUrl, {
-            headers: { 'Authorization': `Bearer ${googleToken}` }
-          });
-          const batchJson = await batchRes.json();
-          const valueRanges = batchJson.valueRanges || [];
-
-          // Map column ranges by column name
-          const colDataMap = {};
-          let vrIndex = 0;
-          WORKING_SHEET_COLUMNS.forEach((colName, idx) => {
-            if (targetIndices[idx] >= 0 && vrIndex < valueRanges.length) {
-              colDataMap[colName] = valueRanges[vrIndex].values || [];
-              vrIndex++;
-            } else {
-              colDataMap[colName] = [];
-            }
-          });
-
-          // Determine total rows from longest column array
-          let maxRows = 0;
-          WORKING_SHEET_COLUMNS.forEach(colName => {
-            if (colDataMap[colName].length > maxRows) maxRows = colDataMap[colName].length;
-          });
-
-          const parsedRecords = [];
-          for (let r = 0; r < maxRows; r++) {
-            const sheetRowIndex = r + 3; // Data rows start at Row 3
-            const record = {
-              sheet_row_index: sheetRowIndex
-            };
-
-            let allEmpty = true;
-            WORKING_SHEET_COLUMNS.forEach(colName => {
-              const cellArr = colDataMap[colName][r];
-              const cellVal = (cellArr && cellArr[0] !== undefined) ? String(cellArr[0]).trim() : '';
-              record[colName] = cellVal;
-              if (cellVal) allEmpty = false;
-            });
-
-            if (allEmpty) continue;
-
-            const postUrl = record['LINK URL'] || '';
-            let tweetId = extractTweetId(postUrl) || extractTweetId(record['Twitter Id']);
-            record['tweet_id'] = tweetId;
-            record['link_url'] = postUrl;
-
-            parsedRecords.push(record);
-          }
-
-          allRecords = parsedRecords;
-        }
-      } catch (err) {
-        console.warn('[WorkingSheet] Google Sheets API batchGet failed, falling back to CSV export:', err.message);
-      }
-    }
-
-    // Fallback: Read via CSV export
-    if (!allRecords) {
-      const csvRows = await fetchSheetCsvLines();
-      if (!csvRows || csvRows.length < 2) {
-        throw new Error('Google Sheet returned insufficient rows.');
-      }
-
-      headers = csvRows[0];
-      const targetIndices = [];
-      WORKING_SHEET_COLUMNS.forEach(colName => {
-        const normTarget = normalizeHeader(colName);
-        let idx = -1;
-        for (let c = 0; c < headers.length; c++) {
-          if (normalizeHeader(headers[c]) === normTarget) {
-            idx = c;
-            break;
-          }
-        }
-        targetIndices.push(idx);
-      });
-
-      // Find link URL and twitter id
-      let linkUrlCol = -1;
-      let twitterIdCol = -1;
-      for (let c = 0; c < headers.length; c++) {
-        const norm = normalizeHeader(headers[c]);
-        if (norm === 'linkurl' || norm === 'posturl' || norm === 'url') linkUrlCol = c;
-        if (norm === 'twitterid' || norm === 'tweetid' || norm === 'snowflakeid') twitterIdCol = c;
-      }
-
-      const parsedRecords = [];
-      // Row 1 is header (idx 0), Row 2 is blank spacer (idx 1), data starts at idx 2 (Row 3)
-      for (let r = 2; r < csvRows.length; r++) {
-        const row = csvRows[r];
-        const sheetRowIndex = r + 1; // 1-based row index
-
-        if (!row || row.every(c => String(c || '').trim() === '')) continue;
-
-        const record = {
-          sheet_row_index: sheetRowIndex
-        };
-
-        let allEmpty = true;
-        WORKING_SHEET_COLUMNS.forEach((colName, cIdx) => {
-          const colPos = targetIndices[cIdx];
-          const cellVal = (colPos >= 0 && colPos < row.length) ? String(row[colPos] || '').trim() : '';
-          record[colName] = cellVal;
-          if (cellVal) allEmpty = false;
-        });
-
-        if (allEmpty) continue;
-
-        const postUrl = record['LINK URL'] || (linkUrlCol >= 0 ? String(row[linkUrlCol] || '').trim() : '');
-        let tweetId = extractTweetId(postUrl) || extractTweetId(record['Twitter Id'] || (twitterIdCol >= 0 ? String(row[twitterIdCol] || '').trim() : ''));
-        record['tweet_id'] = tweetId;
-        record['link_url'] = postUrl;
-
-        parsedRecords.push(record);
-      }
-
-      allRecords = parsedRecords;
-    }
-
-    // Save to memory cache
-    cachedWorkingData = {
-      records: allRecords,
-      headers: headers || WORKING_SHEET_COLUMNS
-    };
-    lastFetchTimestamp = now;
+    // 3. Cold Start or Forced Refresh: Fetch synchronously
+    allRecords = await fetchFreshWorkingDataFromGoogle();
   }
 
   // 3. Apply Filters
@@ -1051,9 +1047,22 @@ async function updateWorkingSheetCell({
     throw new Error('Failed to update Google Sheet: neither Google Sheets API nor Webhook confirmed the write.');
   }
 
-  // Invalidate memory cache so next read is fresh
-  cachedWorkingData = null;
-  lastFetchTimestamp = 0;
+  // Update in-memory cache directly so it stays fresh without dropping
+  if (cachedWorkingData && Array.isArray(cachedWorkingData.records)) {
+    const cachedRec = cachedWorkingData.records.find(r =>
+      (cleanTweetId && r.tweet_id === cleanTweetId) ||
+      (cleanUrl && r.link_url === cleanUrl) ||
+      (r.sheet_row_index === targetRow)
+    );
+    if (cachedRec) {
+      cachedRec[normCol] = verifiedValue;
+      if (normCol === 'District' && mappedDiscom) {
+        cachedRec['DISCOM'] = mappedDiscom;
+        cachedRec['Zone'] = mappedZone;
+      }
+    }
+  }
+  lastFetchTimestamp = Date.now();
 
   // Sync to local SQLite database cache so all dashboard views stay in sync
   try {

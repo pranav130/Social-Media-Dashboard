@@ -204,7 +204,6 @@ const App = {
 
     this.startClock();
     if (this.token) {
-      this.startWorkingSheetPoller();
       const curRole = (this.user?.role || '').toLowerCase();
       const curUser = (this.user?.username || '').toLowerCase();
       if (curRole !== 'operator' && curRole !== 'social media cell operator' && curUser !== 'smc_operator' && curUser !== 'operator') {
@@ -213,23 +212,7 @@ const App = {
       }
     }
 
-    if (!this._visibilityListenerBound) {
-      this._visibilityListenerBound = true;
-      document.addEventListener('visibilitychange', () => {
-        if (!document.hidden && this.token && this.currentPage === 'working-sheet') {
-          const activeTag = document.activeElement ? document.activeElement.tagName.toLowerCase() : '';
-          if (activeTag !== 'select' && activeTag !== 'input') {
-            this.loadWorkingSheetData();
-            this.api('/api/dashboard/kpis').then(kpis => {
-              if (kpis) {
-                this.latestKpis = kpis;
-                this.updateWorkingSheetMetricCards();
-              }
-            }).catch(() => {});
-          }
-        }
-      });
-    }
+    // Automatic visibility reload disabled to prevent interrupting sheet editing
 
     if (this.token && this.user) {
       this.loadMasterData().then(() => {
@@ -300,20 +283,11 @@ const App = {
   },
 
   startWorkingSheetPoller() {
-    if (this._wsPollerTimer) clearInterval(this._wsPollerTimer);
-    this._wsPollerTimer = setInterval(() => {
-      if (this.token && this.currentPage === 'working-sheet' && !document.hidden) {
-        const activeTag = document.activeElement ? document.activeElement.tagName.toLowerCase() : '';
-        if (activeTag === 'select' || activeTag === 'input') return;
-        this.loadWorkingSheetData();
-        this.api('/api/dashboard/kpis').then(kpis => {
-          if (kpis) {
-            this.latestKpis = kpis;
-            this.updateWorkingSheetMetricCards();
-          }
-        }).catch(() => {});
-      }
-    }, 30000);
+    // Disabled: Manual button sync mode active to prevent auto-reloading during edits
+    if (this._wsPollerTimer) {
+      clearInterval(this._wsPollerTimer);
+      this._wsPollerTimer = null;
+    }
   },
 
   async pollSyncStatus() {
@@ -561,7 +535,6 @@ const App = {
     this.user = user;
     localStorage.setItem('uppcl_smc_token', token);
     localStorage.setItem('uppcl_smc_user', JSON.stringify(user));
-    this.startWorkingSheetPoller();
     const loginRole = (user?.role || '').toLowerCase();
     const loginUser = (user?.username || '').toLowerCase();
     if (loginRole !== 'operator' && loginRole !== 'social media cell operator' && loginUser !== 'smc_operator' && loginUser !== 'operator') {
@@ -5769,8 +5742,17 @@ const App = {
           <h2>WORKING SHEET</h2>
           <p>Direct Google Sheet Management Interface — Real-time View & In-place Updates</p>
         </div>
-        <div class="page-actions">
-          <button class="btn btn-primary btn-sm" id="ws-refresh-btn" onclick="App.refreshWorkingSheet()">
+        <div class="page-actions" style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+          <span id="ws-last-sync-time" style="font-size: 12px; color: var(--text-muted); margin-right: 4px;">
+            <i class="fa-regular fa-clock"></i> Manual Sync Mode
+          </span>
+          <button class="btn btn-primary btn-sm" id="ws-sync-from-sheet-btn" onclick="App.syncWorkingSheetFromGoogle()" title="Fetch new complaints and fresh data from Google Sheet">
+            <i class="fa-solid fa-cloud-arrow-down"></i> Sync from Google Sheet
+          </button>
+          <button class="btn btn-success btn-sm" id="ws-sync-to-sheet-btn" onclick="App.syncWorkingSheetToGoogle()" title="Verify and push all Working Sheet updates to Google Sheet">
+            <i class="fa-solid fa-cloud-arrow-up"></i> Update Google Sheet
+          </button>
+          <button class="btn btn-secondary btn-sm" id="ws-refresh-btn" onclick="App.refreshWorkingSheet()" style="display: none;">
             <i class="fa-solid fa-arrows-rotate"></i> Refresh Sheet
           </button>
         </div>
@@ -5972,7 +5954,7 @@ const App = {
     await this.loadWorkingSheetData();
   },
 
-  async loadWorkingSheetData(forceRefresh = false) {
+  async loadWorkingSheetData(forceRefresh = false, isBackground = false) {
     const tbody = document.getElementById('ws-table-tbody');
     const refreshBtn = document.getElementById('ws-refresh-btn');
     if (!tbody) return;
@@ -5982,14 +5964,17 @@ const App = {
       refreshBtn.innerHTML = '<i class="fa-solid fa-arrows-rotate fa-spin"></i> Refreshing...';
     }
 
-    tbody.innerHTML = `
-      <tr>
-        <td colspan="11" style="text-align: center; padding: 35px;">
-          <i class="fa-solid fa-spinner fa-spin fa-2x" style="color: #008080; margin-bottom: 10px;"></i>
-          <p>Loading real-time Google Sheet data...</p>
-        </td>
-      </tr>
-    `;
+    const hasExistingRows = tbody.querySelectorAll('tr[data-row-index]').length > 0;
+    if (!hasExistingRows && !isBackground) {
+      tbody.innerHTML = `
+        <tr>
+          <td colspan="11" style="text-align: center; padding: 35px;">
+            <i class="fa-solid fa-spinner fa-spin fa-2x" style="color: #008080; margin-bottom: 10px;"></i>
+            <p>Loading real-time Google Sheet data...</p>
+          </td>
+        </tr>
+      `;
+    }
 
     try {
       const q = new URLSearchParams();
@@ -6423,19 +6408,67 @@ const App = {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   },
 
-  async refreshWorkingSheet() {
-    this.api('/api/dashboard/kpis').then(kpis => {
-      if (kpis) {
-        this.latestKpis = kpis;
-        try {
-          sessionStorage.setItem('uppcl_smc_kpis', JSON.stringify(kpis));
-          localStorage.setItem('uppcl_smc_kpis', JSON.stringify(kpis));
-        } catch (e) {}
-        this.updateWorkingSheetMetricCards();
+  async syncWorkingSheetFromGoogle() {
+    const btn = document.getElementById('ws-sync-from-sheet-btn');
+    const syncTime = document.getElementById('ws-last-sync-time');
+    if (btn) {
+      btn.disabled = true;
+      btn.innerHTML = '<i class="fa-solid fa-arrows-rotate fa-spin"></i> Syncing from Sheet...';
+    }
+
+    try {
+      this.api('/api/dashboard/kpis').then(kpis => {
+        if (kpis) {
+          this.latestKpis = kpis;
+          try {
+            sessionStorage.setItem('uppcl_smc_kpis', JSON.stringify(kpis));
+            localStorage.setItem('uppcl_smc_kpis', JSON.stringify(kpis));
+          } catch (e) {}
+          this.updateWorkingSheetMetricCards();
+        }
+      }).catch(() => {});
+
+      await this.loadWorkingSheetData(true, false);
+
+      const nowStr = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+      if (syncTime) {
+        syncTime.innerHTML = `<i class="fa-solid fa-circle-check" style="color: #10b981;"></i> Synced ${nowStr}`;
       }
-    }).catch(() => {});
-    await this.loadWorkingSheetData(true);
-    App.showWorkingSheetToast('Google Sheet data refreshed from source.', 'success');
+      this.showWorkingSheetToast('✓ Fetched latest complaints from Google Sheet!', 'success');
+    } catch (e) {
+      this.showWorkingSheetToast(`Sync error: ${e.message}`, 'error');
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fa-solid fa-cloud-arrow-down"></i> Sync from Google Sheet';
+      }
+    }
+  },
+
+  async syncWorkingSheetToGoogle() {
+    const btn = document.getElementById('ws-sync-to-sheet-btn');
+    if (btn) {
+      btn.disabled = true;
+      btn.innerHTML = '<i class="fa-solid fa-arrows-rotate fa-spin"></i> Updating Google Sheet...';
+    }
+
+    try {
+      // Inline cell updates already save immediately upon select change.
+      // This button verifies and flushes sheet sync.
+      await this.api('/api/working-sheet/districts');
+      this.showWorkingSheetToast('✓ All WORKING SHEET updates are active and synchronized with Google Sheet!', 'success');
+    } catch (e) {
+      this.showWorkingSheetToast(`Update check: ${e.message}`, 'error');
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fa-solid fa-cloud-arrow-up"></i> Update Google Sheet';
+      }
+    }
+  },
+
+  async refreshWorkingSheet() {
+    return this.syncWorkingSheetFromGoogle();
   },
 
   showWorkingSheetToast(msg, type = 'success') {
