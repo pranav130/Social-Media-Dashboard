@@ -5844,6 +5844,7 @@ const App = {
               <option value="All">All Picked</option>
               <option value="YES" ${this.workingSheetFilter.picked_status === 'YES' ? 'selected' : ''}>YES</option>
               <option value="NO" ${this.workingSheetFilter.picked_status === 'NO' ? 'selected' : ''}>NO</option>
+              <option value="OTHER" ${this.workingSheetFilter.picked_status === 'OTHER' ? 'selected' : ''}>OTHER</option>
               <option value="TROLL" ${this.workingSheetFilter.picked_status === 'TROLL' ? 'selected' : ''}>TROLL</option>
               <option value="APPRECIATION" ${this.workingSheetFilter.picked_status === 'APPRECIATION' ? 'selected' : ''}>APPRECIATION</option>
             </select>
