@@ -821,7 +821,7 @@ async function updateWorkingSheetCell({
   user
 }) {
   const normCol = String(columnName || '').trim();
-  const rawVal = String(newValue !== undefined && newValue !== null ? newValue : '').trim();
+  let rawVal = String(newValue !== undefined && newValue !== null ? newValue : '').trim();
 
   // 1. Whitelist validation: Allowed editable columns
   if (!EDITABLE_COLUMNS.includes(normCol)) {
