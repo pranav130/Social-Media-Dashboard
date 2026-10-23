@@ -1738,6 +1738,13 @@ async function runTests() {
     const seedCode = fs.readFileSync('seed.js', 'utf8');
     assert.ok(seedCode.includes("full_name: 'SMC-Operator'"), 'seed.js must configure SMC-Operator');
     assert.ok(!seedCode.includes("Rajesh Verma (SMC Operator)"), 'seed.js must not retain old operator name');
+
+    const appJs = fs.readFileSync('public/js/app.js', 'utf8');
+    assert.ok(appJs.includes('getUserDisplayName()'), 'app.js must provide getUserDisplayName');
+    assert.ok(appJs.includes('SMC-Operator'), 'app.js must enforce SMC-Operator display');
+
+    const serverCode = fs.readFileSync('server.js', 'utf8');
+    assert.ok(serverCode.includes("user.full_name = 'SMC-Operator'"), 'server.js authMiddleware must enforce SMC-Operator');
   });
 
   it('2. Frontend app.js contains Download Excel button and Delete column', () => {

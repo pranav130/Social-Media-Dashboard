@@ -188,6 +188,16 @@ const App = {
     ]
   },
 
+  getUserDisplayName() {
+    if (!this.user) return 'User';
+    const name = String(this.user.full_name || '').trim();
+    const uName = String(this.user.username || '').toLowerCase();
+    if (uName === 'operator' || name.includes('Rajesh Verma')) {
+      return 'SMC-Operator';
+    }
+    return name || 'User';
+  },
+
   init() {
     this.initTheme();
     this.token = localStorage.getItem('uppcl_smc_token');
@@ -198,12 +208,32 @@ const App = {
         if (this.user) {
           if (this.user.role === 'Super Administrator') this.user.role = 'Administrator';
           if (this.user.full_name === 'Super Administrator') this.user.full_name = 'Administrator';
+          if (this.user.username === 'operator' || (this.user.full_name && this.user.full_name.includes('Rajesh Verma'))) {
+            this.user.full_name = 'SMC-Operator';
+            localStorage.setItem('uppcl_smc_user', JSON.stringify(this.user));
+          }
         }
       } catch(e) {}
     }
 
     this.startClock();
     if (this.token) {
+      // Refresh user profile asynchronously from database
+      this.api('/api/auth/me').then(res => {
+        if (res && res.user) {
+          const freshUser = res.user;
+          if (freshUser.username === 'operator' || (freshUser.full_name && freshUser.full_name.includes('Rajesh Verma'))) {
+            freshUser.full_name = 'SMC-Operator';
+          }
+          this.user = freshUser;
+          localStorage.setItem('uppcl_smc_user', JSON.stringify(freshUser));
+          const nameEl = document.querySelector('.user-name');
+          if (nameEl) nameEl.textContent = this.getUserDisplayName();
+          const avatarEl = document.querySelector('.user-avatar');
+          if (avatarEl) avatarEl.textContent = this.getUserDisplayName().charAt(0).toUpperCase();
+        }
+      }).catch(() => {});
+
       const curRole = (this.user?.role || '').toLowerCase();
       const curUser = (this.user?.username || '').toLowerCase();
       if (curRole !== 'operator' && curRole !== 'social media cell operator' && curUser !== 'smc_operator' && curUser !== 'operator') {
@@ -531,6 +561,9 @@ const App = {
     if (user) {
       if (user.role === 'Super Administrator') user.role = 'Administrator';
       if (user.full_name === 'Super Administrator') user.full_name = 'Administrator';
+      if (user.username === 'operator' || (user.full_name && user.full_name.includes('Rajesh Verma'))) {
+        user.full_name = 'SMC-Operator';
+      }
     }
     this.user = user;
     localStorage.setItem('uppcl_smc_token', token);
@@ -775,9 +808,9 @@ const App = {
               </button>
 
               <div class="user-pill">
-                <div class="user-avatar">${this.user.full_name.charAt(0).toUpperCase()}</div>
+                <div class="user-avatar">${this.getUserDisplayName().charAt(0).toUpperCase()}</div>
                 <div class="user-info">
-                  <span class="user-name">${this.user.full_name}</span>
+                  <span class="user-name">${this.getUserDisplayName()}</span>
                   <span class="user-role-discom">${this.user.role} ${this.user.discom_name ? `• ${this.user.discom_name}` : ''}</span>
                 </div>
                 <button class="btn-logout" title="Sign Out" onclick="App.logout()">

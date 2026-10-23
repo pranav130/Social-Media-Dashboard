@@ -183,6 +183,9 @@ function authMiddleware(req, res, next) {
     if (!user || user.is_active !== 1) {
       return res.status(401).json({ error: 'Account inactive or not found' });
     }
+    if (user.username === 'operator' || user.id === 2 || (user.full_name && user.full_name.includes('Rajesh Verma'))) {
+      user.full_name = 'SMC-Operator';
+    }
     req.user = user;
 
     // Strict Role-Based Server-Side Authorization for Restricted Operator Role
@@ -302,12 +305,16 @@ app.post('/api/auth/login', (req, res) => {
 
   logAudit(req, user, 'LOGIN_SUCCESS', 'USER', user.id, `User logged in from ${ip}`);
 
+  const userFullName = (user.username === 'operator' || user.id === 2 || (user.full_name && user.full_name.includes('Rajesh Verma')))
+    ? 'SMC-Operator'
+    : user.full_name;
+
   res.json({
     token,
     user: {
       id: user.id,
       username: user.username,
-      full_name: user.full_name,
+      full_name: userFullName,
       email: user.email,
       role: user.role,
       discom_name: user.discom_name,
@@ -3775,6 +3782,8 @@ if (process.env.NO_SERVER_AUTOSTART !== 'true') {
         const hash = bcrypt.hashSync(u.pass, salt);
         db.run("UPDATE users SET password_hash = ? WHERE username = ?;", [hash, u.username]);
       }
+      db.run("UPDATE users SET full_name = 'SMC-Operator' WHERE username = 'operator' OR id = 2;");
+      db.run("UPDATE users SET full_name = 'SMC-Operator' WHERE full_name LIKE '%Rajesh Verma%';");
       db.saveToDiskSync();
       console.log('[Auth] Default passwords synchronized to smaller passwords (admin123, etc.)');
 
