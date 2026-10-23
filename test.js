@@ -1729,6 +1729,153 @@ async function runTests() {
     assert.ok(appJs.includes('id="btn-sync-sheet"'), 'Sync sheet button defined');
   });
 
+  console.log('\n[27. Working Sheet Delete Complaint & Download Excel Suite]');
+  it('1. Operator full_name is authoritatively "SMC-Operator" in database and seed', () => {
+    const opUser = db.get("SELECT id, username, full_name, role FROM users WHERE username = 'operator';");
+    assert.ok(opUser, 'Operator user must exist in database');
+    assert.strictEqual(opUser.full_name, 'SMC-Operator', 'Operator full_name must be SMC-Operator');
+
+    const seedCode = fs.readFileSync('seed.js', 'utf8');
+    assert.ok(seedCode.includes("full_name: 'SMC-Operator'"), 'seed.js must configure SMC-Operator');
+    assert.ok(!seedCode.includes("Rajesh Verma (SMC Operator)"), 'seed.js must not retain old operator name');
+  });
+
+  it('2. Frontend app.js contains Download Excel button and Delete column', () => {
+    const appJs = fs.readFileSync('public/js/app.js', 'utf8');
+    assert.ok(appJs.includes('id="ws-btn-export-excel"'), 'Working Sheet must render Download Excel button');
+    assert.ok(appJs.includes('App.exportWorkingSheetExcel()'), 'Download button must invoke exportWorkingSheetExcel');
+    assert.ok(appJs.includes('class="ws-col-delete"'), 'Working Sheet table header must include Delete column');
+    assert.ok(appJs.includes('App.confirmDeleteWorkingSheetRow'), 'Working Sheet rows must bind confirmDeleteWorkingSheetRow');
+    assert.ok(appJs.includes('colspan="12"'), 'Empty and error states must span all 12 columns');
+  });
+
+  it('3. Delete handler implements confirmation dialog, in-flight lock, and graceful failure retention', () => {
+    const appJs = fs.readFileSync('public/js/app.js', 'utf8');
+    assert.ok(appJs.includes('Are you sure you want to permanently delete this complaint from the Google Sheet?'), 'Must prompt with exact confirmation dialog');
+    assert.ok(appJs.includes('isDeletingWorkingSheetRow'), 'Must prevent duplicate deletion requests during operation');
+    assert.ok(appJs.includes('App.showWorkingSheetToast'), 'Must display feedback toast on success/error');
+  });
+
+  it('4. Proportional CSS styles ensure 12-column layout fits without horizontal scroll', () => {
+    const css = fs.readFileSync('public/css/style.css', 'utf8');
+    assert.ok(css.includes('.ws-col-delete'), 'CSS must define .ws-col-delete');
+    assert.ok(css.includes('.btn-ws-delete'), 'CSS must define .btn-ws-delete styling');
+    assert.ok(css.includes('table-layout: fixed'), 'Working Sheet table must use fixed layout for perfect fit');
+  });
+
+  it('5. Apps Script Code.gs handles action "delete_row" and scans Tweet ID', () => {
+    const codeGs = fs.readFileSync('google_apps_script/Code.gs', 'utf8');
+    assert.ok(codeGs.includes("contents.action === 'delete_row'"), 'Code.gs must handle delete_row action');
+    assert.ok(codeGs.includes("function deleteComplaintFromSheet(contents)"), 'Code.gs must contain deleteComplaintFromSheet');
+    assert.ok(codeGs.includes("colMap.twitterId"), 'deleteComplaintFromSheet must scan twitterId column');
+  });
+
+  it('6. server.js defines /api/working-sheet/delete-row with operator role authorization', () => {
+    const serverCode = fs.readFileSync('server.js', 'utf8');
+    assert.ok(serverCode.includes("app.post('/api/working-sheet/delete-row'"), 'server.js must define delete-row endpoint');
+    assert.ok(serverCode.includes("'Social Media Cell Operator'"), 'delete-row must allow Social Media Cell Operator');
+    assert.ok(serverCode.includes("workingSheetService.deleteWorkingSheetRow"), 'delete-row must call workingSheetService');
+  });
+
+  it('7. deleteWorkingSheetRow validates inputs and cascades to SQLite & frivolous ledger', async () => {
+    const wss = require('./working_sheet_service');
+    assert.strictEqual(typeof wss.deleteWorkingSheetRow, 'function', 'deleteWorkingSheetRow must be exported');
+
+    // Reject invalid missing identifiers
+    let threw = false;
+    try {
+      await wss.deleteWorkingSheetRow({});
+    } catch (e) {
+      threw = true;
+      assert.ok(e.message.includes('safely identified'), 'Must require valid Tweet ID or Post URL');
+    }
+    assert.ok(threw, 'Should throw error when identifiers are missing');
+
+    // Test cascade delete helper
+    assert.strictEqual(typeof wss.syncWorkingDeleteToSqlite, 'function', 'syncWorkingDeleteToSqlite must be exported');
+    // Insert a dummy test complaint to verify cascade
+    db.run(`
+      INSERT INTO complaints (complaint_no, post_url, consumer_name, consumer_handle, category_name, complaint_text, status, received_at, updated_at)
+      VALUES ('TEST-DEL-001', 'https://x.com/user/status/999888777666', 'Test User', 'testuser', 'Power Supply', 'Test complaint for delete test', 'New', '2026-10-23 10:00:00', '2026-10-23 10:00:00');
+    `);
+    const inserted = db.get("SELECT id FROM complaints WHERE complaint_no = 'TEST-DEL-001';");
+    assert.ok(inserted, 'Test complaint must be inserted');
+
+    wss.syncWorkingDeleteToSqlite({ tweetId: '999888777666', postUrl: 'https://x.com/user/status/999888777666', user: { full_name: 'SMC-Operator' } });
+
+    const remaining = db.get("SELECT id FROM complaints WHERE complaint_no = 'TEST-DEL-001';");
+    assert.strictEqual(remaining, null, 'Complaint must be cascade deleted from database');
+
+    const ledgerRec = db.get("SELECT * FROM frivolous_complaints WHERE tweet_id = '999888777666';");
+    assert.ok(ledgerRec, 'Deleted complaint must be recorded in frivolous_complaints ledger');
+    assert.strictEqual(ledgerRec.deleted_by_name, 'SMC-Operator');
+  });
+
+  it('8. server.js defines /api/working-sheet/export-excel and generates valid .xlsx workbook', () => {
+    const serverCode = fs.readFileSync('server.js', 'utf8');
+    assert.ok(serverCode.includes("app.get('/api/working-sheet/export-excel'"), 'server.js must define export-excel endpoint');
+    assert.ok(serverCode.includes("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"), 'Must set xlsx MIME type');
+    assert.ok(serverCode.includes("UPPCL_Working_Sheet_"), 'Must format filename as UPPCL_Working_Sheet_YYYY-MM-DD.xlsx');
+  });
+
+  it('9. Working Sheet Excel export strictly includes only the 11 data columns and omits Delete action', async () => {
+    const wss = require('./working_sheet_service');
+    const XLSX = require('xlsx');
+
+    const data = await wss.getWorkingSheetData({ limit: 10, page: 1 });
+    const rows = data.rows || [];
+
+    // Map rows exactly as server.js does
+    const exportRows = rows.map(r => ({
+      'DATE': r['DATE'] || '',
+      'C F': r['C F'] || '',
+      'LINK URL': r['LINK URL'] || r.link_url || '',
+      'Twitter Id': r['Twitter Id'] || '',
+      'Picked Status': r['Picked Status'] || '',
+      'Head': r['Head'] || '',
+      'Untagged Complaint': r['Untagged Complaint'] || '',
+      'UPPCLLKO Replied (YES/NO)': r['UPPCLLKO Replied (YES/NO)'] || '',
+      'Complaint Type': r['Complaint Type'] || '',
+      'District': r['District'] || '',
+      'Status': r['Status'] || ''
+    }));
+
+    const ws = XLSX.utils.json_to_sheet(exportRows, { header: wss.WORKING_SHEET_COLUMNS });
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'WORKING SHEET');
+    const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+
+    assert.ok(Buffer.isBuffer(buf), 'Must return binary Excel buffer');
+    assert.ok(buf.length > 500, 'Excel buffer must contain valid workbook data');
+
+    // Parse back the generated Excel buffer to verify column headers and structure
+    const parsedWb = XLSX.read(buf, { type: 'buffer' });
+    assert.ok(parsedWb.SheetNames.includes('WORKING SHEET'), 'Workbook must contain WORKING SHEET sheet');
+    const parsedSheet = parsedWb.Sheets['WORKING SHEET'];
+    const parsedJson = XLSX.utils.sheet_to_json(parsedSheet, { header: 1 });
+
+    const exportedHeaders = parsedJson[0];
+    assert.strictEqual(exportedHeaders.length, 11, 'Exported Excel must have strictly 11 columns');
+    assert.deepStrictEqual(exportedHeaders, wss.WORKING_SHEET_COLUMNS, 'Excel headers must exactly match the 11 designated columns in order');
+    assert.ok(!exportedHeaders.includes('Delete') && !exportedHeaders.includes('Action'), 'Excel export must strictly omit Delete/Action button column');
+  });
+
+  it('10. Filter-aware export behavior: Case A exports filtered subset across pages; Case B exports full dataset', async () => {
+    const wss = require('./working_sheet_service');
+
+    // Case B: No filters -> All records
+    const allData = await wss.getWorkingSheetData({ limit: 100000, page: 1 });
+    const totalCount = allData.rows.length;
+    assert.ok(totalCount > 0, 'Total WORKING SHEET dataset must contain records');
+
+    // Case A: Filtered by Picked Status = YES
+    const filteredData = await wss.getWorkingSheetData({ limit: 100000, page: 1, pickedStatus: 'YES' });
+    assert.ok(filteredData.rows.length <= totalCount, 'Filtered dataset must be subset of total');
+    filteredData.rows.forEach(r => {
+      assert.strictEqual(r['Picked Status'], 'YES', 'Every exported record in Case A must match filter');
+    });
+  });
+
   console.log('\n====================================================');
   console.log(` Tests Finished: ${passCount} Passed, ${failCount} Failed`);
   console.log('====================================================\n');

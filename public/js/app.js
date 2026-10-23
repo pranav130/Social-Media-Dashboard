@@ -5858,6 +5858,11 @@ const App = {
             <button class="btn btn-secondary btn-sm" onclick="App.resetWorkingSheetFilters()" title="Reset All Filters">
               <i class="fa-solid fa-arrow-rotate-left"></i> Reset
             </button>
+            <button id="ws-btn-export-excel" class="btn btn-success btn-sm" onclick="App.exportWorkingSheetExcel()"
+                    title="Download WORKING SHEET as Excel (.xlsx)"
+                    style="background-color: #10b981; border-color: #059669; color: #ffffff; font-weight: 600; display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 4px 12px; font-size: 12px; cursor: pointer;">
+              <i class="fa-solid fa-file-excel"></i> Download Excel
+            </button>
           </div>
         </div>
 
@@ -5903,11 +5908,14 @@ const App = {
                 <th class="ws-col-status">
                   <span>Status</span> <i class="fa-solid fa-pen" style="font-size: 9px; color: #008080;" title="Editable Dropdown"></i>
                 </th>
+                <th class="ws-col-delete" style="text-align: center;" title="Permanently delete complaint from Google Sheet">
+                  <span>Delete</span>
+                </th>
               </tr>
             </thead>
             <tbody id="ws-table-tbody">
               <tr>
-                <td colspan="11" style="text-align: center; padding: 40px;">
+                <td colspan="12" style="text-align: center; padding: 40px;">
                   <i class="fa-solid fa-spinner fa-spin fa-2x" style="color: #008080; margin-bottom: 10px;"></i>
                   <p>Fetching Google Sheet (Twitter Complaint List, 11 columns)...</p>
                 </td>
@@ -6040,7 +6048,7 @@ const App = {
       console.error('Error loading Working Sheet data:', err);
       tbody.innerHTML = `
         <tr>
-          <td colspan="11" style="text-align: center; padding: 30px; color: #ef4444;">
+          <td colspan="12" style="text-align: center; padding: 30px; color: #ef4444;">
             <i class="fa-solid fa-triangle-exclamation fa-2x" style="margin-bottom: 8px;"></i>
             <p><b>Error loading Working Sheet:</b> ${err.message}</p>
             <button class="btn btn-primary btn-sm" onclick="App.loadWorkingSheetData(true)" style="margin-top: 10px;">
@@ -6069,7 +6077,7 @@ const App = {
     if (rows.length === 0) {
       tbody.innerHTML = `
         <tr>
-          <td colspan="11" style="text-align: center; padding: 40px; color: var(--text-muted, #64748b);">
+          <td colspan="12" style="text-align: center; padding: 40px; color: var(--text-muted, #64748b);">
             <i class="fa-solid fa-magnifying-glass fa-2x" style="margin-bottom: 8px; opacity: 0.5;"></i>
             <p>No complaints matched your search/filter criteria in Google Sheets.</p>
           </td>
@@ -6221,6 +6229,15 @@ const App = {
               <option value="" disabled ${!statusVal ? 'selected' : ''}>Select Status...</option>
               ${statusOptions}
             </select>
+          </td>
+
+          <!-- 12. Delete Action -->
+          <td class="ws-col-delete" style="text-align: center;">
+            <button class="btn btn-danger btn-sm btn-ws-delete"
+                    onclick="App.confirmDeleteWorkingSheetRow(this, ${sheetRowIdx}, '${tweetId}', '${rawPostUrl}')"
+                    title="Permanently delete this complaint from Google Sheet">
+              <i class="fa-solid fa-trash-can" style="font-size: 10px;"></i> Delete
+            </button>
           </td>
         </tr>
       `;
@@ -6406,6 +6423,142 @@ const App = {
     this.workingSheetFilter.page = pageNum;
     this.loadWorkingSheetData();
     window.scrollTo({ top: 0, behavior: 'smooth' });
+  },
+
+  async confirmDeleteWorkingSheetRow(btnEl, sheetRowIndex, tweetId, rawPostUrl) {
+    if (this.isDeletingWorkingSheetRow) return;
+
+    const confirmMsg = "Are you sure you want to permanently delete this complaint from the Google Sheet?";
+    if (!confirm(confirmMsg)) {
+      return;
+    }
+
+    const postUrl = decodeURIComponent(rawPostUrl || '');
+    const rowEl = btnEl ? btnEl.closest('tr') : document.querySelector(`tr[data-row-index="${sheetRowIndex}"]`);
+    const origBtnHtml = btnEl ? btnEl.innerHTML : '<i class="fa-solid fa-trash-can" style="font-size: 10px;"></i> Delete';
+
+    if (btnEl) {
+      btnEl.disabled = true;
+      btnEl.innerHTML = '<i class="fa-solid fa-spinner fa-spin" style="font-size: 10px;"></i> Deleting...';
+    }
+    this.isDeletingWorkingSheetRow = true;
+
+    try {
+      const res = await this.api('/api/working-sheet/delete-row', {
+        method: 'POST',
+        body: JSON.stringify({
+          tweet_id: tweetId,
+          post_url: postUrl,
+          sheet_row_index: sheetRowIndex
+        })
+      });
+
+      if (!res || !res.success) {
+        throw new Error(res?.error || 'Failed to delete complaint from Google Sheet');
+      }
+
+      // Smooth visual removal of row
+      if (rowEl) {
+        rowEl.style.transition = 'all 0.3s ease';
+        rowEl.style.opacity = '0';
+        rowEl.style.backgroundColor = '#fee2e2';
+        setTimeout(() => {
+          rowEl.remove();
+          App.loadWorkingSheetData(false, true);
+        }, 300);
+      } else {
+        App.loadWorkingSheetData(false, true);
+      }
+
+      App.showWorkingSheetToast(
+        `Complaint (Row ${res.deletedRow || sheetRowIndex}) deleted permanently from Google Sheet!`,
+        'success'
+      );
+
+    } catch (err) {
+      console.error('Delete complaint failed:', err);
+      if (btnEl) {
+        btnEl.disabled = false;
+        btnEl.innerHTML = origBtnHtml;
+      }
+      App.showWorkingSheetToast(`Delete Failed: ${err.message}`, 'error');
+    } finally {
+      this.isDeletingWorkingSheetRow = false;
+    }
+  },
+
+  async exportWorkingSheetExcel() {
+    const btn = document.getElementById('ws-btn-export-excel');
+    if (btn && btn.disabled) return;
+
+    const originalHtml = btn ? btn.innerHTML : '<i class="fa-solid fa-file-excel"></i> Download Excel';
+    if (btn) {
+      btn.disabled = true;
+      btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Exporting...';
+    }
+
+    try {
+      const q = new URLSearchParams();
+      if (this.workingSheetFilter.search && this.workingSheetFilter.search.trim()) {
+        q.append('search', this.workingSheetFilter.search.trim());
+      }
+      if (this.workingSheetFilter.picked_status && this.workingSheetFilter.picked_status !== 'All') {
+        q.append('picked_status', this.workingSheetFilter.picked_status);
+      }
+      if (this.workingSheetFilter.head && this.workingSheetFilter.head !== 'All') {
+        q.append('head', this.workingSheetFilter.head);
+      }
+      if (this.workingSheetFilter.district && this.workingSheetFilter.district !== 'All') {
+        q.append('district', this.workingSheetFilter.district);
+      }
+      if (this.workingSheetFilter.complaint_type && this.workingSheetFilter.complaint_type !== 'All') {
+        q.append('complaint_type', this.workingSheetFilter.complaint_type);
+      }
+      if (this.workingSheetFilter.sortBy) {
+        q.append('sort_by', this.workingSheetFilter.sortBy);
+      }
+      if (this.workingSheetFilter.sortOrder) {
+        q.append('sort_order', this.workingSheetFilter.sortOrder);
+      }
+
+      const res = await fetch(`/api/working-sheet/export-excel?${q.toString()}`, {
+        headers: this.token ? { 'Authorization': `Bearer ${this.token}` } : {}
+      });
+
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.error || `Export failed with status ${res.status}`);
+      }
+
+      let filename = `UPPCL_Working_Sheet_${new Date().toISOString().substring(0, 10)}.xlsx`;
+      const disposition = res.headers.get('content-disposition');
+      if (disposition && disposition.indexOf('filename=') !== -1) {
+        const matches = /filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/.exec(disposition);
+        if (matches != null && matches[1]) {
+          filename = matches[1].replace(/['"]/g, '').trim();
+        }
+      }
+
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+
+      App.showWorkingSheetToast(`Excel file downloaded successfully (${filename})`, 'success');
+    } catch (err) {
+      console.error('Working sheet excel export failed:', err);
+      App.showWorkingSheetToast(`Excel export failed: ${err.message}`, 'error');
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = originalHtml;
+      }
+    }
   },
 
   async syncWorkingSheetFromGoogle() {
