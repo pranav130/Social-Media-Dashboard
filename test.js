@@ -1505,7 +1505,7 @@ async function runTests() {
     ['YES', 'NO', 'OTHER', 'TROLL', 'APPRECIATION'].forEach(opt => {
       assert.ok(wss.PICKED_STATUS_OPTIONS.includes(opt), `Picked Status must include ${opt}`);
     });
-    assert.deepStrictEqual(wss.HEAD_OPTIONS, ['akm', 'akc', 'emm', 'emc', 'mdc', 'mdm', 'upm', 'upc', 'cmc', 'cmm', 'ako', 'NEWS', 'GROK']);
+    assert.deepStrictEqual(wss.HEAD_OPTIONS, ['akm', 'akc', 'emm', 'emc', 'mdc', 'mdm', 'upm', 'upc', 'upl', 'cmc', 'cmm', 'ako', 'NEWS', 'GROK']);
     assert.deepStrictEqual(wss.UNTAGGED_OPTIONS, ['YES', 'NO']);
     assert.deepStrictEqual(wss.UPPCLLKO_REPLIED_OPTIONS, ['YES', 'NO']);
     assert.strictEqual(wss.COMPLAINT_TYPE_OPTIONS.length, 29, 'Must have exactly 29 standard complaint types');

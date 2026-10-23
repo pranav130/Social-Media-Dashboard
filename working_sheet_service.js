@@ -61,7 +61,7 @@ const UPPCLLKO_REPLIED_OPTIONS = ['YES', 'NO'];
 
 const HEAD_OPTIONS = [
   'akm', 'akc', 'emm', 'emc', 'mdc', 'mdm',
-  'upm', 'upc', 'cmc', 'cmm', 'ako', 'NEWS', 'GROK'
+  'upm', 'upc', 'upl', 'cmc', 'cmm', 'ako', 'NEWS', 'GROK'
 ];
 
 const UNTAGGED_OPTIONS = ['YES', 'NO'];
@@ -828,18 +828,37 @@ async function updateWorkingSheetCell({
     throw new Error(`Column "${normCol}" is formula-controlled or read-only and cannot be manually edited.`);
   }
 
-  // 2. Validate value against permitted options
-  if (normCol === 'Picked Status' && !PICKED_STATUS_OPTIONS.includes(rawVal)) {
-    throw new Error(`Invalid Picked Status "${rawVal}". Permitted: ${PICKED_STATUS_OPTIONS.join(', ')}`);
+  // 2. Validate value against permitted options (case-insensitive normalization)
+  if (normCol === 'Picked Status') {
+    const matched = PICKED_STATUS_OPTIONS.find(p => p.toUpperCase() === rawVal.toUpperCase());
+    if (!matched) {
+      throw new Error(`Invalid Picked Status "${rawVal}". Permitted: ${PICKED_STATUS_OPTIONS.join(', ')}`);
+    }
+    rawVal = matched;
   }
-  if (normCol === 'Head' && !HEAD_OPTIONS.includes(rawVal)) {
-    throw new Error(`Invalid Head code "${rawVal}". Permitted: ${HEAD_OPTIONS.join(', ')}`);
+  if (normCol === 'Head') {
+    const matched = HEAD_OPTIONS.find(h => h.toLowerCase() === rawVal.toLowerCase());
+    if (!matched) {
+      throw new Error(`Invalid Head code "${rawVal}". Permitted: ${HEAD_OPTIONS.join(', ')}`);
+    }
+    rawVal = matched;
   }
-  if (normCol === 'Untagged Complaint' && !UNTAGGED_OPTIONS.includes(rawVal)) {
-    throw new Error(`Invalid Untagged option "${rawVal}". Permitted: YES, NO`);
+  if (normCol === 'Untagged Complaint') {
+    const matched = UNTAGGED_OPTIONS.find(u => u.toUpperCase() === rawVal.toUpperCase());
+    if (!matched) {
+      throw new Error(`Invalid Untagged option "${rawVal}". Permitted: YES, NO`);
+    }
+    rawVal = matched;
   }
-  if (normCol === 'UPPCLLKO Replied (YES/NO)' && !['YES', 'NO', '', '-'].includes(rawVal.toUpperCase())) {
-    throw new Error(`Invalid UPPCLLKO Replied option "${rawVal}". Permitted: YES, NO`);
+  if (normCol === 'UPPCLLKO Replied (YES/NO)') {
+    const upper = rawVal.toUpperCase();
+    if (upper === 'YES' || upper === 'NO') {
+      rawVal = upper;
+    } else if (rawVal === '' || rawVal === '-') {
+      rawVal = '';
+    } else {
+      throw new Error(`Invalid UPPCLLKO Replied option "${rawVal}". Permitted: YES, NO`);
+    }
   }
   if (normCol === 'Complaint Type' && !COMPLAINT_TYPE_OPTIONS.includes(rawVal)) {
     throw new Error(`Invalid Complaint Type "${rawVal}".`);
