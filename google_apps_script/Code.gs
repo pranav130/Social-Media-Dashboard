@@ -2033,7 +2033,7 @@ function fixMisclassifiedComplaints() {
  */
 function doGet(e) {
   try {
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const ss = getActiveWorkingSpreadsheet(e && e.parameter ? e.parameter : null);
     let sheet = ss.getSheetByName('Twitter Complaint List');
     if (!sheet) {
       const sheets = ss.getSheets();
@@ -2152,8 +2152,28 @@ function doPost(e) {
         .setMimeType(ContentService.MimeType.JSON);
     }
     if (contents.action === 'get_district_list') {
-      const districtData = getDistrictListData();
+      const districtData = getDistrictListData(contents);
       return ContentService.createTextOutput(JSON.stringify(districtData))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+    if (contents.action === 'archive_and_create_monthly_sheet') {
+      const rotationResult = archiveAndCreateMonthlySheet(contents);
+      return ContentService.createTextOutput(JSON.stringify(rotationResult))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+    if (contents.action === 'get_active_sheet_config') {
+      const config = getActiveSheetConfigInScript();
+      return ContentService.createTextOutput(JSON.stringify(config))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+    if (contents.action === 'set_active_sheet') {
+      const setRes = setActiveSheetInScript(contents);
+      return ContentService.createTextOutput(JSON.stringify(setRes))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+    if (contents.action === 'rollback_sheet') {
+      const rbRes = rollbackActiveSheetInScript(contents);
+      return ContentService.createTextOutput(JSON.stringify(rbRes))
         .setMimeType(ContentService.MimeType.JSON);
     }
 
@@ -3032,7 +3052,7 @@ function classifyTweetInScript(text, username) {
  * Deletes a complaint row from Google Sheet by URL, Tweet ID, or row index.
  */
 function deleteComplaintFromSheet(contents) {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = getActiveWorkingSpreadsheet(contents);
   let sheet = ss.getSheetByName('Twitter Complaint List');
   if (!sheet) {
     sheet = ss.getActiveSheet();
@@ -4278,7 +4298,7 @@ function removeOfficialRepliedFromSheet() {
  * Serves only the 11 designated Working Sheet columns to the dashboard
  */
 function getWorkingSheetData(contents) {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = getActiveWorkingSpreadsheet(contents);
   let sheet = ss.getSheetByName('Twitter Complaint List');
   if (!sheet) {
     const sheets = ss.getSheets();
@@ -4385,7 +4405,7 @@ function getWorkingSheetData(contents) {
  * Updates a single approved cell in Google Sheet and verifies the write
  */
 function updateWorkingSheetCell(contents) {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = getActiveWorkingSpreadsheet(contents);
   let sheet = ss.getSheetByName('Twitter Complaint List');
   if (!sheet) {
     const sheets = ss.getSheets();
@@ -4551,8 +4571,8 @@ function updateWorkingSheetCell(contents) {
 /**
  * Returns dynamic district mapping from Discom_District_List sheet
  */
-function getDistrictListData() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+function getDistrictListData(contents) {
+  const ss = getActiveWorkingSpreadsheet(contents);
   const mappingInfo = getDistrictMappingFromListSheet(ss);
   if (!mappingInfo || !mappingInfo.sheet) {
     return { status: 'error', error: 'Discom_District_List sheet could not be loaded.' };
@@ -4579,4 +4599,183 @@ function getDistrictListData() {
     total: list.length,
     districts: list
   };
+}
+
+/**
+ * ==============================================================================
+ * AUTOMATIC MONTHLY ROTATION & GOOGLE DRIVE ARCHIVING ENGINE
+ * ==============================================================================
+ */
+
+/**
+ * Helper to dynamically resolve the authoritative active spreadsheet:
+ * 1. Explicit spreadsheet ID in request payload
+ * 2. Persistent ScriptProperties ACTIVE_SPREADSHEET_ID (set during monthly rollover)
+ * 3. Default container-bound spreadsheet (SpreadsheetApp.getActiveSpreadsheet())
+ */
+function getActiveWorkingSpreadsheet(contents) {
+  var id = (contents && (contents.spreadsheetId || contents.currentSpreadsheetId || contents.targetSpreadsheetId)) ||
+           PropertiesService.getScriptProperties().getProperty('ACTIVE_SPREADSHEET_ID');
+  if (id) {
+    try {
+      return SpreadsheetApp.openById(id);
+    } catch (e) {
+      Logger.log('Could not open spreadsheet by ID ' + id + ': ' + e.message);
+    }
+  }
+  return SpreadsheetApp.getActiveSpreadsheet();
+}
+
+/**
+ * Returns current active spreadsheet configuration stored in ScriptProperties
+ */
+function getActiveSheetConfigInScript() {
+  var props = PropertiesService.getScriptProperties();
+  var sId = props.getProperty('ACTIVE_SPREADSHEET_ID');
+  var sGid = props.getProperty('ACTIVE_WORKSHEET_GID');
+  var sMonth = props.getProperty('ACTIVE_MONTH');
+  var folderId = props.getProperty('ARCHIVE_FOLDER_ID');
+  var ss = getActiveWorkingSpreadsheet();
+  return {
+    status: 'ok',
+    activeSpreadsheetId: sId || ss.getId(),
+    activeWorksheetGid: sGid || (ss.getSheetByName('Twitter Complaint List') ? String(ss.getSheetByName('Twitter Complaint List').getSheetId()) : '0'),
+    activeMonth: sMonth || '',
+    archiveFolderId: folderId || '',
+    isBaseline: (!sId || sId === '10_210Ynr_F0Pj1Yov_pqjVZ1kaYIEWrbGF1jn16sgNY')
+  };
+}
+
+/**
+ * Sets active spreadsheet in ScriptProperties
+ */
+function setActiveSheetInScript(contents) {
+  if (!contents || !contents.spreadsheetId) {
+    return { status: 'error', error: 'Missing spreadsheetId' };
+  }
+  var props = PropertiesService.getScriptProperties();
+  props.setProperty('ACTIVE_SPREADSHEET_ID', String(contents.spreadsheetId).trim());
+  if (contents.worksheetGid) {
+    props.setProperty('ACTIVE_WORKSHEET_GID', String(contents.worksheetGid).trim());
+  }
+  if (contents.month) {
+    props.setProperty('ACTIVE_MONTH', String(contents.month).trim());
+  }
+  return {
+    status: 'ok',
+    activeSpreadsheetId: contents.spreadsheetId,
+    activeWorksheetGid: contents.worksheetGid || '0'
+  };
+}
+
+/**
+ * Restores baseline or target spreadsheet
+ */
+function rollbackActiveSheetInScript(contents) {
+  var targetId = (contents && contents.targetSpreadsheetId) || '10_210Ynr_F0Pj1Yov_pqjVZ1kaYIEWrbGF1jn16sgNY';
+  var targetGid = (contents && contents.targetWorksheetGid) || '598922870';
+  var props = PropertiesService.getScriptProperties();
+  props.setProperty('ACTIVE_SPREADSHEET_ID', targetId);
+  props.setProperty('ACTIVE_WORKSHEET_GID', targetGid);
+  props.deleteProperty('ACTIVE_MONTH');
+  return {
+    status: 'ok',
+    restoredSpreadsheetId: targetId,
+    restoredWorksheetGid: targetGid,
+    isBaseline: true
+  };
+}
+
+/**
+ * Core Monthly Archiving & Fresh Sheet Creation Engine
+ */
+function archiveAndCreateMonthlySheet(contents) {
+  try {
+    var currentSs = getActiveWorkingSpreadsheet(contents);
+    var currentId = currentSs.getId();
+    var currentFile = DriveApp.getFileById(currentId);
+
+    var archiveMonth = (contents && contents.archiveMonth) || '2026_10';
+    var newMonth = (contents && contents.newMonth) || '2026_11';
+    var folderName = (contents && contents.archiveFolderName) || ('UPPCL_Social_Media_Complaints_' + archiveMonth);
+    var newSheetTitle = (contents && contents.newSheetTitle) || ('UPPCL_Social_Media_Complaints_' + newMonth);
+
+    // 1. Locate or create archive folder in Google Drive
+    var folderIterator = DriveApp.getFoldersByName(folderName);
+    var archiveFolder = folderIterator.hasNext() ? folderIterator.next() : DriveApp.createFolder(folderName);
+
+    // 2. Check if current file already archived in folder
+    var filesInArchive = archiveFolder.getFilesByName(currentFile.getName());
+    if (!filesInArchive.hasNext()) {
+      try {
+        currentFile.moveTo(archiveFolder);
+      } catch (moveErr) {
+        archiveFolder.addFile(currentFile);
+      }
+    }
+
+    // 3. Check if new month spreadsheet already exists
+    var existingNewFiles = DriveApp.getFilesByName(newSheetTitle);
+    var newFile = null;
+    var newSs = null;
+    var isNewlyCreated = false;
+
+    if (existingNewFiles.hasNext()) {
+      newFile = existingNewFiles.next();
+      newSs = SpreadsheetApp.openById(newFile.getId());
+    } else {
+      // Create fresh copy using current sheet as structural template
+      newFile = currentFile.makeCopy(newSheetTitle);
+      newSs = SpreadsheetApp.openById(newFile.getId());
+      isNewlyCreated = true;
+
+      // In fresh sheet, clear complaint data starting from row 3
+      var complaintSheet = newSs.getSheetByName('Twitter Complaint List');
+      if (!complaintSheet) {
+        var sheets = newSs.getSheets();
+        for (var s of sheets) {
+          if (s.getName() !== 'Discom_District_List' && s.getName() !== 'Manual_Overrides') {
+            complaintSheet = s;
+            break;
+          }
+        }
+      }
+
+      if (complaintSheet) {
+        var lastRow = complaintSheet.getLastRow();
+        var lastCol = complaintSheet.getLastColumn();
+        if (lastRow >= 3) {
+          complaintSheet.getRange(3, 1, lastRow - 2, lastCol).clearContent();
+        }
+        ensureRow2IsBlankAndFrozen(complaintSheet);
+        applyCfFormulaToSheet(complaintSheet, true);
+      }
+    }
+
+    var targetSheet = newSs.getSheetByName('Twitter Complaint List') || newSs.getSheets()[0];
+    var newGid = targetSheet ? String(targetSheet.getSheetId()) : '0';
+
+    // Store active sheet in script properties
+    PropertiesService.getScriptProperties().setProperty('ACTIVE_SPREADSHEET_ID', newSs.getId());
+    PropertiesService.getScriptProperties().setProperty('ACTIVE_WORKSHEET_GID', newGid);
+    PropertiesService.getScriptProperties().setProperty('ACTIVE_MONTH', newMonth);
+    PropertiesService.getScriptProperties().setProperty('ARCHIVE_FOLDER_ID', archiveFolder.getId());
+
+    return {
+      status: 'ok',
+      archivedSpreadsheetId: currentId,
+      archiveFolderId: archiveFolder.getId(),
+      archiveFolderName: folderName,
+      newSpreadsheetId: newSs.getId(),
+      newWorksheetGid: newGid,
+      newSheetTitle: newSheetTitle,
+      newlyCreated: isNewlyCreated,
+      month: newMonth
+    };
+  } catch (err) {
+    return {
+      status: 'error',
+      error: err.toString()
+    };
+  }
 }

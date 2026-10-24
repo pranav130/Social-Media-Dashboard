@@ -1,0 +1,25 @@
+{
+  "label": "Stable Version – Before Monthly Sheet Rotation",
+  "backupTimestamp": "2026-10-23T16:38:42+05:30",
+  "gitCommit": "d13e29f",
+  "activeSpreadsheetId": "10_210Ynr_F0Pj1Yov_pqjVZ1kaYIEWrbGF1jn16sgNY",
+  "activeWorksheetGid": "598922870",
+  "activeWorksheetName": "Twitter Complaint List",
+  "districtTabName": "Discom_District_List",
+  "webhookUrl": "https://script.google.com/macros/s/AKfycbx3uJpVaB33ss8jGnmfArBpDXBc4o-pQ6fsD0x-FggDWRT1_pWEHNPDUWKpf5uG0B6HCQ/exec",
+  "columns": [
+    "DATE",
+    "C F",
+    "LINK URL",
+    "Twitter Id",
+    "Picked Status",
+    "Head",
+    "Untagged Complaint",
+    "UPPCLLKO Replied (YES/NO)",
+    "Complaint Type",
+    "District",
+    "Status"
+  ],
+  "preservedRecordsCount": 5829,
+  "systemTimezone": "Asia/Kolkata"
+}

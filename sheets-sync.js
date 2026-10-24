@@ -23,6 +23,7 @@ const XLSX = require('xlsx');
 const db = require('./db');
 const { createHeaderMap, indexToColumnLetter } = require('./sheet_mapper');
 const { isPostEligible } = require('./eligibility');
+const sheetRotationService = require('./sheet_rotation_service');
 
 const SPREADSHEET_ID = process.env.GOOGLE_SPREADSHEET_ID || '10_210Ynr_F0Pj1Yov_pqjVZ1kaYIEWrbGF1jn16sgNY';
 const WORKSHEET_GID = process.env.GOOGLE_WORKSHEET_GID || '598922870';
@@ -130,10 +131,12 @@ async function syncGoogleSheet({
   exportUpdatedSheet = true,
   outputPath = 'google_sheet_updated.csv'
 } = {}) {
+  const activeSpreadsheetId = sheetRotationService.getActiveSpreadsheetId();
+  const activeWorksheetGid = sheetRotationService.getActiveWorksheetGid();
   console.log('===========================================================');
   console.log(' UPPCL SMC Google Sheets Synchronizer & Dynamic Mapper');
-  console.log(` Target Spreadsheet: ${SPREADSHEET_ID}`);
-  console.log(` Target Worksheet GID: ${WORKSHEET_GID}`);
+  console.log(` Target Spreadsheet: ${activeSpreadsheetId}`);
+  console.log(` Target Worksheet GID: ${activeWorksheetGid}`);
   console.log('===========================================================');
 
   let csvBuffer;
@@ -142,7 +145,7 @@ async function syncGoogleSheet({
     console.log(`Reading source sheet from local file: ${csvPath}`);
     csvBuffer = fs.readFileSync(csvPath);
   } else {
-    const exportUrl = `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/export?format=csv&gid=${WORKSHEET_GID}`;
+    const exportUrl = `https://docs.google.com/spreadsheets/d/${activeSpreadsheetId}/export?format=csv&gid=${activeWorksheetGid}`;
     console.log(`Downloading latest authoritative worksheet via: ${exportUrl}`);
     try {
       csvBuffer = await fetchUrl(exportUrl);

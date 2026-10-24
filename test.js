@@ -18,6 +18,18 @@ function it(desc, fn) {
   }
 }
 
+async function itAsync(desc, fn) {
+  try {
+    await fn();
+    console.log(`  ✓ ${desc}`);
+    passCount++;
+  } catch (err) {
+    console.error(`  ✗ ${desc}`);
+    console.error(`    ${err.message}`);
+    failCount++;
+  }
+}
+
 async function runTests() {
   console.log('====================================================');
   console.log(' Running UPPCL Social Media Cell Verification Tests');
@@ -1784,7 +1796,7 @@ async function runTests() {
     assert.ok(serverCode.includes("workingSheetService.deleteWorkingSheetRow"), 'delete-row must call workingSheetService');
   });
 
-  it('7. deleteWorkingSheetRow validates inputs and cascades to SQLite & frivolous ledger', async () => {
+  await itAsync('7. deleteWorkingSheetRow validates inputs and cascades to SQLite & frivolous ledger', async () => {
     const wss = require('./working_sheet_service');
     assert.strictEqual(typeof wss.deleteWorkingSheetRow, 'function', 'deleteWorkingSheetRow must be exported');
 
@@ -1802,8 +1814,8 @@ async function runTests() {
     assert.strictEqual(typeof wss.syncWorkingDeleteToSqlite, 'function', 'syncWorkingDeleteToSqlite must be exported');
     // Insert a dummy test complaint to verify cascade
     db.run(`
-      INSERT INTO complaints (complaint_no, post_url, consumer_name, consumer_handle, category_name, complaint_text, status, received_at, updated_at)
-      VALUES ('TEST-DEL-001', 'https://x.com/user/status/999888777666', 'Test User', 'testuser', 'Power Supply', 'Test complaint for delete test', 'New', '2026-10-23 10:00:00', '2026-10-23 10:00:00');
+      INSERT INTO complaints (complaint_no, post_url, consumer_name, consumer_handle, category_name, complaint_text, platform, monitored_account, discom_name, current_status, received_at, created_at, updated_at)
+      VALUES ('TEST-DEL-001', 'https://x.com/user/status/999888777666', 'Test User', 'testuser', 'Power Supply', 'Test complaint for delete test', 'X', '@UPPCLLKO', 'MVVNL', 'New', '2026-10-23 10:00:00', '2026-10-23 10:00:00', '2026-10-23 10:00:00');
     `);
     const inserted = db.get("SELECT id FROM complaints WHERE complaint_no = 'TEST-DEL-001';");
     assert.ok(inserted, 'Test complaint must be inserted');
@@ -1825,7 +1837,7 @@ async function runTests() {
     assert.ok(serverCode.includes("UPPCL_Working_Sheet_"), 'Must format filename as UPPCL_Working_Sheet_YYYY-MM-DD.xlsx');
   });
 
-  it('9. Working Sheet Excel export strictly includes only the 11 data columns and omits Delete action', async () => {
+  await itAsync('9. Working Sheet Excel export strictly includes only the 11 data columns and omits Delete action', async () => {
     const wss = require('./working_sheet_service');
     const XLSX = require('xlsx');
 
@@ -1867,7 +1879,7 @@ async function runTests() {
     assert.ok(!exportedHeaders.includes('Delete') && !exportedHeaders.includes('Action'), 'Excel export must strictly omit Delete/Action button column');
   });
 
-  it('10. Filter-aware export behavior: Case A exports filtered subset across pages; Case B exports full dataset', async () => {
+  await itAsync('10. Filter-aware export behavior: Case A exports filtered subset across pages; Case B exports full dataset', async () => {
     const wss = require('./working_sheet_service');
 
     // Case B: No filters -> All records
@@ -1881,6 +1893,182 @@ async function runTests() {
     filteredData.rows.forEach(r => {
       assert.strictEqual(r['Picked Status'], 'YES', 'Every exported record in Case A must match filter');
     });
+  });
+
+  console.log('\n[28. Automatic Monthly Google Sheets Archiving & Safe Rotation Suite]');
+  const path = require('path');
+  const sheetRotationService = require('./sheet_rotation_service');
+  const workingSheetService = require('./working_sheet_service');
+  const googleSheetsService = require('./google_sheets_service');
+
+  await itAsync('1. Baseline Configuration Integrity: Active spreadsheet ID is 10_210Ynr_F0Pj1Yov_pqjVZ1kaYIEWrbGF1jn16sgNY and GID 598922870', () => {
+    const cfg = sheetRotationService.getActiveSpreadsheetConfig();
+    assert.strictEqual(sheetRotationService.BASELINE_SPREADSHEET_ID, '10_210Ynr_F0Pj1Yov_pqjVZ1kaYIEWrbGF1jn16sgNY');
+    assert.strictEqual(sheetRotationService.BASELINE_WORKSHEET_GID, '598922870');
+    assert.strictEqual(sheetRotationService.SYSTEM_TIMEZONE, 'Asia/Kolkata');
+    assert.ok(cfg.spreadsheetId, 'Spreadsheet ID must be defined');
+  });
+
+  await itAsync('2. Working Sheet & Google Sheets Sync dynamically read active configuration', () => {
+    const wssId = workingSheetService.getActiveSpreadsheetId();
+    const wssGid = workingSheetService.getActiveWorksheetGid();
+    const syncStatus = googleSheetsService.getSyncStatus();
+
+    assert.strictEqual(wssId, sheetRotationService.getActiveSpreadsheetId());
+    assert.strictEqual(wssGid, sheetRotationService.getActiveWorksheetGid());
+    assert.strictEqual(syncStatus.spreadsheetId, sheetRotationService.getActiveSpreadsheetId());
+    assert.strictEqual(syncStatus.worksheetGid, sheetRotationService.getActiveWorksheetGid());
+  });
+
+  await itAsync('3. IST Date & Monthly Period Calculation: Correctly identifies reporting month in Asia/Kolkata', () => {
+    const curMonth = sheetRotationService.getCurrentIstMonthInfo();
+    const prevMonth = sheetRotationService.getPreviousIstMonthInfo();
+
+    assert.ok(curMonth.year >= 2026, 'Year must be current or future');
+    assert.ok(curMonth.month >= 1 && curMonth.month <= 12, 'Month must be 1-12');
+    assert.ok(/^\d{4}_\d{2}$/.test(curMonth.monthStr), 'Month string must follow YYYY_MM format');
+    assert.ok(/^\d{4}_\d{2}$/.test(prevMonth.monthStr), 'Prev month string must follow YYYY_MM format');
+    assert.ok(curMonth.displayStr.includes(String(curMonth.year)), 'Display string must include year');
+  });
+
+  await itAsync('4. Idempotency: Running rollover for the same month skips redundant execution without duplicate files', async () => {
+    const initialConfig = sheetRotationService.getActiveSpreadsheetConfig();
+    
+    // Attempt rollover without force for currently active month
+    const result = await sheetRotationService.checkAndPerformMonthlyRollover({
+      force: false,
+      targetMonth: initialConfig.activeMonth
+    });
+
+    assert.strictEqual(result.success, true);
+    assert.strictEqual(result.skipped, true);
+    assert.ok(result.reason.includes('already on current month'));
+    assert.strictEqual(sheetRotationService.getActiveSpreadsheetId(), initialConfig.spreadsheetId);
+  });
+
+  await itAsync('5. Monthly Rollover Execution: Archives current month and activates fresh monthly spreadsheet', async () => {
+    const nextMonthStr = '2026_11';
+
+    const rolloverRes = await sheetRotationService.checkAndPerformMonthlyRollover({
+      force: true,
+      targetMonth: nextMonthStr,
+      user: { username: 'test_admin' }
+    });
+
+    assert.strictEqual(rolloverRes.success, true);
+    assert.strictEqual(rolloverRes.activeMonth, nextMonthStr);
+    assert.ok(rolloverRes.activeSpreadsheetId, 'Must return new spreadsheet ID');
+    assert.ok(rolloverRes.archivedFolder.includes('UPPCL_Social_Media_Complaints_'), 'Folder must follow naming convention');
+    assert.strictEqual(sheetRotationService.getActiveSpreadsheetId(), rolloverRes.activeSpreadsheetId);
+    assert.strictEqual(workingSheetService.getActiveSpreadsheetId(), rolloverRes.activeSpreadsheetId);
+  });
+
+  await itAsync('6. Structural Template Fidelity: Preserves all 11 columns, order, and supporting tab names', () => {
+    assert.strictEqual(workingSheetService.WORKING_SHEET_COLUMNS.length, 11);
+    assert.deepStrictEqual(workingSheetService.WORKING_SHEET_COLUMNS, [
+      'DATE', 'C F', 'LINK URL', 'Twitter Id', 'Picked Status',
+      'Head', 'Untagged Complaint', 'UPPCLLKO Replied (YES/NO)',
+      'Complaint Type', 'District', 'Status'
+    ]);
+  });
+
+  await itAsync('7. Fresh Complaint Data Area: Row 3 onwards is empty while Row 1 header and Row 2 blank row are preserved', () => {
+    const gsCode = fs.readFileSync(path.join(__dirname, 'google_apps_script', 'Code.gs'), 'utf8');
+    assert.ok(gsCode.includes('complaintSheet.getRange(3, 1, lastRow - 2, lastCol).clearContent()'), 'Must clear starting from row 3');
+    assert.ok(gsCode.includes('ensureRow2IsBlankAndFrozen'), 'Must preserve row 2 blank spacer and freeze top 2 rows');
+    assert.ok(gsCode.includes('applyCfFormulaToSheet'), 'Must preserve CF formula on fresh sheet');
+  });
+
+  await itAsync('8. Dynamic Worksheet GID Discovery: New sheet discovers its own GID without assuming the old GID', async () => {
+    const cfg = sheetRotationService.getActiveSpreadsheetConfig();
+    assert.ok(cfg.worksheetGid !== undefined && cfg.worksheetGid !== null, 'Must have worksheet GID');
+    const gsCode = fs.readFileSync(path.join(__dirname, 'google_apps_script', 'Code.gs'), 'utf8');
+    assert.ok(gsCode.includes('targetSheet.getSheetId()'), 'Must dynamically call getSheetId on new sheet');
+  });
+
+  await itAsync('9. In-Flight Operations Safety: beginOperation pins current spreadsheet ID and mutex locks during transition', async () => {
+    const op1 = await sheetRotationService.beginOperation();
+    assert.strictEqual(op1.spreadsheetId, sheetRotationService.getActiveSpreadsheetId());
+    assert.ok(op1.configVersion >= 1);
+    sheetRotationService.endOperation();
+
+    // Verify mutex lock during rollover
+    await sheetRotationService.acquireRolloverLock(500);
+    let blocked = false;
+    try {
+      await sheetRotationService.beginOperation();
+    } catch (err) {
+      blocked = true;
+    }
+    sheetRotationService.releaseRolloverLock();
+    assert.ok(blocked, 'beginOperation must reject or coordinate safely when rollover is active');
+  });
+
+  await itAsync('10. Multi-Tier Persistence Across Restarts: Recovers active configuration from disk JSON and SQLite settings', () => {
+    const diskConfigPath = path.join(__dirname, 'data', 'active_sheet_config.json');
+    assert.ok(fs.existsSync(diskConfigPath), 'active_sheet_config.json must exist');
+    const content = JSON.parse(fs.readFileSync(diskConfigPath, 'utf8'));
+    assert.ok(content.spreadsheetId, 'Must have spreadsheetId persisted');
+    assert.ok(content.worksheetGid, 'Must have worksheetGid persisted');
+    assert.ok(content.activeMonth, 'Must have activeMonth persisted');
+
+    const sqliteSetting = db.get("SELECT value FROM system_settings WHERE key = 'active_spreadsheet_id';");
+    assert.ok(sqliteSetting && sqliteSetting.value, 'SQLite system_settings must contain active_spreadsheet_id');
+  });
+
+  await itAsync('11. Safe 1-Click Rollback: Restores stable baseline (10_210Ynr_F0Pj1Yov... / 598922870) without deleting archives', async () => {
+    const rollbackRes = await sheetRotationService.rollbackConfiguration({
+      targetSpreadsheetId: sheetRotationService.BASELINE_SPREADSHEET_ID,
+      targetWorksheetGid: sheetRotationService.BASELINE_WORKSHEET_GID,
+      targetMonth: '2026_10',
+      user: { username: 'super_admin' }
+    });
+
+    assert.strictEqual(rollbackRes.success, true);
+    assert.strictEqual(rollbackRes.restoredSpreadsheetId, '10_210Ynr_F0Pj1Yov_pqjVZ1kaYIEWrbGF1jn16sgNY');
+    assert.strictEqual(rollbackRes.restoredWorksheetGid, '598922870');
+    assert.strictEqual(sheetRotationService.getActiveSpreadsheetId(), '10_210Ynr_F0Pj1Yov_pqjVZ1kaYIEWrbGF1jn16sgNY');
+    assert.strictEqual(workingSheetService.getActiveSpreadsheetId(), '10_210Ynr_F0Pj1Yov_pqjVZ1kaYIEWrbGF1jn16sgNY');
+    assert.strictEqual(sheetRotationService.isBaselineActive(), true);
+  });
+
+  await itAsync('12. Apps Script Code.gs Integration: Implements archive_and_create_monthly_sheet, get_active_sheet_config, set_active_sheet, rollback_sheet', () => {
+    const gsCode = fs.readFileSync(path.join(__dirname, 'google_apps_script', 'Code.gs'), 'utf8');
+    assert.ok(gsCode.includes("contents.action === 'archive_and_create_monthly_sheet'"));
+    assert.ok(gsCode.includes("contents.action === 'get_active_sheet_config'"));
+    assert.ok(gsCode.includes("contents.action === 'set_active_sheet'"));
+    assert.ok(gsCode.includes("contents.action === 'rollback_sheet'"));
+    assert.ok(gsCode.includes('function archiveAndCreateMonthlySheet'));
+    assert.ok(gsCode.includes('function getActiveWorkingSpreadsheet'));
+    assert.ok(gsCode.includes('DriveApp.createFolder'));
+    assert.ok(gsCode.includes('.makeCopy('));
+  });
+
+  await itAsync('13. Rotation Ledger History: All rotations and rollbacks are auditable in disk ledger and SQLite audit logs', () => {
+    const ledger = sheetRotationService.getRotationLedger();
+    assert.ok(Array.isArray(ledger), 'Ledger must be an array');
+    assert.ok(ledger.length >= 2, 'Must record rollover and rollback events');
+    assert.ok(ledger.some(e => e.action === 'MONTHLY_ROLLOVER'));
+    assert.ok(ledger.some(e => e.action === 'ROLLBACK'));
+
+    const auditRows = db.query("SELECT * FROM audit_logs WHERE action = 'SHEET_ROTATION';");
+    assert.ok(auditRows.length >= 2, 'Audit logs must capture sheet rotation events');
+  });
+
+  await itAsync('14. Operator Role Security: Restricted operator is prohibited from triggering rollover or rollback endpoints', () => {
+    const serverCode = fs.readFileSync(path.join(__dirname, 'server.js'), 'utf8');
+    assert.ok(serverCode.includes("app.post('/api/admin/sheet-rotation/trigger', authMiddleware, requireRoles('Super Administrator')"));
+    assert.ok(serverCode.includes("app.post('/api/admin/sheet-rotation/rollback', authMiddleware, requireRoles('Super Administrator')"));
+  });
+
+  await itAsync('15. Frontend Admin Interface: app.js contains monthly rotation monitoring and rollback controls for Super Admin', () => {
+    const appJs = fs.readFileSync(path.join(__dirname, 'public', 'js', 'app.js'), 'utf8');
+    assert.ok(appJs.includes('Google Sheets Monthly Archiving & Auto-Rotation'));
+    assert.ok(appJs.includes('triggerSheetRotation'));
+    assert.ok(appJs.includes('triggerSheetRollback'));
+    assert.ok(appJs.includes('verifySheetConnection'));
+    assert.ok(appJs.includes('loadSheetRotationDetails'));
+    assert.ok(appJs.includes('this.activeSpreadsheetId'));
   });
 
   console.log('\n====================================================');

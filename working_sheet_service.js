@@ -33,12 +33,32 @@ const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
 const db = require('./db');
 const { getIstTimestamp } = require('./google_sheets_service');
+const sheetRotationService = require('./sheet_rotation_service');
 
 const SPREADSHEET_ID = process.env.GOOGLE_SPREADSHEET_ID || '10_210Ynr_F0Pj1Yov_pqjVZ1kaYIEWrbGF1jn16sgNY';
 const WORKSHEET_GID = process.env.GOOGLE_SHEET_GID || '598922870';
 const WORKSHEET_NAME = process.env.GOOGLE_SHEET_TAB_NAME || 'Twitter Complaint List';
 const DISTRICT_LIST_TAB = 'Discom_District_List';
 const WEBHOOK_URL = process.env.GOOGLE_WEBHOOK_URL || 'https://script.google.com/macros/s/AKfycbx3uJpVaB33ss8jGnmfArBpDXBc4o-pQ6fsD0x-FggDWRT1_pWEHNPDUWKpf5uG0B6HCQ/exec';
+
+function getActiveSpreadsheetId() {
+  return sheetRotationService.getActiveSpreadsheetId();
+}
+function getActiveWorksheetGid() {
+  return sheetRotationService.getActiveWorksheetGid();
+}
+function getActiveWorksheetName() {
+  return sheetRotationService.getActiveWorksheetName();
+}
+
+// Invalidate caches immediately when active spreadsheet rotates
+sheetRotationService.onConfigChange((newConfig) => {
+  console.log(`[WorkingSheet] Rotated to sheet ${newConfig.spreadsheetId} (GID: ${newConfig.worksheetGid}). Resetting in-memory caches.`);
+  cachedWorkingData = null;
+  lastFetchTimestamp = 0;
+  cachedDistricts = null;
+  lastDistrictsTimestamp = 0;
+});
 
 // Exactly the 11 target columns in order
 const WORKING_SHEET_COLUMNS = [
@@ -376,7 +396,8 @@ async function getDistrictList(forceRefresh = false) {
   }
 
   try {
-    const gvizUrl = `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(DISTRICT_LIST_TAB)}`;
+    const activeId = getActiveSpreadsheetId();
+    const gvizUrl = `https://docs.google.com/spreadsheets/d/${activeId}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(DISTRICT_LIST_TAB)}`;
     const res = await fetchUrl(gvizUrl, { timeout: 8000 });
     if (res && res.ok) {
       const text = await res.text();
@@ -434,7 +455,9 @@ async function getDistrictList(forceRefresh = false) {
  * Fetch raw sheet lines via Google Sheets CSV export
  */
 async function fetchSheetCsvLines() {
-  const csvUrl = `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/export?format=csv&gid=${WORKSHEET_GID}`;
+  const activeId = getActiveSpreadsheetId();
+  const activeGid = getActiveWorksheetGid();
+  const csvUrl = `https://docs.google.com/spreadsheets/d/${activeId}/export?format=csv&gid=${activeGid}`;
   const res = await fetchUrl(csvUrl, { timeout: 15000 });
   if (!res || !res.ok) {
     throw new Error(`Failed to fetch Google Sheet CSV: HTTP ${res ? res.status : 'network error'}`);
@@ -506,7 +529,9 @@ async function fetchFreshWorkingDataFromGoogle() {
 
   if (googleToken) {
     try {
-      const headerUrl = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/'${encodeURIComponent(WORKSHEET_NAME)}'!1:1`;
+      const activeId = getActiveSpreadsheetId();
+      const activeWsName = getActiveWorksheetName();
+      const headerUrl = `https://sheets.googleapis.com/v4/spreadsheets/${activeId}/values/'${encodeURIComponent(activeWsName)}'!1:1`;
       const headerRes = await fetchUrl(headerUrl, {
         headers: { 'Authorization': `Bearer ${googleToken}` }
       });
@@ -530,7 +555,7 @@ async function fetchFreshWorkingDataFromGoogle() {
           targetIndices.push(idx);
           if (idx >= 0) {
             const letter = getColumnLetter(idx);
-            targetColLetters.push(`'${encodeURIComponent(WORKSHEET_NAME)}'!${letter}3:${letter}`);
+            targetColLetters.push(`'${encodeURIComponent(activeWsName)}'!${letter}3:${letter}`);
           }
         });
 
@@ -544,14 +569,14 @@ async function fetchFreshWorkingDataFromGoogle() {
 
         if (linkUrlCol >= 0 && !targetIndices.includes(linkUrlCol)) {
           const letter = getColumnLetter(linkUrlCol);
-          targetColLetters.push(`'${encodeURIComponent(WORKSHEET_NAME)}'!${letter}3:${letter}`);
+          targetColLetters.push(`'${encodeURIComponent(activeWsName)}'!${letter}3:${letter}`);
         }
         if (twitterIdCol >= 0 && !targetIndices.includes(twitterIdCol)) {
           const letter = getColumnLetter(twitterIdCol);
-          targetColLetters.push(`'${encodeURIComponent(WORKSHEET_NAME)}'!${letter}3:${letter}`);
+          targetColLetters.push(`'${encodeURIComponent(activeWsName)}'!${letter}3:${letter}`);
         }
 
-        const batchUrl = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values:batchGet?ranges=${targetColLetters.join('&ranges=')}`;
+        const batchUrl = `https://sheets.googleapis.com/v4/spreadsheets/${activeId}/values:batchGet?ranges=${targetColLetters.join('&ranges=')}`;
         const batchRes = await fetchUrl(batchUrl, {
           headers: { 'Authorization': `Bearer ${googleToken}` }
         });
@@ -892,155 +917,166 @@ async function updateWorkingSheetCell({
   let verifiedValue = null;
   let targetRow = parseInt(sheetRowIndex, 10);
 
-  if (googleToken) {
-    try {
-      // Fetch headers to find exact column letters
-      const headerUrl = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/'${encodeURIComponent(WORKSHEET_NAME)}'!1:1`;
-      const headerRes = await fetchUrl(headerUrl, { headers: { 'Authorization': `Bearer ${googleToken}` } });
-      const headerJson = await headerRes.json();
-      const rawHeaders = (headerJson.values && headerJson.values[0]) ? headerJson.values[0] : [];
+  const op = await sheetRotationService.beginOperation();
+  const currentSpreadsheetId = op.spreadsheetId;
+  const currentWorksheetName = op.worksheetName;
+  const currentWorksheetGid = op.worksheetGid;
 
-      let colIdx = -1;
-      let discomColIdx = -1;
-      let zoneColIdx = -1;
-      let linkUrlColIdx = -1;
-      let twitterIdColIdx = -1;
+  try {
+    if (googleToken) {
+      try {
+        // Fetch headers to find exact column letters
+        const headerUrl = `https://sheets.googleapis.com/v4/spreadsheets/${currentSpreadsheetId}/values/'${encodeURIComponent(currentWorksheetName)}'!1:1`;
+        const headerRes = await fetchUrl(headerUrl, { headers: { 'Authorization': `Bearer ${googleToken}` } });
+        const headerJson = await headerRes.json();
+        const rawHeaders = (headerJson.values && headerJson.values[0]) ? headerJson.values[0] : [];
 
-      for (let c = 0; c < rawHeaders.length; c++) {
-        const norm = normalizeHeader(rawHeaders[c]);
-        if (norm === normalizeHeader(normCol)) colIdx = c;
-        if (norm === 'discom') discomColIdx = c;
-        if (norm === 'zone') zoneColIdx = c;
-        if (norm === 'linkurl' || norm === 'posturl' || norm === 'url') linkUrlColIdx = c;
-        if (norm === 'twitterid' || norm === 'tweetid' || norm === 'snowflakeid') twitterIdColIdx = c;
-      }
+        let colIdx = -1;
+        let discomColIdx = -1;
+        let zoneColIdx = -1;
+        let linkUrlColIdx = -1;
+        let twitterIdColIdx = -1;
 
-      if (colIdx === -1) {
-        throw new Error(`Target column "${normCol}" was not found in Google Sheet headers.`);
-      }
-
-      // Verify row with stable identifier
-      let resolvedRow = -1;
-      if (targetRow >= 3) {
-        const checkRange = `'${encodeURIComponent(WORKSHEET_NAME)}'!A${targetRow}:Z${targetRow}`;
-        const checkRes = await fetchUrl(`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${checkRange}`, {
-          headers: { 'Authorization': `Bearer ${googleToken}` }
-        });
-        const checkJson = await checkRes.json();
-        const rowVals = (checkJson.values && checkJson.values[0]) ? checkJson.values[0] : [];
-        const u = linkUrlColIdx >= 0 ? String(rowVals[linkUrlColIdx] || '').trim() : '';
-        const tid = twitterIdColIdx >= 0 ? String(rowVals[twitterIdColIdx] || '').trim() : '';
-        if ((cleanUrl && u === cleanUrl) || (cleanTweetId && (u.includes(cleanTweetId) || tid === cleanTweetId))) {
-          resolvedRow = targetRow;
+        for (let c = 0; c < rawHeaders.length; c++) {
+          const norm = normalizeHeader(rawHeaders[c]);
+          if (norm === normalizeHeader(normCol)) colIdx = c;
+          if (norm === 'discom') discomColIdx = c;
+          if (norm === 'zone') zoneColIdx = c;
+          if (norm === 'linkurl' || norm === 'posturl' || norm === 'url') linkUrlColIdx = c;
+          if (norm === 'twitterid' || norm === 'tweetid' || norm === 'snowflakeid') twitterIdColIdx = c;
         }
-      }
 
-      // If hinted row didn't match, scan the link URL column
-      if (resolvedRow === -1 && linkUrlColIdx >= 0) {
-        const letter = getColumnLetter(linkUrlColIdx);
-        const colRes = await fetchUrl(`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/'${encodeURIComponent(WORKSHEET_NAME)}'!${letter}3:${letter}`, {
-          headers: { 'Authorization': `Bearer ${googleToken}` }
-        });
-        const colJson = await colRes.json();
-        const vals = colJson.values || [];
-        for (let i = 0; i < vals.length; i++) {
-          const u = String(vals[i][0] || '').trim();
-          if ((cleanUrl && u === cleanUrl) || (cleanTweetId && u.includes(cleanTweetId))) {
-            resolvedRow = i + 3;
-            break;
-          }
+        if (colIdx === -1) {
+          throw new Error(`Target column "${normCol}" was not found in Google Sheet headers.`);
         }
-      }
 
-      if (resolvedRow === -1 || resolvedRow < 3) {
-        throw new Error('Unable to resolve exact complaint row in Google Sheet for safe single-cell update.');
-      }
-
-      targetRow = resolvedRow;
-      const targetColLetter = getColumnLetter(colIdx);
-      const updateRange = `'${encodeURIComponent(WORKSHEET_NAME)}'!${targetColLetter}${targetRow}`;
-
-      // Update ONLY the corresponding cell
-      const updateRes = await new Promise((resolve, reject) => {
-        const putBody = JSON.stringify({
-          range: updateRange,
-          majorDimension: 'ROWS',
-          values: [[rawVal]]
-        });
-        const req = https.request(`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${updateRange}?valueInputOption=USER_ENTERED`, {
-          method: 'PUT',
-          headers: {
-            'Authorization': `Bearer ${googleToken}`,
-            'Content-Type': 'application/json',
-            'Content-Length': Buffer.byteLength(putBody)
-          }
-        }, res => {
-          let data = '';
-          res.on('data', chunk => data += chunk);
-          res.on('end', () => {
-            try { resolve(JSON.parse(data)); }
-            catch (e) { reject(new Error('Invalid update response: ' + data)); }
+        // Verify row with stable identifier
+        let resolvedRow = -1;
+        if (targetRow >= 3) {
+          const checkRange = `'${encodeURIComponent(currentWorksheetName)}'!A${targetRow}:Z${targetRow}`;
+          const checkRes = await fetchUrl(`https://sheets.googleapis.com/v4/spreadsheets/${currentSpreadsheetId}/values/${checkRange}`, {
+            headers: { 'Authorization': `Bearer ${googleToken}` }
           });
+          const checkJson = await checkRes.json();
+          const rowVals = (checkJson.values && checkJson.values[0]) ? checkJson.values[0] : [];
+          const u = linkUrlColIdx >= 0 ? String(rowVals[linkUrlColIdx] || '').trim() : '';
+          const tid = twitterIdColIdx >= 0 ? String(rowVals[twitterIdColIdx] || '').trim() : '';
+          if ((cleanUrl && u === cleanUrl) || (cleanTweetId && (u.includes(cleanTweetId) || tid === cleanTweetId))) {
+            resolvedRow = targetRow;
+          }
+        }
+
+        // If hinted row didn't match, scan the link URL column
+        if (resolvedRow === -1 && linkUrlColIdx >= 0) {
+          const letter = getColumnLetter(linkUrlColIdx);
+          const colRes = await fetchUrl(`https://sheets.googleapis.com/v4/spreadsheets/${currentSpreadsheetId}/values/'${encodeURIComponent(currentWorksheetName)}'!${letter}3:${letter}`, {
+            headers: { 'Authorization': `Bearer ${googleToken}` }
+          });
+          const colJson = await colRes.json();
+          const vals = colJson.values || [];
+          for (let i = 0; i < vals.length; i++) {
+            const u = String(vals[i][0] || '').trim();
+            if ((cleanUrl && u === cleanUrl) || (cleanTweetId && u.includes(cleanTweetId))) {
+              resolvedRow = i + 3;
+              break;
+            }
+          }
+        }
+
+        if (resolvedRow === -1 || resolvedRow < 3) {
+          throw new Error('Unable to resolve exact complaint row in Google Sheet for safe single-cell update.');
+        }
+
+        targetRow = resolvedRow;
+        const targetColLetter = getColumnLetter(colIdx);
+        const updateRange = `'${encodeURIComponent(currentWorksheetName)}'!${targetColLetter}${targetRow}`;
+
+        // Update ONLY the corresponding cell
+        const updateRes = await new Promise((resolve, reject) => {
+          const putBody = JSON.stringify({
+            range: updateRange,
+            majorDimension: 'ROWS',
+            values: [[rawVal]]
+          });
+          const req = https.request(`https://sheets.googleapis.com/v4/spreadsheets/${currentSpreadsheetId}/values/${updateRange}?valueInputOption=USER_ENTERED`, {
+            method: 'PUT',
+            headers: {
+              'Authorization': `Bearer ${googleToken}`,
+              'Content-Type': 'application/json',
+              'Content-Length': Buffer.byteLength(putBody)
+            }
+          }, res => {
+            let data = '';
+            res.on('data', chunk => data += chunk);
+            res.on('end', () => {
+              try { resolve(JSON.parse(data)); }
+              catch (e) { reject(new Error('Invalid update response: ' + data)); }
+            });
+          });
+          req.on('error', reject);
+          req.write(putBody);
+          req.end();
         });
-        req.on('error', reject);
-        req.write(putBody);
-        req.end();
-      });
 
-      if (!updateRes || updateRes.error) {
-        throw new Error('Google Sheets API update error: ' + (updateRes?.error?.message || JSON.stringify(updateRes)));
-      }
-
-      // If District changed, preserve DISCOM & Zone automation in Google Sheets
-      if (normCol === 'District' && mappedDiscom) {
-        if (discomColIdx >= 0) {
-          const discomLetter = getColumnLetter(discomColIdx);
-          await updateSingleCellViaGoogleApi(googleToken, `${discomLetter}${targetRow}`, mappedDiscom);
+        if (!updateRes || updateRes.error) {
+          throw new Error('Google Sheets API update error: ' + (updateRes?.error?.message || JSON.stringify(updateRes)));
         }
-        if (zoneColIdx >= 0 && mappedZone) {
-          const zoneLetter = getColumnLetter(zoneColIdx);
-          await updateSingleCellViaGoogleApi(googleToken, `${zoneLetter}${targetRow}`, mappedZone);
+
+        // If District changed, preserve DISCOM & Zone automation in Google Sheets
+        if (normCol === 'District' && mappedDiscom) {
+          if (discomColIdx >= 0) {
+            const discomLetter = getColumnLetter(discomColIdx);
+            await updateSingleCellViaGoogleApi(googleToken, `${discomLetter}${targetRow}`, mappedDiscom, currentSpreadsheetId, currentWorksheetName);
+          }
+          if (zoneColIdx >= 0 && mappedZone) {
+            const zoneLetter = getColumnLetter(zoneColIdx);
+            await updateSingleCellViaGoogleApi(googleToken, `${zoneLetter}${targetRow}`, mappedZone, currentSpreadsheetId, currentWorksheetName);
+          }
         }
+
+        // Step 7: Read back cell via Google Sheets API to verify update
+        const verifyRes = await fetchUrl(`https://sheets.googleapis.com/v4/spreadsheets/${currentSpreadsheetId}/values/${updateRange}`, {
+          headers: { 'Authorization': `Bearer ${googleToken}` }
+        });
+        const verifyJson = await verifyRes.json();
+        verifiedValue = (verifyJson.values && verifyJson.values[0] && verifyJson.values[0][0] !== undefined)
+          ? String(verifyJson.values[0][0]).trim()
+          : '';
+
+      } catch (apiErr) {
+        console.warn('[WorkingSheet] Google Sheets API update failed; trying Webhook transport:', apiErr.message);
       }
-
-      // Step 7: Read back cell via Google Sheets API to verify update
-      const verifyRes = await fetchUrl(`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${updateRange}`, {
-        headers: { 'Authorization': `Bearer ${googleToken}` }
-      });
-      const verifyJson = await verifyRes.json();
-      verifiedValue = (verifyJson.values && verifyJson.values[0] && verifyJson.values[0][0] !== undefined)
-        ? String(verifyJson.values[0][0]).trim()
-        : '';
-
-    } catch (apiErr) {
-      console.warn('[WorkingSheet] Google Sheets API update failed; trying Webhook transport:', apiErr.message);
     }
-  }
 
-  // Fallback / Hybrid Transport: Google Apps Script Webhook
-  if (verifiedValue === null && WEBHOOK_URL) {
-    const payload = {
-      action: 'update_cell',
-      tweetId: cleanTweetId,
-      postUrl: cleanUrl,
-      sheetRowIndex: targetRow,
-      columnName: normCol,
-      newValue: rawVal,
-      userEmail: user ? user.email || user.username : 'Dashboard User'
-    };
+    // Fallback / Hybrid Transport: Google Apps Script Webhook
+    if (verifiedValue === null && WEBHOOK_URL) {
+      const payload = {
+        action: 'update_cell',
+        spreadsheetId: currentSpreadsheetId,
+        worksheetGid: currentWorksheetGid,
+        tweetId: cleanTweetId,
+        postUrl: cleanUrl,
+        sheetRowIndex: targetRow,
+        columnName: normCol,
+        newValue: rawVal,
+        userEmail: user ? user.email || user.username : 'Dashboard User'
+      };
 
-    const webhookRes = await postJson(WEBHOOK_URL, payload, { timeout: 15000 });
-    const json = await webhookRes.json();
-    if (json.status === 'ok' && json.verified) {
-      verifiedValue = json.value !== undefined ? String(json.value).trim() : rawVal;
-      if (json.row) targetRow = json.row;
-    } else if (json.status === 'ok' && (json.inserted === 0 || !json.verified)) {
-      throw new Error(
-        'Google Apps Script Web App is running an older deployment that does not support cell updates yet. Please paste the updated Code.gs into Google Sheets (Extensions > Apps Script) and deploy a "New version". Copy 1-click code at: https://social-media-dashboard-b1mv.onrender.com/code'
-      );
-    } else {
-      throw new Error(json.error || 'Google Apps Script update failed.');
+      const webhookRes = await postJson(WEBHOOK_URL, payload, { timeout: 15000 });
+      const json = await webhookRes.json();
+      if (json.status === 'ok' && json.verified) {
+        verifiedValue = json.value !== undefined ? String(json.value).trim() : rawVal;
+        if (json.row) targetRow = json.row;
+      } else if (json.status === 'ok' && (json.inserted === 0 || !json.verified)) {
+        throw new Error(
+          'Google Apps Script Web App is running an older deployment that does not support cell updates yet. Please paste the updated Code.gs into Google Sheets (Extensions > Apps Script) and deploy a "New version". Copy 1-click code at: https://social-media-dashboard-b1mv.onrender.com/code'
+        );
+      } else {
+        throw new Error(json.error || 'Google Apps Script update failed.');
+      }
     }
+  } finally {
+    sheetRotationService.endOperation();
   }
 
   if (verifiedValue === null) {
@@ -1092,15 +1128,17 @@ async function updateWorkingSheetCell({
 /**
  * Helper to update single cell via Google API v4
  */
-function updateSingleCellViaGoogleApi(token, cellA1, value) {
+function updateSingleCellViaGoogleApi(token, cellA1, value, spreadsheetId = null, worksheetName = null) {
+  const targetId = spreadsheetId || getActiveSpreadsheetId();
+  const targetWsName = worksheetName || getActiveWorksheetName();
   return new Promise((resolve, reject) => {
-    const range = `'${encodeURIComponent(WORKSHEET_NAME)}'!${cellA1}`;
+    const range = `'${encodeURIComponent(targetWsName)}'!${cellA1}`;
     const putBody = JSON.stringify({
       range: range,
       majorDimension: 'ROWS',
       values: [[value]]
     });
-    const req = https.request(`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${range}?valueInputOption=USER_ENTERED`, {
+    const req = https.request(`https://sheets.googleapis.com/v4/spreadsheets/${targetId}/values/${range}?valueInputOption=USER_ENTERED`, {
       method: 'PUT',
       headers: {
         'Authorization': `Bearer ${token}`,
@@ -1195,135 +1233,146 @@ async function deleteWorkingSheetRow({
   let resolvedRow = (hintedRow >= 3) ? hintedRow : -1;
   let deleteError = null;
 
-  // 1. Check if Google Sheets API v4 can be used
-  let googleToken = null;
+  const op = await sheetRotationService.beginOperation();
+  const currentSpreadsheetId = op.spreadsheetId;
+  const currentWorksheetName = op.worksheetName;
+  const currentWorksheetGid = op.worksheetGid;
+
   try {
-    googleToken = await getGoogleApiAccessToken();
-  } catch (e) {}
-
-  if (googleToken) {
+    // 1. Check if Google Sheets API v4 can be used
+    let googleToken = null;
     try {
-      const headerUrl = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/'${encodeURIComponent(WORKSHEET_NAME)}'!1:1`;
-      const headerRes = await fetchUrl(headerUrl, { headers: { 'Authorization': `Bearer ${googleToken}` } });
-      const headerJson = await headerRes.json();
-      const rawHeaders = (headerJson.values && headerJson.values[0]) ? headerJson.values[0] : [];
+      googleToken = await getGoogleApiAccessToken();
+    } catch (e) {}
 
-      let linkUrlColIdx = -1;
-      let twitterIdColIdx = -1;
+    if (googleToken) {
+      try {
+        const headerUrl = `https://sheets.googleapis.com/v4/spreadsheets/${currentSpreadsheetId}/values/'${encodeURIComponent(currentWorksheetName)}'!1:1`;
+        const headerRes = await fetchUrl(headerUrl, { headers: { 'Authorization': `Bearer ${googleToken}` } });
+        const headerJson = await headerRes.json();
+        const rawHeaders = (headerJson.values && headerJson.values[0]) ? headerJson.values[0] : [];
 
-      for (let c = 0; c < rawHeaders.length; c++) {
-        const norm = normalizeHeader(rawHeaders[c]);
-        if (norm === 'linkurl' || norm === 'posturl' || norm === 'url') linkUrlColIdx = c;
-        if (norm === 'twitterid' || norm === 'tweetid' || norm === 'snowflakeid') twitterIdColIdx = c;
-      }
+        let linkUrlColIdx = -1;
+        let twitterIdColIdx = -1;
 
-      let verifiedRow = -1;
-
-      // Verify hinted row
-      if (hintedRow >= 3) {
-        const checkRange = `'${encodeURIComponent(WORKSHEET_NAME)}'!A${hintedRow}:Z${hintedRow}`;
-        const checkRes = await fetchUrl(`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${checkRange}`, {
-          headers: { 'Authorization': `Bearer ${googleToken}` }
-        });
-        const checkJson = await checkRes.json();
-        const rowVals = (checkJson.values && checkJson.values[0]) ? checkJson.values[0] : [];
-        const u = linkUrlColIdx >= 0 ? String(rowVals[linkUrlColIdx] || '').trim() : '';
-        const tid = twitterIdColIdx >= 0 ? String(rowVals[twitterIdColIdx] || '').trim() : '';
-        if ((cleanUrl && u === cleanUrl) || (cleanTweetId && (u.includes(cleanTweetId) || tid === cleanTweetId))) {
-          verifiedRow = hintedRow;
+        for (let c = 0; c < rawHeaders.length; c++) {
+          const norm = normalizeHeader(rawHeaders[c]);
+          if (norm === 'linkurl' || norm === 'posturl' || norm === 'url') linkUrlColIdx = c;
+          if (norm === 'twitterid' || norm === 'tweetid' || norm === 'snowflakeid') twitterIdColIdx = c;
         }
-      }
 
-      // If hinted row didn't match, scan Link URL column
-      if (verifiedRow === -1 && linkUrlColIdx >= 0) {
-        const letter = getColumnLetter(linkUrlColIdx);
-        const colRes = await fetchUrl(`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/'${encodeURIComponent(WORKSHEET_NAME)}'!${letter}3:${letter}`, {
-          headers: { 'Authorization': `Bearer ${googleToken}` }
-        });
-        const colJson = await colRes.json();
-        const vals = colJson.values || [];
-        for (let i = 0; i < vals.length; i++) {
-          const u = String(vals[i][0] || '').trim();
-          if ((cleanUrl && u === cleanUrl) || (cleanTweetId && u.includes(cleanTweetId))) {
-            verifiedRow = i + 3;
-            break;
+        let verifiedRow = -1;
+
+        // Verify hinted row
+        if (hintedRow >= 3) {
+          const checkRange = `'${encodeURIComponent(currentWorksheetName)}'!A${hintedRow}:Z${hintedRow}`;
+          const checkRes = await fetchUrl(`https://sheets.googleapis.com/v4/spreadsheets/${currentSpreadsheetId}/values/${checkRange}`, {
+            headers: { 'Authorization': `Bearer ${googleToken}` }
+          });
+          const checkJson = await checkRes.json();
+          const rowVals = (checkJson.values && checkJson.values[0]) ? checkJson.values[0] : [];
+          const u = linkUrlColIdx >= 0 ? String(rowVals[linkUrlColIdx] || '').trim() : '';
+          const tid = twitterIdColIdx >= 0 ? String(rowVals[twitterIdColIdx] || '').trim() : '';
+          if ((cleanUrl && u === cleanUrl) || (cleanTweetId && (u.includes(cleanTweetId) || tid === cleanTweetId))) {
+            verifiedRow = hintedRow;
           }
         }
-      }
 
-      // Scan Twitter ID column if still not found
-      if (verifiedRow === -1 && twitterIdColIdx >= 0 && cleanTweetId) {
-        const letter = getColumnLetter(twitterIdColIdx);
-        const colRes = await fetchUrl(`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/'${encodeURIComponent(WORKSHEET_NAME)}'!${letter}3:${letter}`, {
-          headers: { 'Authorization': `Bearer ${googleToken}` }
-        });
-        const colJson = await colRes.json();
-        const vals = colJson.values || [];
-        for (let i = 0; i < vals.length; i++) {
-          const tid = String(vals[i][0] || '').trim();
-          if (tid === cleanTweetId || tid.includes(cleanTweetId)) {
-            verifiedRow = i + 3;
-            break;
+        // If hinted row didn't match, scan Link URL column
+        if (verifiedRow === -1 && linkUrlColIdx >= 0) {
+          const letter = getColumnLetter(linkUrlColIdx);
+          const colRes = await fetchUrl(`https://sheets.googleapis.com/v4/spreadsheets/${currentSpreadsheetId}/values/'${encodeURIComponent(currentWorksheetName)}'!${letter}3:${letter}`, {
+            headers: { 'Authorization': `Bearer ${googleToken}` }
+          });
+          const colJson = await colRes.json();
+          const vals = colJson.values || [];
+          for (let i = 0; i < vals.length; i++) {
+            const u = String(vals[i][0] || '').trim();
+            if ((cleanUrl && u === cleanUrl) || (cleanTweetId && u.includes(cleanTweetId))) {
+              verifiedRow = i + 3;
+              break;
+            }
           }
         }
-      }
 
-      if (verifiedRow >= 3) {
-        resolvedRow = verifiedRow;
-        const batchReq = {
-          requests: [
-            {
-              deleteDimension: {
-                range: {
-                  sheetId: parseInt(WORKSHEET_GID, 10),
-                  dimension: 'ROWS',
-                  startIndex: resolvedRow - 1,
-                  endIndex: resolvedRow
+        // Scan Twitter ID column if still not found
+        if (verifiedRow === -1 && twitterIdColIdx >= 0 && cleanTweetId) {
+          const letter = getColumnLetter(twitterIdColIdx);
+          const colRes = await fetchUrl(`https://sheets.googleapis.com/v4/spreadsheets/${currentSpreadsheetId}/values/'${encodeURIComponent(currentWorksheetName)}'!${letter}3:${letter}`, {
+            headers: { 'Authorization': `Bearer ${googleToken}` }
+          });
+          const colJson = await colRes.json();
+          const vals = colJson.values || [];
+          for (let i = 0; i < vals.length; i++) {
+            const tid = String(vals[i][0] || '').trim();
+            if (tid === cleanTweetId || tid.includes(cleanTweetId)) {
+              verifiedRow = i + 3;
+              break;
+            }
+          }
+        }
+
+        if (verifiedRow >= 3) {
+          resolvedRow = verifiedRow;
+          const batchReq = {
+            requests: [
+              {
+                deleteDimension: {
+                  range: {
+                    sheetId: parseInt(currentWorksheetGid, 10),
+                    dimension: 'ROWS',
+                    startIndex: resolvedRow - 1,
+                    endIndex: resolvedRow
+                  }
                 }
               }
-            }
-          ]
+            ]
+          };
+
+          const batchRes = await postJson(`https://sheets.googleapis.com/v4/spreadsheets/${currentSpreadsheetId}:batchUpdate`, batchReq, {
+            headers: { 'Authorization': `Bearer ${googleToken}` }
+          });
+          const json = await batchRes.json();
+          if (json && !json.error) {
+            deleted = true;
+          } else {
+            console.warn('[WorkingSheet] Sheets API deleteDimension response error:', json?.error?.message || json);
+          }
+        }
+      } catch (apiErr) {
+        console.warn('[WorkingSheet] Sheets API delete failed; trying Webhook transport:', apiErr.message);
+      }
+    }
+
+    // 2. Fallback / Hybrid Transport: Google Apps Script Webhook
+    if (!deleted && WEBHOOK_URL) {
+      try {
+        const payload = {
+          action: 'delete_row',
+          spreadsheetId: currentSpreadsheetId,
+          worksheetGid: currentWorksheetGid,
+          sheetRowIndex: resolvedRow >= 3 ? resolvedRow : hintedRow,
+          postUrl: cleanUrl,
+          tweetId: cleanTweetId,
+          userEmail: user ? (user.email || user.username) : 'Operator'
         };
 
-        const batchRes = await postJson(`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}:batchUpdate`, batchReq, {
-          headers: { 'Authorization': `Bearer ${googleToken}` }
-        });
-        const json = await batchRes.json();
-        if (json && !json.error) {
+        const webhookRes = await postJson(WEBHOOK_URL, payload, { timeout: 15000 });
+        const json = await webhookRes.json();
+        if (json && (json.deleted || json.status === 'ok')) {
+          deleted = true;
+          if (json.deletedRow) resolvedRow = json.deletedRow;
+        } else if (json && json.status === 'not_found') {
           deleted = true;
         } else {
-          console.warn('[WorkingSheet] Sheets API deleteDimension response error:', json?.error?.message || json);
+          deleteError = json?.message || json?.error || 'Google Apps Script deletion failed';
         }
+      } catch (whErr) {
+        deleteError = whErr.message;
       }
-    } catch (apiErr) {
-      console.warn('[WorkingSheet] Sheets API delete failed; trying Webhook transport:', apiErr.message);
     }
-  }
-
-  // 2. Fallback / Hybrid Transport: Google Apps Script Webhook
-  if (!deleted && WEBHOOK_URL) {
-    try {
-      const payload = {
-        action: 'delete_row',
-        sheetRowIndex: resolvedRow >= 3 ? resolvedRow : hintedRow,
-        postUrl: cleanUrl,
-        tweetId: cleanTweetId,
-        userEmail: user ? (user.email || user.username) : 'Operator'
-      };
-
-      const webhookRes = await postJson(WEBHOOK_URL, payload, { timeout: 15000 });
-      const json = await webhookRes.json();
-      if (json && (json.deleted || json.status === 'ok')) {
-        deleted = true;
-        if (json.deletedRow) resolvedRow = json.deletedRow;
-      } else if (json && json.status === 'not_found') {
-        deleted = true;
-      } else {
-        deleteError = json?.message || json?.error || 'Google Apps Script deletion failed';
-      }
-    } catch (whErr) {
-      deleteError = whErr.message;
-    }
+  } finally {
+    sheetRotationService.endOperation();
   }
 
   if (!deleted) {
@@ -1465,5 +1514,13 @@ module.exports = {
   getColumnLetter,
   normalizeHeader,
   extractTweetId,
-  parseDateToEpoch
+  parseDateToEpoch,
+  getActiveSpreadsheetId,
+  getActiveWorksheetGid,
+  clearWorkingSheetCache: () => {
+    cachedWorkingData = null;
+    lastFetchTimestamp = 0;
+    cachedDistricts = null;
+    lastDistrictsTimestamp = 0;
+  }
 };

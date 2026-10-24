@@ -5,5 +5,13 @@
     "post_url": "https://x.com/OfficialVrss1/status/2112978830310912244",
     "reason": "OFFICIAL_HANDLE_puvvnlhq_REPLIED_BEFORE_UPPCL",
     "added_at": "2026-10-22T00:37:53+05:30"
+  },
+  {
+    "tweet_id": "999888777666",
+    "post_url": "https://x.com/user/status/999888777666",
+    "complaint_no": "TEST-DEL-001",
+    "deleted_at": "2026-10-23 17:00:27",
+    "deleted_by": "SMC-Operator",
+    "reason": "Deleted from Working Sheet"
   }
 ]

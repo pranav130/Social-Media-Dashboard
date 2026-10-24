@@ -348,6 +348,9 @@ const App = {
       text.textContent = `Sheet: ACTIVE (${rowCount} rows)`;
     }
 
+    if (status.spreadsheetId) this.activeSpreadsheetId = status.spreadsheetId;
+    if (status.worksheetGid) this.activeWorksheetGid = status.worksheetGid;
+
     const sheetLink = document.getElementById('sync-sheet-link');
     if (sheetLink && status.spreadsheetId && status.worksheetGid) {
       sheetLink.href = `https://docs.google.com/spreadsheets/d/${status.spreadsheetId}/edit?gid=${status.worksheetGid}#gid=${status.worksheetGid}`;
@@ -4325,7 +4328,7 @@ const App = {
                         </td>
                         <td>
                           ${q.sheet_row_index ? `
-                            <a href="https://docs.google.com/spreadsheets/d/10_210Ynr_F0Pj1Yov_pqjVZ1kaYIEWrbGF1jn16sgNY/edit?gid=598922870#gid=598922870&range=A${q.sheet_row_index}" target="_blank" rel="noopener noreferrer" class="blue-post-link">
+                            <a href="https://docs.google.com/spreadsheets/d/${this.activeSpreadsheetId || '10_210Ynr_F0Pj1Yov_pqjVZ1kaYIEWrbGF1jn16sgNY'}/edit?gid=${this.activeWorksheetGid || '598922870'}#gid=${this.activeWorksheetGid || '598922870'}&range=A${q.sheet_row_index}" target="_blank" rel="noopener noreferrer" class="blue-post-link">
                               <i class="fa-solid fa-up-right-from-square"></i> Open Row ${q.sheet_row_index} in Sheet
                             </a>
                           ` : '-'}
@@ -4815,6 +4818,53 @@ const App = {
         </div>
       </div>
 
+      <div class="details-card" style="margin-bottom: 20px;">
+        <div class="details-card-header" style="display: flex; justify-content: space-between; align-items: center;">
+          <span><i class="fa-solid fa-calendar-days"></i> Google Sheets Monthly Archiving & Auto-Rotation</span>
+          <span id="rotation-status-badge" class="badge badge-success">Active & Synchronized</span>
+        </div>
+        <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 14px;">
+          At the end of every month (Asia/Kolkata), the completed month is automatically archived in Google Drive (<code>UPPCL_Social_Media_Complaints_YYYY_MM</code>) and a fresh spreadsheet is activated without dashboard interruption.
+        </p>
+
+        <div id="sheet-rotation-details" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-bottom: 16px;">
+          <div style="background: var(--bg-subtle); padding: 12px; border-radius: 6px;">
+            <div style="font-size: 11px; text-transform: uppercase; color: var(--text-muted); font-weight: 600;">Active Spreadsheet ID</div>
+            <div style="font-size: 12px; font-weight: 600; color: var(--text-main); margin-top: 4px; word-break: break-all;" id="rotation-active-id">Loading...</div>
+          </div>
+          <div style="background: var(--bg-subtle); padding: 12px; border-radius: 6px;">
+            <div style="font-size: 11px; text-transform: uppercase; color: var(--text-muted); font-weight: 600;">Active Reporting Month</div>
+            <div style="font-size: 14px; font-weight: 700; color: #3b82f6; margin-top: 4px;" id="rotation-active-month">Loading...</div>
+          </div>
+          <div style="background: var(--bg-subtle); padding: 12px; border-radius: 6px;">
+            <div style="font-size: 11px; text-transform: uppercase; color: var(--text-muted); font-weight: 600;">System Timezone / Target Tab</div>
+            <div style="font-size: 13px; font-weight: 600; color: var(--text-main); margin-top: 4px;" id="rotation-timezone">Asia/Kolkata (IST)</div>
+          </div>
+        </div>
+
+        <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 16px;">
+          <button type="button" class="btn btn-primary btn-sm" onclick="App.triggerSheetRotation(true)">
+            <i class="fa-solid fa-arrows-rotate"></i> Test / Trigger Monthly Rollover Now
+          </button>
+          <button type="button" class="btn btn-secondary btn-sm" onclick="App.verifySheetConnection()">
+            <i class="fa-solid fa-circle-check"></i> Verify Two-Way Synchronization
+          </button>
+          <button type="button" class="btn btn-danger btn-sm" onclick="App.triggerSheetRollback()">
+            <i class="fa-solid fa-rotate-left"></i> Restore Stable Baseline Version
+          </button>
+          <a id="btn-open-active-sheet" href="#" target="_blank" rel="noopener noreferrer" class="btn btn-secondary btn-sm" style="margin-left: auto;">
+            <i class="fa-solid fa-up-right-from-square"></i> Open Active Google Sheet
+          </a>
+        </div>
+
+        <div style="border-top: 1px solid var(--border-color); padding-top: 12px;">
+          <div style="font-size: 12px; font-weight: 600; color: var(--text-main); margin-bottom: 8px;"><i class="fa-solid fa-clock-rotate-left"></i> Rotation & Archive Ledger History</div>
+          <div id="rotation-history-container" style="max-height: 180px; overflow-y: auto; font-size: 12px;">
+            <div style="color: var(--text-muted);">Loading rotation history...</div>
+          </div>
+        </div>
+      </div>
+
       <div class="details-card">
         <form onsubmit="App.saveSettings(event)">
           <div id="settings-fields-container" style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; margin-bottom: 20px;">
@@ -4824,6 +4874,9 @@ const App = {
         </form>
       </div>
     `;
+
+    // Load dynamic rotation details
+    this.loadSheetRotationDetails();
 
     try {
       const res = await this.api('/api/settings');
@@ -4855,6 +4908,127 @@ const App = {
       alert('Settings updated successfully.');
     } catch (err) {
       alert(`Error saving settings: ${err.message}`);
+    }
+  },
+
+  // -----------------------------------------------------------
+  // GOOGLE SHEETS MONTHLY ROTATION & ARCHIVING CONTROLS
+  // -----------------------------------------------------------
+  async loadSheetRotationDetails() {
+    try {
+      const res = await this.api('/api/admin/sheet-rotation/status');
+      if (!res || !res.activeConfig) return;
+
+      const cfg = res.activeConfig;
+      const idEl = document.getElementById('rotation-active-id');
+      const monthEl = document.getElementById('rotation-active-month');
+      const tzEl = document.getElementById('rotation-timezone');
+      const linkEl = document.getElementById('btn-open-active-sheet');
+      const badgeEl = document.getElementById('rotation-status-badge');
+      const histEl = document.getElementById('rotation-history-container');
+
+      if (idEl) idEl.textContent = cfg.spreadsheetId;
+      if (monthEl) monthEl.textContent = `${cfg.activeMonth} ${cfg.isBaseline ? '(Baseline Template)' : '(Monthly Rotated)'}`;
+      if (tzEl) tzEl.textContent = `${res.timezone || 'Asia/Kolkata'} (${cfg.worksheetName} / GID ${cfg.worksheetGid})`;
+      if (linkEl) linkEl.href = `https://docs.google.com/spreadsheets/d/${cfg.spreadsheetId}/edit?gid=${cfg.worksheetGid}#gid=${cfg.worksheetGid}`;
+      if (badgeEl) {
+        badgeEl.className = cfg.isBaseline ? 'badge badge-success' : 'badge badge-primary';
+        badgeEl.textContent = cfg.isBaseline ? 'Stable Baseline Active' : 'Monthly Rotated Sheet Active';
+      }
+
+      if (histEl) {
+        const hist = res.history || [];
+        if (hist.length === 0) {
+          histEl.innerHTML = '<div style="color: var(--text-muted); padding: 8px 0;">No previous rotation events recorded. System is operating on stable baseline.</div>';
+        } else {
+          histEl.innerHTML = `
+            <table class="data-table" style="font-size: 11px; width: 100%;">
+              <thead>
+                <tr>
+                  <th>Timestamp</th>
+                  <th>Action</th>
+                  <th>Month</th>
+                  <th>Spreadsheet ID</th>
+                  <th>Archive Folder</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${hist.map(h => `
+                  <tr>
+                    <td>${(h.timestamp || '').substring(0, 19).replace('T', ' ')}</td>
+                    <td><b>${h.action}</b></td>
+                    <td>${h.toMonth || h.activeMonth || '-'}</td>
+                    <td><code>${(h.newSpreadsheetId || h.toSpreadsheetId || h.restoredSpreadsheetId || '').substring(0, 20)}...</code></td>
+                    <td>${h.archiveFolderName || '-'}</td>
+                    <td><span class="badge ${h.status === 'SUCCESS' ? 'badge-success' : 'badge-danger'}">${h.status}</span></td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          `;
+        }
+      }
+    } catch (e) {
+      console.warn('Could not load sheet rotation details:', e.message);
+    }
+  },
+
+  async triggerSheetRotation(force = true) {
+    if (!confirm('Execute monthly Google Sheets rollover now?\n\n1. Completed month will be archived in Google Drive.\n2. A fresh monthly spreadsheet will be created from structural template.\n3. The dashboard will switch seamlessly to the new sheet.\n\nProceed?')) {
+      return;
+    }
+    try {
+      this.showToast('Initiating Google Sheets monthly rollover...', 'info');
+      const res = await this.api('/api/admin/sheet-rotation/trigger', {
+        method: 'POST',
+        body: JSON.stringify({ force })
+      });
+      if (res && res.success) {
+        alert(`Monthly Rollover Succeeded!\n\nNew Spreadsheet ID: ${res.activeSpreadsheetId}\nWorksheet GID: ${res.activeWorksheetGid}\nActive Month: ${res.activeMonth}\nArchive Folder: ${res.archivedFolder || 'Saved'}\nDuration: ${res.durationMs || 0}ms`);
+        this.loadSheetRotationDetails();
+        this.triggerSheetSync();
+      } else {
+        alert(`Rollover could not be completed: ${res.error || res.reason || 'Unknown issue'}`);
+      }
+    } catch (err) {
+      alert(`Error during rollover: ${err.message}`);
+    }
+  },
+
+  async triggerSheetRollback() {
+    if (!confirm('ROLLBACK WARNING:\n\nRestore the stable baseline Google Spreadsheet (ID: 10_210Ynr_F0Pj1Yov_pqjVZ1kaYIEWrbGF1jn16sgNY, GID: 598922870)?\n\nNo archived records or spreadsheets will be deleted.\n\nProceed with rollback?')) {
+      return;
+    }
+    try {
+      this.showToast('Restoring stable baseline spreadsheet configuration...', 'info');
+      const res = await this.api('/api/admin/sheet-rotation/rollback', {
+        method: 'POST',
+        body: JSON.stringify({})
+      });
+      if (res && res.success) {
+        alert(`Rollback Succeeded!\n\nRestored Spreadsheet ID: ${res.restoredSpreadsheetId}\nWorksheet GID: ${res.restoredWorksheetGid}\nActive Month: ${res.activeMonth}\nBaseline Active: ${res.isBaseline}`);
+        this.loadSheetRotationDetails();
+        this.triggerSheetSync();
+      } else {
+        alert(`Rollback failed: ${res.error || 'Unknown error'}`);
+      }
+    } catch (err) {
+      alert(`Rollback error: ${err.message}`);
+    }
+  },
+
+  async verifySheetConnection() {
+    try {
+      this.showToast('Verifying two-way synchronization...', 'info');
+      const res = await this.api('/api/admin/sheet-rotation/verify', { method: 'POST' });
+      if (res && res.status === 'ok') {
+        alert(`Two-Way Synchronization Verified!\n\nActive Spreadsheet ID: ${res.activeConfig.spreadsheetId}\nWorksheet GID: ${res.activeConfig.worksheetGid}\nDistrict Tab: Verified (${res.districtsCount} dynamic districts loaded)\nSync State: ${res.syncStatus.status} (${res.syncStatus.recordCount} records)\nVerified At: ${res.verifiedAt}`);
+      } else {
+        alert(`Verification failed: ${res.error || 'Could not verify sheet'}`);
+      }
+    } catch (err) {
+      alert(`Verification error: ${err.message}`);
     }
   },
 

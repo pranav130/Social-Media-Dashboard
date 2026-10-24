@@ -68,6 +68,17 @@ const {
   resolvePrimaryMonitoredAccount
 } = require('./eligibility');
 const { createHeaderMap, calculateReplyWithin30Min } = require('./sheet_mapper');
+const sheetRotationService = require('./sheet_rotation_service');
+
+function getActiveSpreadsheetId() {
+  return sheetRotationService.getActiveSpreadsheetId();
+}
+function getActiveWorksheetGid() {
+  return sheetRotationService.getActiveWorksheetGid();
+}
+function getActiveWorksheetName() {
+  return sheetRotationService.getActiveWorksheetName();
+}
 
 // Primary: Operational Working Sheet (Authoritative Google Sheet)
 const MANUAL_SPREADSHEET_ID = process.env.GOOGLE_MANUAL_SPREADSHEET_ID || '10_210Ynr_F0Pj1Yov_pqjVZ1kaYIEWrbGF1jn16sgNY';
@@ -100,6 +111,14 @@ let lastSyncInfo = {
   worksheetGid: WORKSHEET_GID,
   worksheetName: WORKSHEET_NAME
 };
+
+sheetRotationService.onConfigChange((newConfig) => {
+  console.log(`[GoogleSheetsSync] Active sheet rotated to ${newConfig.spreadsheetId}. Updating status & syncing.`);
+  lastSyncInfo.spreadsheetId = newConfig.spreadsheetId;
+  lastSyncInfo.worksheetGid = newConfig.worksheetGid;
+  lastSyncInfo.worksheetName = newConfig.worksheetName;
+  syncGoogleSheets(true).catch(e => console.warn('[GoogleSheetsSync] Post-rotation sync warning:', e.message));
+});
 
 /**
  * Retrieve set of all frivolous/deleted tweet IDs, URLs, and complaint numbers
@@ -584,8 +603,10 @@ async function fetchSheetMatrix() {
 
   // Transport 1: Dual-Sheet CSV Export (Direct Link-Shared Fetch)
   try {
-    const manualCsvUrl = `https://docs.google.com/spreadsheets/d/${MANUAL_SPREADSHEET_ID}/export?format=csv&gid=${MANUAL_WORKSHEET_GID}`;
-    const autoCsvUrl = `https://docs.google.com/spreadsheets/d/${AUTO_SPREADSHEET_ID}/export?format=csv&gid=${AUTO_WORKSHEET_GID}`;
+    const curSpreadsheetId = getActiveSpreadsheetId();
+    const curWorksheetGid = getActiveWorksheetGid();
+    const manualCsvUrl = `https://docs.google.com/spreadsheets/d/${curSpreadsheetId}/export?format=csv&gid=${curWorksheetGid}`;
+    const autoCsvUrl = `https://docs.google.com/spreadsheets/d/${curSpreadsheetId}/export?format=csv&gid=${curWorksheetGid}`;
 
     let manualRows = null;
     let autoRows = null;
@@ -1676,6 +1697,11 @@ function getSyncStatus() {
   const count = currentCount ? currentCount.cnt : lastSyncInfo.recordCount;
   return {
     ...lastSyncInfo,
+    spreadsheetId: sheetRotationService.getActiveSpreadsheetId(),
+    worksheetGid: sheetRotationService.getActiveWorksheetGid(),
+    worksheetName: sheetRotationService.getActiveWorksheetName(),
+    activeMonth: sheetRotationService.getActiveMonth(),
+    isBaseline: sheetRotationService.isBaselineActive(),
     recordCount: count,
     isSyncing: syncInProgress
   };

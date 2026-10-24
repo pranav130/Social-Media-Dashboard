@@ -11,6 +11,7 @@ const classifier = require('./classifier');
 const XService = require('./x_service');
 const googleSheetsService = require('./google_sheets_service');
 const workingSheetService = require('./working_sheet_service');
+const sheetRotationService = require('./sheet_rotation_service');
 const { TARGET_HANDLES, TARGET_HANDLES_CANONICAL, isPostEligible, getMatchedTargetHandles, resolvePrimaryMonitoredAccount } = require('./eligibility');
 
 const app = express();
@@ -3436,6 +3437,105 @@ app.post('/api/admin/x-verify', authMiddleware, requireRoles('Super Administrato
 });
 
 // -------------------------------------------------------------
+// GOOGLE SHEETS MONTHLY ROTATION & ARCHIVING ENDPOINTS
+// -------------------------------------------------------------
+
+// 1. Get current active sheet status, rotation ledger, and schedule
+app.get('/api/admin/sheet-rotation/status', authMiddleware, requireRoles('Super Administrator', 'Supervisor / Management'), (req, res) => {
+  try {
+    const activeConfig = sheetRotationService.getActiveSpreadsheetConfig();
+    const ledger = sheetRotationService.getRotationLedger();
+    const currentIst = sheetRotationService.getCurrentIstMonthInfo();
+    const prevIst = sheetRotationService.getPreviousIstMonthInfo();
+
+    res.json({
+      status: 'ok',
+      activeConfig,
+      currentMonth: currentIst,
+      previousMonth: prevIst,
+      timezone: sheetRotationService.SYSTEM_TIMEZONE,
+      baselineSpreadsheetId: sheetRotationService.BASELINE_SPREADSHEET_ID,
+      baselineWorksheetGid: sheetRotationService.BASELINE_WORKSHEET_GID,
+      isBaselineActive: sheetRotationService.isBaselineActive(),
+      scheduler: sheetRotationService.getSchedulerStatus(),
+      history: ledger
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 2. Trigger / Test monthly rollover
+app.post('/api/admin/sheet-rotation/trigger', authMiddleware, requireRoles('Super Administrator'), async (req, res) => {
+  try {
+    const { force = false, target_month = null } = req.body;
+    const result = await sheetRotationService.checkAndPerformMonthlyRollover({
+      force: force === true || force === 'true',
+      targetMonth: target_month,
+      user: req.user
+    });
+
+    logAudit(
+      req,
+      req.user,
+      'SHEET_ROTATION_TRIGGER',
+      'GOOGLE_SPREADSHEET',
+      0,
+      `Triggered monthly rollover: ${result.success ? 'SUCCESS' : 'FAILED'} (${result.activeSpreadsheetId || result.error})`
+    );
+
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: 'Rollover execution failed: ' + err.message });
+  }
+});
+
+// 3. Rollback to baseline stable version or previous target sheet
+app.post('/api/admin/sheet-rotation/rollback', authMiddleware, requireRoles('Super Administrator'), async (req, res) => {
+  try {
+    const { target_spreadsheet_id, target_worksheet_gid, target_month } = req.body;
+    const result = await sheetRotationService.rollbackConfiguration({
+      targetSpreadsheetId: target_spreadsheet_id || sheetRotationService.BASELINE_SPREADSHEET_ID,
+      targetWorksheetGid: target_worksheet_gid || sheetRotationService.BASELINE_WORKSHEET_GID,
+      targetMonth: target_month || '2026_10',
+      user: req.user
+    });
+
+    logAudit(
+      req,
+      req.user,
+      'SHEET_ROTATION_ROLLBACK',
+      'GOOGLE_SPREADSHEET',
+      0,
+      `Rolled back spreadsheet configuration to ${result.restoredSpreadsheetId}`
+    );
+
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: 'Rollback execution failed: ' + err.message });
+  }
+});
+
+// 4. Verify two-way synchronization on active sheet
+app.post('/api/admin/sheet-rotation/verify', authMiddleware, requireRoles('Super Administrator'), async (req, res) => {
+  try {
+    const activeConfig = sheetRotationService.getActiveSpreadsheetConfig();
+    const districtInfo = await workingSheetService.getDistrictList(true);
+    const syncStatus = googleSheetsService.getSyncStatus();
+
+    res.json({
+      status: 'ok',
+      activeConfig,
+      verifiedAt: new Date().toISOString(),
+      districtsCount: districtInfo.count,
+      syncStatus
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Verification failed: ' + err.message });
+  }
+});
+
+// -------------------------------------------------------------
 // WORKING SHEET MANAGEMENT ENDPOINTS (11 TARGET COLUMNS)
 // -------------------------------------------------------------
 
@@ -3945,6 +4045,13 @@ if (process.env.NO_SERVER_AUTOSTART !== 'true') {
         console.log('[Server] Google Sheets synchronization service started (5-min interval).');
       } catch (sErr) {
         console.warn('[Server] Google Sheets sync init warning:', sErr.message);
+      }
+
+      // Start automatic monthly Google Sheets archiving and rotation scheduler (Asia/Kolkata)
+      try {
+        sheetRotationService.startMonthlyRotationScheduler();
+      } catch (rErr) {
+        console.warn('[Server] Sheet rotation scheduler init warning:', rErr.message);
       }
 
       // Start background worker daemon if enabled (default enabled for single-service deployments)
