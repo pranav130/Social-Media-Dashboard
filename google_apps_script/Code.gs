@@ -1275,7 +1275,7 @@ function onOpen() {
     .addItem('🗑 Delete Selected Row as Frivolous', 'deleteSelectedRowAsFrivolous')
     .addItem('🧹 Remove Duplicate Rows from Sheet', 'removeDuplicateRowsFromSheet')
     .addItem('🧹 Remove Official Initiated Posts', 'removeOfficialPostsFromSheet')
-    .addItem('ðŸ§¹ Remove Posts Already Replied by DISCOM / Authorities', 'removeOfficialRepliedFromSheet')
+    .addItem('🧹 Remove Posts Already Replied by DISCOM / Authorities', 'removeOfficialRepliedFromSheet')
     .addItem('📥 Sync All Complaints from Working Sheet (19-10-26)', 'syncFromWorkingSheet')
     .addItem('🔄 Restore Standard Column Headers (Row 1)', 'restoreStandardHeaders')
     .addItem('⚡ Populate UPPCLLKO Replied (YES/NO) across All Rows', 'populateUppclRepliedColumn')
@@ -1834,8 +1834,16 @@ function removeOfficialPostsFromSheet() {
   writeRange.setWrapStrategy(SpreadsheetApp.WrapStrategy.WRAP);
   writeRange.setBorder(true, true, true, true, true, true, '#000000', SpreadsheetApp.BorderStyle.SOLID);
 
-  for (let r = 3; r <= cleanRows.length + 2; r++) {
-    sheet.setRowHeight(r, 45);
+  if (colMap.date !== undefined) {
+    sheet.getRange(3, colMap.date + 1, cleanRows.length, 1).setNumberFormat('dd-MM-yyyy');
+  }
+
+  try {
+    sheet.setRowHeights(3, cleanRows.length, 45);
+  } catch (e) {
+    for (let r = 3; r <= cleanRows.length + 2; r++) {
+      sheet.setRowHeight(r, 45);
+    }
   }
 
   const linkStyle = SpreadsheetApp.newTextStyle()
@@ -1932,8 +1940,16 @@ function removeDuplicateRowsFromSheet() {
   writeRange.setWrapStrategy(SpreadsheetApp.WrapStrategy.WRAP);
   writeRange.setBorder(true, true, true, true, true, true, '#000000', SpreadsheetApp.BorderStyle.SOLID);
 
-  for (let r = 3; r <= cleanRows.length + 2; r++) {
-    sheet.setRowHeight(r, 45);
+  if (colMap.date !== undefined) {
+    sheet.getRange(3, colMap.date + 1, cleanRows.length, 1).setNumberFormat('dd-MM-yyyy');
+  }
+
+  try {
+    sheet.setRowHeights(3, cleanRows.length, 45);
+  } catch (e) {
+    for (let r = 3; r <= cleanRows.length + 2; r++) {
+      sheet.setRowHeight(r, 45);
+    }
   }
 
   const linkStyle = SpreadsheetApp.newTextStyle()
@@ -2115,6 +2131,11 @@ function doPost(e) {
     if (contents.action === 'repair_misaligned' || contents.action === 'repair_columns') {
       const fixed = repairMisalignedRowsInSheet();
       return ContentService.createTextOutput(JSON.stringify({ status: 'ok', action: contents.action, repairedCount: fixed }))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+    if (contents.action === 'remove_duplicates' || contents.action === 'deduplicate') {
+      const removed = removeDuplicateRowsFromSheet();
+      return ContentService.createTextOutput(JSON.stringify({ status: 'ok', action: contents.action, removedCount: removed }))
         .setMimeType(ContentService.MimeType.JSON);
     }
     if (contents.action === 'sort_sheet' || contents.action === 'sort_dates') {
