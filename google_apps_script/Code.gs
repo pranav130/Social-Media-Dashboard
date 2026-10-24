@@ -3384,7 +3384,12 @@ function fixDateColumnInSheet() {
 
     if (tid) {
       try {
-        const epochMs = Number((BigInt(tid) >> 22n) + 1288834974657n);
+        let epochMs = 0;
+        if (typeof BigInt !== 'undefined') {
+          epochMs = Number((BigInt(tid) / BigInt(4194304)) + BigInt('1288834974657'));
+        } else {
+          epochMs = Math.floor(Number(tid) / 4194304) + 1288834974657;
+        }
         const parsed = new Date(epochMs);
         if (!isNaN(parsed.getTime()) && parsed.getFullYear() >= 2020 && parsed.getFullYear() <= 2035) {
           // Strictly format into Indian Standard Time (IST)
