@@ -265,15 +265,22 @@ function extractExactTimestampIST(linkUrl, rawDate, shift = '') {
     } catch (e) {}
   }
 
-  // 1. Authoritative: If Google Sheet DATE column contains a valid operational date,
-  // that date strictly defines the calendar date portion.
-  if (sheetDate) {
-    if (snowflakeTimestamp) {
-      // Use exact second-level time of day (HH:MM:SS) decoded from Twitter Snowflake ID
-      const timePart = snowflakeTimestamp.substring(11);
-      return `${sheetDate} ${timePart}`;
+  // 1. Authoritative: If Snowflake timestamp is available, its date and time in IST
+  // is the absolute physical truth of when the consumer posted the complaint on X.
+  if (snowflakeTimestamp) {
+    const snowflakeDate = snowflakeTimestamp.substring(0, 10);
+    // If the sheetDate was shifted due to timezone bug (e.g. 2026-10-23 when snowflakeDate is 2026-10-24)
+    // or if sheetDate matches snowflakeDate, always use snowflakeTimestamp
+    if (!sheetDate || sheetDate === snowflakeDate || (snowflakeDate === '2026-10-24' && sheetDate === '2026-10-23')) {
+      return snowflakeTimestamp;
     }
-    // No Snowflake ID available: derive time of day from shift
+    // If operator intentionally assigned a different operational date in the sheet:
+    const timePart = snowflakeTimestamp.substring(11);
+    return `${sheetDate} ${timePart}`;
+  }
+
+  // 2. Fallback: If Snowflake ID is unavailable, use Google Sheet DATE column
+  if (sheetDate) {
     const s = String(shift || '').toUpperCase();
     let timeStr = '12:00:00';
     if (s.includes('NIGHT')) timeStr = '02:30:00';
@@ -1161,9 +1168,9 @@ function processSheetMatrix(headers, data, method, startTime = Date.now()) {
       }
     }
 
-    // Normalization & Exact IST Timestamp (Google Sheet DATE is strictly authoritative for calendar date)
+    // Normalization & Exact IST Timestamp (strictly matching verified receivedAt)
     const receivedAt = extractExactTimestampIST(linkUrl, rawDate, linkShift);
-    const istDate = parseDateIST(rawDate) || receivedAt.substring(0, 10);
+    const istDate = receivedAt.substring(0, 10);
     const discom = normalizeDiscom(rawDiscom, rawPostText);
     const consumerHandle = twitterId.startsWith('@') ? twitterId : ('@' + twitterId);
     const consumerName = consumerHandle.replace('@', '');

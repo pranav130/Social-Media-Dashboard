@@ -78,6 +78,24 @@ function getColumnLetter(colIndex, fallbackLetter) {
 }
 
 /**
+ * Permanently locks spreadsheet timezone to Indian Standard Time (Asia/Kolkata, UTC+5:30).
+ * Prevents dates from shifting backwards into yesterday due to default Pacific/UTC spreadsheet timezones.
+ *
+ * @param {Spreadsheet} [targetSpreadsheet] - Optional spreadsheet instance.
+ */
+function ensureSpreadsheetTimezone(targetSpreadsheet) {
+  try {
+    const ss = targetSpreadsheet || SpreadsheetApp.getActiveSpreadsheet();
+    if (ss && ss.getSpreadsheetTimeZone() !== 'Asia/Kolkata') {
+      ss.setSpreadsheetTimeZone('Asia/Kolkata');
+      Logger.log('Enforced spreadsheet timezone: Asia/Kolkata (IST)');
+    }
+  } catch (e) {
+    Logger.log('ensureSpreadsheetTimezone note: ' + e);
+  }
+}
+
+/**
  * Permanently locks Row 2 as a blank spacer row and freezes the top 2 rows (Row 1 Header + Row 2 Blank).
  * If Row 2 currently contains complaint data (e.g. because the blank row vanished or was sorted away),
  * a new row is inserted before Row 2, pushing complaint data down to Row 3 without losing any records.
@@ -87,6 +105,7 @@ function getColumnLetter(colIndex, fallbackLetter) {
  */
 function ensureRow2IsBlankAndFrozen(targetSheet) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
+  ensureSpreadsheetTimezone(ss);
   let sheet = targetSheet || (ss ? ss.getSheetByName('Twitter Complaint List') : null);
   if (!sheet && ss) sheet = ss.getActiveSheet();
   if (!sheet) return;
@@ -2034,6 +2053,7 @@ function fixMisclassifiedComplaints() {
 function doGet(e) {
   try {
     const ss = getActiveWorkingSpreadsheet(e && e.parameter ? e.parameter : null);
+    ensureSpreadsheetTimezone(ss);
     let sheet = ss.getSheetByName('Twitter Complaint List');
     if (!sheet) {
       const sheets = ss.getSheets();
@@ -2781,7 +2801,7 @@ function runCloudSyncCycle() {
       const tweetUrl = 'https://x.com/' + username + '/status/' + tweetId;
       if (existingUrls.has(tweetUrl.toLowerCase())) continue;
 
-      // Exact date and time from tweet timestamp
+      // Exact date and time from tweet timestamp strictly in Indian Standard Time (IST)
       let tweetDate = new Date();
       if (tweet.created_at) {
         tweetDate = new Date(tweet.created_at);
@@ -2789,11 +2809,11 @@ function runCloudSyncCycle() {
       const dStr = Utilities.formatDate(tweetDate, 'Asia/Kolkata', 'dd-MM-yyyy');
       const timeStr = Utilities.formatDate(tweetDate, 'Asia/Kolkata', 'HH:mm:ss');
 
-      // Operational shift
-      const hour = tweetDate.getHours();
+      // Operational shift strictly derived from IST hours (00-08: NIGHT, 08-16: MORNING, 16-24: EVENING)
+      const istHour = parseInt(Utilities.formatDate(tweetDate, 'Asia/Kolkata', 'HH'), 10);
       let shift = 'MORNING';
-      if (hour < 8) shift = 'NIGHT';
-      else if (hour >= 16) shift = 'EVENING';
+      if (istHour < 8) shift = 'NIGHT';
+      else if (istHour >= 16) shift = 'EVENING';
 
       const text = tweet.text || '';
 
@@ -2804,9 +2824,16 @@ function runCloudSyncCycle() {
       const c = classifyTweetInScript(text, username);
       const headCode = detectApexHead(text);
 
+      // Construct genuine Date object anchored at 12:00:00 (noon) IST of the calendar date so timezone shifts never flip the date
+      const dParts = dStr.split('-');
+      const istDay = parseInt(dParts[0], 10);
+      const istMonth = parseInt(dParts[1], 10) - 1;
+      const istYear = parseInt(dParts[2], 10);
+      const istDateObj = new Date(istYear, istMonth, istDay, 12, 0, 0);
+
       // Build row array dynamically using colMap (matches exact sheet headers)
       const row = new Array(totalCols).fill('');
-      if (colMap.date !== undefined) row[colMap.date] = tweetDate; // Store genuine Date object
+      if (colMap.date !== undefined) row[colMap.date] = istDateObj; // Store genuine Date object pinned to IST date
       if (colMap.linkShift !== undefined) row[colMap.linkShift] = shift;
       if (colMap.replyShift !== undefined) row[colMap.replyShift] = shift;
       if (colMap.cf !== undefined) row[colMap.cf] = '';
@@ -3309,6 +3336,9 @@ function fixDateColumnInSheet() {
   let sheet = ss.getSheetByName('Twitter Complaint List');
   if (!sheet) sheet = ss.getActiveSheet();
 
+  // Guarantee spreadsheet timezone is strictly Asia/Kolkata (IST, UTC+5:30)
+  ensureSpreadsheetTimezone(ss);
+
   // Guarantee Row 2 is blank and top 2 rows are permanently frozen
   ensureRow2IsBlankAndFrozen(sheet);
 
@@ -3347,45 +3377,72 @@ function fixDateColumnInSheet() {
 
     let dObj = null;
 
-    // 1. If it is already a genuine native Date object
-    if (rawCell instanceof Date && !isNaN(rawCell.getTime())) {
-      const yr = rawCell.getFullYear();
-      if (yr >= 2020 && yr <= 2035) {
-        dObj = rawCell;
+    // 1. PRIMARY & AUTHORITATIVE: Twitter Snowflake ID in Link URL or Tweet ID column
+    // Decodes immutable UTC creation millisecond: ms = (id >> 22) + 1288834974657
+    const m = url.match(/status\/(\d+)/i);
+    const tid = m ? m[1] : (tidCol && /^\d{15,25}$/.test(tidCol) ? tidCol : null);
+
+    if (tid) {
+      try {
+        const epochMs = Number((BigInt(tid) >> 22n) + 1288834974657n);
+        const parsed = new Date(epochMs);
+        if (!isNaN(parsed.getTime()) && parsed.getFullYear() >= 2020 && parsed.getFullYear() <= 2035) {
+          // Strictly format into Indian Standard Time (IST)
+          const istStr = Utilities.formatDate(parsed, 'Asia/Kolkata', 'dd-MM-yyyy');
+          const p = istStr.split('-');
+          dObj = new Date(parseInt(p[2], 10), parseInt(p[1], 10) - 1, parseInt(p[0], 10), 12, 0, 0);
+        }
+      } catch (e) {}
+    }
+
+    // 2. Secondary fallback: First Detected At IST column (if Snowflake ID was unavailable)
+    if (!dObj && colDetected) {
+      const dMatch = colDetected.match(/(\d{1,2})[-/](\d{1,2})[-/](\d{4})(?:\s+(\d{1,2}):(\d{1,2}))?/);
+      if (dMatch) {
+        const day = parseInt(dMatch[1], 10);
+        const month = parseInt(dMatch[2], 10) - 1;
+        const year = parseInt(dMatch[3], 10);
+        if (year >= 2020 && year <= 2035) {
+          dObj = new Date(year, month, day, 12, 0, 0);
+        }
       }
     }
 
-    // 2. If it is an Excel / Sheets serial number (e.g. 40000 - 60000)
+    // 3. Native Date object in cell (re-anchor to 12:00:00 noon IST)
+    if (!dObj && rawCell instanceof Date && !isNaN(rawCell.getTime())) {
+      const yr = rawCell.getFullYear();
+      if (yr >= 2020 && yr <= 2035) {
+        const istStr = Utilities.formatDate(rawCell, 'Asia/Kolkata', 'dd-MM-yyyy');
+        const p = istStr.split('-');
+        dObj = new Date(parseInt(p[2], 10), parseInt(p[1], 10) - 1, parseInt(p[0], 10), 12, 0, 0);
+      }
+    }
+
+    // 4. Sheets serial number (e.g. 40000 - 60000)
     if (!dObj && typeof rawCell === 'number' && rawCell > 40000 && rawCell < 60000) {
       const epochMs = (rawCell - 25569) * 86400 * 1000;
       const parsed = new Date(epochMs);
       if (!isNaN(parsed.getTime())) {
-        dObj = parsed;
+        const istStr = Utilities.formatDate(parsed, 'Asia/Kolkata', 'dd-MM-yyyy');
+        const p = istStr.split('-');
+        dObj = new Date(parseInt(p[2], 10), parseInt(p[1], 10) - 1, parseInt(p[0], 10), 12, 0, 0);
       }
     }
 
-    // 3. String date formats
+    // 5. String date formats
     if (!dObj && curDateStr) {
-      // 3a. Strict DD-MM-YYYY or DD/MM/YYYY
+      // 5a. Strict DD-MM-YYYY or DD/MM/YYYY
       const dmy = curDateStr.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})/);
       if (dmy) {
         const day = parseInt(dmy[1], 10);
         const month = parseInt(dmy[2], 10) - 1;
         const year = parseInt(dmy[3], 10);
         if (year >= 2020 && year <= 2035 && month >= 0 && month <= 11 && day >= 1 && day <= 31) {
-          // Extract time if present
-          let h = 0, m = 0, s = 0;
-          const timeMatch = curDateStr.match(/\s+(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?/);
-          if (timeMatch) {
-            h = parseInt(timeMatch[1], 10);
-            m = parseInt(timeMatch[2], 10);
-            s = timeMatch[3] ? parseInt(timeMatch[3], 10) : 0;
-          }
-          dObj = new Date(year, month, day, h, m, s);
+          dObj = new Date(year, month, day, 12, 0, 0);
         }
       }
 
-      // 3b. Strict YYYY-MM-DD or YYYY/MM/DD
+      // 5b. Strict YYYY-MM-DD or YYYY/MM/DD
       if (!dObj) {
         const ymd = curDateStr.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})/);
         if (ymd) {
@@ -3393,61 +3450,25 @@ function fixDateColumnInSheet() {
           const month = parseInt(ymd[2], 10) - 1;
           const day = parseInt(ymd[3], 10);
           if (year >= 2020 && year <= 2035) {
-            dObj = new Date(year, month, day);
+            dObj = new Date(year, month, day, 12, 0, 0);
           }
         }
       }
 
-      // 3c. ISO or standard string parse fallback
+      // 5c. ISO or standard string parse fallback
       if (!dObj && (curDateStr.includes('GMT') || curDateStr.includes('T') || /[a-zA-Z]{3}/.test(curDateStr))) {
         const parsed = new Date(curDateStr);
         if (!isNaN(parsed.getTime()) && parsed.getFullYear() >= 2020 && parsed.getFullYear() <= 2035) {
-          dObj = parsed;
+          const istStr = Utilities.formatDate(parsed, 'Asia/Kolkata', 'dd-MM-yyyy');
+          const p = istStr.split('-');
+          dObj = new Date(parseInt(p[2], 10), parseInt(p[1], 10) - 1, parseInt(p[0], 10), 12, 0, 0);
         }
-      }
-    }
-
-    // 4. Missing / Corrupted / Blank Date Recovery via Twitter Snowflake ID in Link URL or Tweet ID column
-    if (!dObj) {
-      const m = url.match(/status\/(\d+)/i);
-      const tid = m ? m[1] : (tidCol && /^\d{15,25}$/.test(tidCol) ? tidCol : null);
-
-      if (tid) {
-        try {
-          // Twitter Snowflake epoch: ms = (id >> 22) + 1288834974657
-          const epochMs = Math.floor(Number(tid) / 4194304) + 1288834974657;
-          const parsed = new Date(epochMs);
-          if (!isNaN(parsed.getTime()) && parsed.getFullYear() >= 2020 && parsed.getFullYear() <= 2035) {
-            dObj = parsed;
-          }
-        } catch (e) {
-          try {
-            const epochMs = Math.floor(Number(tid) / 4194304) + 1288834974657;
-            const parsed = new Date(epochMs);
-            if (!isNaN(parsed.getTime()) && parsed.getFullYear() >= 2020 && parsed.getFullYear() <= 2035) {
-              dObj = parsed;
-            }
-          } catch (e2) {}
-        }
-      }
-    }
-
-    // 5. Secondary fallback to First Detected At IST
-    if (!dObj && colDetected) {
-      const dMatch = colDetected.match(/(\d{1,2})[-/](\d{1,2})[-/](\d{4})(?:\s+(\d{1,2}):(\d{1,2}))?/);
-      if (dMatch) {
-        const day = parseInt(dMatch[1], 10);
-        const month = parseInt(dMatch[2], 10) - 1;
-        const year = parseInt(dMatch[3], 10);
-        const h = dMatch[4] ? parseInt(dMatch[4], 10) : 0;
-        const min = dMatch[5] ? parseInt(dMatch[5], 10) : 0;
-        dObj = new Date(year, month, day, h, min, 0);
       }
     }
 
     // 6. Safe final default for valid complaints with no parseable date
     if (!dObj) {
-      dObj = new Date(2026, 9, 19); // 19-10-2026
+      dObj = new Date(2026, 9, 19, 12, 0, 0); // 19-10-2026 noon
     }
 
     fixCount++;
@@ -3469,7 +3490,7 @@ function fixDateColumnInSheet() {
   // Execute complete-row descending sort
   sortSheetByDateDescending();
 
-  const msg = 'Successfully converted ' + fixCount + ' records to genuine Date values and sorted complete rows descending (Z-A, latest date first)!';
+  const msg = 'Successfully normalized ' + fixCount + ' records to genuine IST Date values and sorted complete rows descending (latest date first)!';
   try {
     SpreadsheetApp.getUi().alert('Date Normalization & Descending Sort\n\n' + msg);
   } catch (e) {

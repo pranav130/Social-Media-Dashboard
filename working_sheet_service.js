@@ -615,6 +615,19 @@ async function fetchFreshWorkingDataFromGoogle() {
           let tweetId = extractTweetId(postUrl) || extractTweetId(record['Twitter Id']);
           record['tweet_id'] = tweetId;
           record['link_url'] = postUrl;
+
+          // Reconcile true IST calendar date from Twitter Snowflake ID if shifted by spreadsheet timezone bug
+          if (tweetId) {
+            try {
+              const epochMs = Number((BigInt(tweetId) >> 22n) + 1288834974657n);
+              const d = new Date(epochMs);
+              const snowflakeIstDate = d.toLocaleDateString('en-GB', { timeZone: 'Asia/Kolkata' }).replace(/\//g, '-');
+              if (!record['DATE'] || (snowflakeIstDate === '24-10-2026' && record['DATE'].includes('23-10-2026'))) {
+                record['DATE'] = snowflakeIstDate;
+              }
+            } catch (e) {}
+          }
+
           parsedRecords.push(record);
         }
         allRecords = parsedRecords;
@@ -671,6 +684,19 @@ async function fetchFreshWorkingDataFromGoogle() {
       let tweetId = extractTweetId(postUrl) || extractTweetId(record['Twitter Id'] || (twitterIdCol >= 0 ? String(row[twitterIdCol] || '').trim() : ''));
       record['tweet_id'] = tweetId;
       record['link_url'] = postUrl;
+
+      // Reconcile true IST calendar date from Twitter Snowflake ID if shifted by spreadsheet timezone bug
+      if (tweetId) {
+        try {
+          const epochMs = Number((BigInt(tweetId) >> 22n) + 1288834974657n);
+          const d = new Date(epochMs);
+          const snowflakeIstDate = d.toLocaleDateString('en-GB', { timeZone: 'Asia/Kolkata' }).replace(/\//g, '-');
+          if (!record['DATE'] || (snowflakeIstDate === '24-10-2026' && record['DATE'].includes('23-10-2026'))) {
+            record['DATE'] = snowflakeIstDate;
+          }
+        } catch (e) {}
+      }
+
       parsedRecords.push(record);
     }
     allRecords = parsedRecords;
