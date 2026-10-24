@@ -4800,3 +4800,13 @@ function archiveAndCreateMonthlySheet(contents) {
     };
   }
 }
+
+/**
+ * One-click helper function to prompt Google Drive authorization in Apps Script editor.
+ * Select 'authorizePermissions' in the function dropdown and click 'Run'.
+ */
+function authorizePermissions() {
+  DriveApp.getRootFolder();
+  SpreadsheetApp.getActiveSpreadsheet();
+  Logger.log("All Google Drive and Spreadsheet permissions successfully authorized!");
+}

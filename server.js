@@ -3805,6 +3805,13 @@ function getHealthStatus() {
       last_poll_at: xStatus.last_poll_at,
       incoming_posts_count: xStatus.incoming_posts_count,
       outgoing_replies_count: xStatus.outgoing_replies_count
+    },
+    google_sheets: {
+      active_spreadsheet_id: sheetRotationService.getActiveSpreadsheetId(),
+      active_worksheet_gid: sheetRotationService.getActiveWorksheetGid(),
+      active_month: sheetRotationService.getActiveMonth(),
+      is_baseline: sheetRotationService.isBaselineActive(),
+      sync_status: googleSheetsService.getSyncStatus()
     }
   };
 }

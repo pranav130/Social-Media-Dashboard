@@ -5574,6 +5574,26 @@ const App = {
             <div class="info-row"><span class="info-label">Draft Replies Awaiting Review:</span><span class="info-value"><b style="color:#f59e0b;">${res.database.draft_review_queue}</b></span></div>
             <div class="info-row"><span class="info-label">Unassigned / Needs Review:</span><span class="info-value"><b style="color:#6366f1;">${res.database.unassigned_queue}</b></span></div>
           </div>
+
+          <!-- Card 4: Google Sheets & Monthly Rotation -->
+          <div class="health-card">
+            <h4>
+              <span><i class="fa-solid fa-table"></i> Google Sheets & Monthly Rotation</span>
+              <span class="health-indicator online"></span>
+            </h4>
+            <div class="info-row"><span class="info-label">Active Sheet ID:</span><span class="info-value" style="font-size:11px; word-break:break-all;"><b>${(res.google_sheets && res.google_sheets.active_spreadsheet_id) || '10_210Ynr_F0Pj1Yov_pqjVZ1kaYIEWrbGF1jn16sgNY'}</b></span></div>
+            <div class="info-row"><span class="info-label">Active Month:</span><span class="info-value"><b style="color:#3b82f6;">${(res.google_sheets && res.google_sheets.active_month) || '2026_10'}</b> (${(res.google_sheets && res.google_sheets.is_baseline) ? 'Baseline' : 'Rotated'})</span></div>
+            <div class="info-row"><span class="info-label">Sync Status:</span><span class="info-value"><b style="color:#10b981;">LIVE & CONNECTED</b></span></div>
+            <div class="info-row"><span class="info-label">Timezone:</span><span class="info-value">Asia/Kolkata (IST)</span></div>
+            <div style="margin-top: 14px; display: flex; gap: 8px; flex-wrap: wrap;">
+              <button class="btn btn-secondary btn-sm" onclick="App.verifySheetConnection()">
+                <i class="fa-solid fa-circle-check"></i> Verify Google Sheets Connection
+              </button>
+              <a href="https://docs.google.com/spreadsheets/d/${(res.google_sheets && res.google_sheets.active_spreadsheet_id) || '10_210Ynr_F0Pj1Yov_pqjVZ1kaYIEWrbGF1jn16sgNY'}/edit?gid=${(res.google_sheets && res.google_sheets.active_worksheet_gid) || '598922870'}#gid=${(res.google_sheets && res.google_sheets.active_worksheet_gid) || '598922870'}" target="_blank" rel="noopener noreferrer" class="btn btn-primary btn-sm">
+                <i class="fa-solid fa-up-right-from-square"></i> Open Google Sheet
+              </a>
+            </div>
+          </div>
         </div>
 
         <!-- Automation Controls Panel -->

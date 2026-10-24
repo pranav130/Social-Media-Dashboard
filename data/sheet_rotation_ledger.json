@@ -1,5 +1,30 @@
 [
   {
+    "timestamp": "2026-10-24T07:37:31.816Z",
+    "action": "ROLLBACK",
+    "status": "SUCCESS",
+    "fromSpreadsheetId": "new_sheet_2026_11_mvm366v0",
+    "toSpreadsheetId": "10_210Ynr_F0Pj1Yov_pqjVZ1kaYIEWrbGF1jn16sgNY",
+    "targetWorksheetGid": "598922870",
+    "durationMs": 2412,
+    "triggeredBy": "super_admin"
+  },
+  {
+    "timestamp": "2026-10-24T07:37:26.092Z",
+    "action": "MONTHLY_ROLLOVER",
+    "status": "SUCCESS",
+    "fromMonth": "2026_09",
+    "toMonth": "2026_11",
+    "archivedSpreadsheetId": "10_210Ynr_F0Pj1Yov_pqjVZ1kaYIEWrbGF1jn16sgNY",
+    "archiveFolderId": "folder_2026_09",
+    "archiveFolderName": "UPPCL_Social_Media_Complaints_2026_09",
+    "newSpreadsheetId": "new_sheet_2026_11_mvm366v0",
+    "newWorksheetGid": "0",
+    "newSheetTitle": "UPPCL_Social_Media_Complaints_2026_11",
+    "durationMs": 4451,
+    "triggeredBy": "test_admin"
+  },
+  {
     "timestamp": "2026-10-23T11:32:03.560Z",
     "action": "ROLLBACK",
     "status": "SUCCESS",
