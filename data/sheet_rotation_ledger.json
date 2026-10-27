@@ -1,5 +1,30 @@
 [
   {
+    "timestamp": "2026-10-27T08:12:18.611Z",
+    "action": "ROLLBACK",
+    "status": "SUCCESS",
+    "fromSpreadsheetId": "1QCKaYoS7BX68uLkT0LdsqBnCff_gLaat2unIFLraXf0",
+    "toSpreadsheetId": "10_210Ynr_F0Pj1Yov_pqjVZ1kaYIEWrbGF1jn16sgNY",
+    "targetWorksheetGid": "598922870",
+    "durationMs": 2062,
+    "triggeredBy": "super_admin"
+  },
+  {
+    "timestamp": "2026-10-27T08:12:13.183Z",
+    "action": "MONTHLY_ROLLOVER",
+    "status": "SUCCESS",
+    "fromMonth": "2026_09",
+    "toMonth": "2026_11",
+    "archivedSpreadsheetId": "10_210Ynr_F0Pj1Yov_pqjVZ1kaYIEWrbGF1jn16sgNY",
+    "archiveFolderId": "19mGujoaInuko9qULE1RuG9kr9fmI36Qc",
+    "archiveFolderName": "UPPCL_Social_Media_Complaints_2026_09",
+    "newSpreadsheetId": "1QCKaYoS7BX68uLkT0LdsqBnCff_gLaat2unIFLraXf0",
+    "newWorksheetGid": "598922870",
+    "newSheetTitle": "UPPCL_Social_Media_Complaints_2026_11",
+    "durationMs": 26539,
+    "triggeredBy": "test_admin"
+  },
+  {
     "timestamp": "2026-10-24T07:37:31.816Z",
     "action": "ROLLBACK",
     "status": "SUCCESS",

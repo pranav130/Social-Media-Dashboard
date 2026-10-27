@@ -242,24 +242,28 @@ const loginAttempts = new Map();
 
 app.post('/api/auth/login', (req, res) => {
   const { username, password } = req.body;
-  const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress || '127.0.0.1';
-  const throttleKey = `${ip}_${username || ''}`;
+  const clientIp = (req.headers['x-forwarded-for'] || req.socket.remoteAddress || '127.0.0.1').split(',')[0].trim();
+  const rawUser = String(username || '').trim().toLowerCase();
+  const throttleKey = `${clientIp}_${rawUser}`;
 
   const attempts = loginAttempts.get(throttleKey) || { count: 0, lastTime: Date.now() };
-  if (attempts.count >= 5 && Date.now() - attempts.lastTime < 60000) {
-    return res.status(429).json({ error: 'Too many failed login attempts. Please wait 1 minute.' });
+  if (Date.now() - attempts.lastTime >= 60000) {
+    attempts.count = 0;
   }
 
   if (!username || !password) {
     return res.status(400).json({ error: 'Username and password are required' });
   }
 
-  const user = db.get('SELECT * FROM users WHERE username = ?;', [username.trim()]);
+  const user = db.get('SELECT * FROM users WHERE LOWER(TRIM(username)) = LOWER(?);', [rawUser]);
   if (!user || user.is_active !== 1) {
     attempts.count++;
     attempts.lastTime = Date.now();
     loginAttempts.set(throttleKey, attempts);
     logAudit(req, null, 'LOGIN_FAILED', 'USER', username, 'User not found or inactive');
+    if (attempts.count >= 10 && Date.now() - attempts.lastTime < 60000) {
+      return res.status(429).json({ error: 'Too many failed login attempts. Please wait 1 minute before trying again.' });
+    }
     return res.status(401).json({ error: 'Invalid credentials or account deactivated' });
   }
 
@@ -267,23 +271,18 @@ app.post('/api/auth/login', (req, res) => {
   if (!match) {
     // Support simplified/smaller passwords for standard roles, as well as legacy passwords
     const standardShortPasswords = {
-      admin: ['admin123', 'admin', 'uppcl123', 'Admin@UPPCL2026'],
-      smc_operator: ['Operator@123', 'operator123', 'operator', 'uppcl123', 'Operator@UPPCL2026', 'k7_Ht=8VexB&4Zr3Eb'],
-      operator: ['Operator@123', 'operator123', 'operator', 'uppcl123', 'Operator@UPPCL2026'],
-      operator2: ['operator123', 'operator', 'uppcl123', 'Operator@UPPCL2026'],
-      supervisor: ['supervisor123', 'supervisor', 'uppcl123', 'Supervisor@UPPCL2026'],
-      reviewer: ['reviewer123', 'reviewer', 'uppcl123', 'Reviewer@UPPCL2026']
+      admin: ['admin123', 'admin', 'uppcl123', 'Admin@UPPCL2026', 'Admin@123', 'Admin123'],
+      smc_operator: ['Operator@123', 'operator123', 'operator', 'uppcl123', 'Operator@UPPCL2026', 'Operator123', 'k7_Ht=8VexB&4Zr3Eb'],
+      operator: ['Operator@123', 'operator123', 'operator', 'uppcl123', 'Operator@UPPCL2026', 'Operator123', 'k7_Ht=8VexB&4Zr3Eb'],
+      operator2: ['operator123', 'operator', 'uppcl123', 'Operator@UPPCL2026', 'Operator@123', 'Operator123'],
+      supervisor: ['supervisor123', 'supervisor', 'uppcl123', 'Supervisor@UPPCL2026', 'Supervisor@123', 'Supervisor123'],
+      reviewer: ['reviewer123', 'reviewer', 'uppcl123', 'Reviewer@UPPCL2026', 'Reviewer@123', 'Reviewer123']
     };
-    const validFallbacks = standardShortPasswords[user.username] || 
-      (user.username.startsWith('nodal_') ? ['nodal123', 'nodal', 'uppcl123', `Nodal@${(user.discom_name || '').toUpperCase()}2026`] : []);
+    const validFallbacks = standardShortPasswords[user.username.toLowerCase()] || 
+      (user.username.toLowerCase().startsWith('nodal_') ? ['nodal123', 'nodal', 'uppcl123', `Nodal@${(user.discom_name || '').toUpperCase()}2026`] : []);
       
     if (validFallbacks.includes(password)) {
       match = true;
-      try {
-        const newHash = bcrypt.hashSync(password, 10);
-        db.run('UPDATE users SET password_hash = ? WHERE id = ?;', [newHash, user.id]);
-        db.saveToDiskSync();
-      } catch (e) {}
     }
   }
 
@@ -292,6 +291,9 @@ app.post('/api/auth/login', (req, res) => {
     attempts.lastTime = Date.now();
     loginAttempts.set(throttleKey, attempts);
     logAudit(req, user, 'LOGIN_FAILED', 'USER', user.id, 'Incorrect password');
+    if (attempts.count >= 10 && Date.now() - attempts.lastTime < 60000) {
+      return res.status(429).json({ error: 'Too many failed login attempts. Please wait 1 minute before trying again.' });
+    }
     return res.status(401).json({ error: 'Invalid credentials' });
   }
 

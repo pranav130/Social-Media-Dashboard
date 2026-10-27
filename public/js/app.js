@@ -517,10 +517,14 @@ const App = {
     });
 
     if (response.status === 401) {
-      if (this.token) {
-        this.logout();
+      if (endpoint !== '/api/auth/login') {
+        if (this.token) {
+          this.logout();
+        }
+        throw new Error('Session expired. Please log in again.');
       }
-      throw new Error('Session expired. Please log in again.');
+      const errData = await response.json().catch(() => ({}));
+      throw new Error(errData.error || 'Invalid username or password');
     }
 
     if (!response.ok) {
@@ -5853,8 +5857,8 @@ const App = {
                 </button>
               </div>
               <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 6px; font-size: 11px; color: var(--text-muted);">
-                <span>Default password: <strong style="color: var(--primary);">admin123</strong></span>
-                <span style="opacity: 0.8;">(or role123)</span>
+                <span>Admin: <strong style="color: var(--primary);">admin123</strong></span>
+                <span style="opacity: 0.9;">Operator: <strong style="color: var(--primary);">Operator@123</strong> (or operator123)</span>
               </div>
             </div>
 
@@ -6885,8 +6889,14 @@ const App = {
 
   async handleLogin(e) {
     e.preventDefault();
+    const btn = e.target.querySelector('button[type="submit"]');
     const u = document.getElementById('login-username').value.trim();
     const p = document.getElementById('login-password').value;
+
+    if (btn) {
+      btn.disabled = true;
+      btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Signing In...';
+    }
 
     try {
       const res = await this.api('/api/auth/login', {
@@ -6896,6 +6906,11 @@ const App = {
       this.login(res.token, res.user);
     } catch (err) {
       alert(`Login failed: ${err.message}`);
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fa-solid fa-lock"></i> Secure Sign In';
+      }
     }
   }
 };
