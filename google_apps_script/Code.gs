@@ -1411,8 +1411,17 @@ function applyOriginalFormatting() {
  * Optional alternative: Compact 22px row height with blue links.
  */
 function makeRowsCompact() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = getActiveWorkingSpreadsheet();
   let sheet = ss.getSheetByName('Twitter Complaint List');
+  if (!sheet) {
+    const sheets = ss.getSheets();
+    for (let s of sheets) {
+      if (String(s.getSheetId()) === '598922870') {
+        sheet = s;
+        break;
+      }
+    }
+  }
   if (!sheet) sheet = ss.getActiveSheet();
 
   const lastRow = sheet.getLastRow();
@@ -1617,8 +1626,17 @@ function endsWithOfficialHandleInScript(text) {
  * Working sheet: https://docs.google.com/spreadsheets/d/1shjWcK69y0S7pIHI-2V5Wh6c2SSSQBKcpgprmPbeNe8/edit?gid=283417465
  */
 function syncFromWorkingSheet() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = getActiveWorkingSpreadsheet();
   let sheet = ss.getSheetByName('Twitter Complaint List');
+  if (!sheet) {
+    const sheets = ss.getSheets();
+    for (let s of sheets) {
+      if (String(s.getSheetId()) === '598922870') {
+        sheet = s;
+        break;
+      }
+    }
+  }
   if (!sheet) sheet = ss.getActiveSheet();
 
   const workingCsvUrl = 'https://docs.google.com/spreadsheets/d/1shjWcK69y0S7pIHI-2V5Wh6c2SSSQBKcpgprmPbeNe8/export?format=csv&gid=283417465';
@@ -1771,8 +1789,17 @@ function syncFromWorkingSheet() {
  * Re-indexes serial numbers (S.No.) after deletion.
  */
 function removeOfficialPostsFromSheet() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = getActiveWorkingSpreadsheet();
   let sheet = ss.getSheetByName('Twitter Complaint List');
+  if (!sheet) {
+    const sheets = ss.getSheets();
+    for (let s of sheets) {
+      if (String(s.getSheetId()) === '598922870') {
+        sheet = s;
+        break;
+      }
+    }
+  }
   if (!sheet) sheet = ss.getActiveSheet();
 
   const lastRow = sheet.getLastRow();
@@ -1878,8 +1905,17 @@ function removeOfficialPostsFromSheet() {
  * Uses high-speed in-memory batch processing (executes in ~1-2 seconds with zero timeouts).
  */
 function removeDuplicateRowsFromSheet() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = getActiveWorkingSpreadsheet();
   let sheet = ss.getSheetByName('Twitter Complaint List');
+  if (!sheet) {
+    const sheets = ss.getSheets();
+    for (let s of sheets) {
+      if (String(s.getSheetId()) === '598922870') {
+        sheet = s;
+        break;
+      }
+    }
+  }
   if (!sheet) sheet = ss.getActiveSheet();
 
   const lastRow = sheet.getLastRow();
@@ -1987,8 +2023,17 @@ function removeDuplicateRowsFromSheet() {
  * trailing thread updates, or citizen requests that were incorrectly marked as APPRECIATION.
  */
 function fixMisclassifiedComplaints() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = getActiveWorkingSpreadsheet();
   let sheet = ss.getSheetByName('Twitter Complaint List');
+  if (!sheet) {
+    const sheets = ss.getSheets();
+    for (let s of sheets) {
+      if (String(s.getSheetId()) === '598922870') {
+        sheet = s;
+        break;
+      }
+    }
+  }
   if (!sheet) sheet = ss.getActiveSheet();
 
   const lastRow = sheet.getLastRow();
@@ -2703,8 +2748,17 @@ function runCloudSyncCycle() {
   const bearerToken = props.getProperty('X_BEARER_TOKEN') ||
     'AAAAAAAAAAAAAAAAAAAAACbr%2FwEAAAAAySPqrdOjXkNWagBKKbkzMA97ZnI%3DRBPSknXnu5S8uXS3j7lPbXPHlYCpiLfD2Yt8cRtRvWm1NcSi1E';
 
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = getActiveWorkingSpreadsheet();
   let sheet = ss.getSheetByName('Twitter Complaint List');
+  if (!sheet) {
+    const sheets = ss.getSheets();
+    for (let s of sheets) {
+      if (String(s.getSheetId()) === '598922870') {
+        sheet = s;
+        break;
+      }
+    }
+  }
   if (!sheet) sheet = ss.getActiveSheet();
 
   // Load excluded/frivolous complaints so deleted posts are NEVER re-added
@@ -3246,8 +3300,17 @@ function deleteSelectedRowAsFrivolous() {
  * and reconstructs the valid, canonical https://x.com link using the Tweet ID.
  */
 function fixMalformedUrlsInSheet() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = getActiveWorkingSpreadsheet();
   let sheet = ss.getSheetByName('Twitter Complaint List');
+  if (!sheet) {
+    const sheets = ss.getSheets();
+    for (let s of sheets) {
+      if (String(s.getSheetId()) === '598922870') {
+        sheet = s;
+        break;
+      }
+    }
+  }
   if (!sheet) sheet = ss.getActiveSheet();
 
   const lastRow = sheet.getLastRow();
@@ -3306,8 +3369,17 @@ function fixMalformedUrlsInSheet() {
  * 4. Empty rows naturally sort to the very bottom.
  */
 function sortSheetByDateDescending() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = getActiveWorkingSpreadsheet();
   let sheet = ss.getSheetByName('Twitter Complaint List');
+  if (!sheet) {
+    const sheets = ss.getSheets();
+    for (let s of sheets) {
+      if (String(s.getSheetId()) === '598922870') {
+        sheet = s;
+        break;
+      }
+    }
+  }
   if (!sheet) sheet = ss.getActiveSheet();
 
   // Guarantee Row 2 is blank and top 2 rows are permanently frozen
@@ -3353,8 +3425,17 @@ function sortSheetByDateDescending() {
  * Follows by sorting complete rows descending (newest first).
  */
 function fixDateColumnInSheet() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = getActiveWorkingSpreadsheet();
   let sheet = ss.getSheetByName('Twitter Complaint List');
+  if (!sheet) {
+    const sheets = ss.getSheets();
+    for (let s of sheets) {
+      if (String(s.getSheetId()) === '598922870') {
+        sheet = s;
+        break;
+      }
+    }
+  }
   if (!sheet) sheet = ss.getActiveSheet();
 
   // Guarantee spreadsheet timezone is strictly Asia/Kolkata (IST, UTC+5:30)
@@ -3533,8 +3614,17 @@ function fixDateColumnInSheet() {
  * then writes each field to its dynamically resolved column according to Row 1 headers.
  */
 function repairMisalignedRowsInSheet() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = getActiveWorkingSpreadsheet();
   let sheet = ss.getSheetByName('Twitter Complaint List');
+  if (!sheet) {
+    const sheets = ss.getSheets();
+    for (let s of sheets) {
+      if (String(s.getSheetId()) === '598922870') {
+        sheet = s;
+        break;
+      }
+    }
+  }
   if (!sheet) sheet = ss.getActiveSheet();
 
   ensureRow2IsBlankAndFrozen(sheet);
@@ -3766,8 +3856,17 @@ function applyCfFormulaToSheet(targetSheet, silent) {
  * in case they were accidentally overwritten by a "Fill Right" (Ctrl+R) or fill-handle drag.
  */
 function restoreStandardHeaders() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = getActiveWorkingSpreadsheet();
   let sheet = ss.getSheetByName('Twitter Complaint List');
+  if (!sheet) {
+    const sheets = ss.getSheets();
+    for (let s of sheets) {
+      if (String(s.getSheetId()) === '598922870') {
+        sheet = s;
+        break;
+      }
+    }
+  }
   if (!sheet) sheet = ss.getActiveSheet();
 
   const standardHeaders = [
@@ -3821,8 +3920,17 @@ function restoreStandardHeaders() {
  * Applies across all data rows (Row 3 to the end of the sheet).
  */
 function setupUppclRepliedDropdowns() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = getActiveWorkingSpreadsheet();
   let sheet = ss.getSheetByName('Twitter Complaint List');
+  if (!sheet) {
+    const sheets = ss.getSheets();
+    for (let s of sheets) {
+      if (String(s.getSheetId()) === '598922870') {
+        sheet = s;
+        break;
+      }
+    }
+  }
   if (!sheet) sheet = ss.getActiveSheet();
 
   const lastRow = sheet.getLastRow();
@@ -3858,8 +3966,17 @@ function setupUppclRepliedDropdowns() {
  * Applies across all data rows (Row 3 to the end of the sheet).
  */
 function setupPickedStatusDropdowns() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = getActiveWorkingSpreadsheet();
   let sheet = ss.getSheetByName('Twitter Complaint List');
+  if (!sheet) {
+    const sheets = ss.getSheets();
+    for (let s of sheets) {
+      if (String(s.getSheetId()) === '598922870') {
+        sheet = s;
+        break;
+      }
+    }
+  }
   if (!sheet) sheet = ss.getActiveSheet();
 
   const lastRow = sheet.getLastRow();
@@ -4190,8 +4307,17 @@ const VERIFIED_UPPCL_REPLIED_TWEET_IDS = new Set(["1410356369820061699","1614673
  *  - NO:  If UPPCLLKO never replied to that post.
  */
 function populateUppclRepliedColumn() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = getActiveWorkingSpreadsheet();
   let sheet = ss.getSheetByName('Twitter Complaint List');
+  if (!sheet) {
+    const sheets = ss.getSheets();
+    for (let s of sheets) {
+      if (String(s.getSheetId()) === '598922870') {
+        sheet = s;
+        break;
+      }
+    }
+  }
   if (!sheet) sheet = ss.getActiveSheet();
 
   const lastRow = sheet.getLastRow();
@@ -4276,8 +4402,17 @@ function populateUppclRepliedColumn() {
  * has ALREADY replied before @UPPCLLKO.
  */
 function removeOfficialRepliedFromSheet() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = getActiveWorkingSpreadsheet();
   let sheet = ss.getSheetByName('Twitter Complaint List');
+  if (!sheet) {
+    const sheets = ss.getSheets();
+    for (let s of sheets) {
+      if (String(s.getSheetId()) === '598922870') {
+        sheet = s;
+        break;
+      }
+    }
+  }
   if (!sheet) sheet = ss.getActiveSheet();
 
   const lastRow = sheet.getLastRow();
@@ -4705,8 +4840,8 @@ function setActiveSheetInScript(contents) {
   if (contents.worksheetGid) {
     props.setProperty('ACTIVE_WORKSHEET_GID', String(contents.worksheetGid).trim());
   }
-  if (contents.month) {
-    props.setProperty('ACTIVE_MONTH', String(contents.month).trim());
+  if (contents.month || contents.activeMonth) {
+    props.setProperty('ACTIVE_MONTH', String(contents.month || contents.activeMonth).trim());
   }
   return {
     status: 'ok',
