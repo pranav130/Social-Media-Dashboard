@@ -241,91 +241,96 @@ function requireRoles(...roles) {
 const loginAttempts = new Map();
 
 app.post('/api/auth/login', (req, res) => {
-  const { username, password } = req.body;
-  const clientIp = (req.headers['x-forwarded-for'] || req.socket.remoteAddress || '127.0.0.1').split(',')[0].trim();
-  const rawUser = String(username || '').trim().toLowerCase();
-  const throttleKey = `${clientIp}_${rawUser}`;
+  try {
+    const { username, password } = req.body || {};
+    const clientIp = (req.headers['x-forwarded-for'] || req.socket.remoteAddress || '127.0.0.1').split(',')[0].trim();
+    const rawUser = String(username || '').trim().toLowerCase();
+    const throttleKey = `${clientIp}_${rawUser}`;
 
-  const attempts = loginAttempts.get(throttleKey) || { count: 0, lastTime: Date.now() };
-  if (Date.now() - attempts.lastTime >= 60000) {
-    attempts.count = 0;
-  }
-
-  if (!username || !password) {
-    return res.status(400).json({ error: 'Username and password are required' });
-  }
-
-  const user = db.get('SELECT * FROM users WHERE LOWER(TRIM(username)) = LOWER(?);', [rawUser]);
-  if (!user || user.is_active !== 1) {
-    attempts.count++;
-    attempts.lastTime = Date.now();
-    loginAttempts.set(throttleKey, attempts);
-    logAudit(req, null, 'LOGIN_FAILED', 'USER', username, 'User not found or inactive');
-    if (attempts.count >= 10 && Date.now() - attempts.lastTime < 60000) {
-      return res.status(429).json({ error: 'Too many failed login attempts. Please wait 1 minute before trying again.' });
+    const attempts = loginAttempts.get(throttleKey) || { count: 0, lastTime: Date.now() };
+    if (Date.now() - attempts.lastTime >= 60000) {
+      attempts.count = 0;
     }
-    return res.status(401).json({ error: 'Invalid credentials or account deactivated' });
-  }
 
-  let match = bcrypt.compareSync(password, user.password_hash);
-  if (!match) {
-    // Support simplified/smaller passwords for standard roles, as well as legacy passwords
-    const standardShortPasswords = {
-      admin: ['admin123', 'admin', 'uppcl123', 'Admin@UPPCL2026', 'Admin@123', 'Admin123'],
-      smc_operator: ['Operator@123', 'operator123', 'operator', 'uppcl123', 'Operator@UPPCL2026', 'Operator123', 'k7_Ht=8VexB&4Zr3Eb'],
-      operator: ['Operator@123', 'operator123', 'operator', 'uppcl123', 'Operator@UPPCL2026', 'Operator123', 'k7_Ht=8VexB&4Zr3Eb'],
-      operator2: ['operator123', 'operator', 'uppcl123', 'Operator@UPPCL2026', 'Operator@123', 'Operator123'],
-      supervisor: ['supervisor123', 'supervisor', 'uppcl123', 'Supervisor@UPPCL2026', 'Supervisor@123', 'Supervisor123'],
-      reviewer: ['reviewer123', 'reviewer', 'uppcl123', 'Reviewer@UPPCL2026', 'Reviewer@123', 'Reviewer123']
-    };
-    const validFallbacks = standardShortPasswords[user.username.toLowerCase()] || 
-      (user.username.toLowerCase().startsWith('nodal_') ? ['nodal123', 'nodal', 'uppcl123', `Nodal@${(user.discom_name || '').toUpperCase()}2026`] : []);
-      
-    if (validFallbacks.includes(password)) {
-      match = true;
+    if (!username || !password) {
+      return res.status(400).json({ error: 'Username and password are required' });
     }
-  }
 
-  if (!match) {
-    attempts.count++;
-    attempts.lastTime = Date.now();
-    loginAttempts.set(throttleKey, attempts);
-    logAudit(req, user, 'LOGIN_FAILED', 'USER', user.id, 'Incorrect password');
-    if (attempts.count >= 10 && Date.now() - attempts.lastTime < 60000) {
-      return res.status(429).json({ error: 'Too many failed login attempts. Please wait 1 minute before trying again.' });
+    const user = db.get('SELECT * FROM users WHERE LOWER(TRIM(username)) = LOWER(?);', [rawUser]);
+    if (!user || user.is_active !== 1) {
+      attempts.count++;
+      attempts.lastTime = Date.now();
+      loginAttempts.set(throttleKey, attempts);
+      logAudit(req, null, 'LOGIN_FAILED', 'USER', username, 'User not found or inactive');
+      if (attempts.count >= 10 && Date.now() - attempts.lastTime < 60000) {
+        return res.status(429).json({ error: 'Too many failed login attempts. Please wait 1 minute before trying again.' });
+      }
+      return res.status(401).json({ error: 'Invalid credentials or account deactivated' });
     }
-    return res.status(401).json({ error: 'Invalid credentials' });
-  }
 
-  // Clear throttle on success
-  loginAttempts.delete(throttleKey);
-
-  const token = jwt.sign(
-    { id: user.id, username: user.username, role: user.role, discom_name: user.discom_name },
-    JWT_SECRET,
-    { expiresIn: '12h' }
-  );
-
-  logAudit(req, user, 'LOGIN_SUCCESS', 'USER', user.id, `User logged in from ${ip}`);
-
-  const userFullName = (user.username === 'operator' || user.id === 2 || (user.full_name && user.full_name.includes('Rajesh Verma')))
-    ? 'SMC-Operator'
-    : user.full_name;
-
-  res.json({
-    token,
-    user: {
-      id: user.id,
-      username: user.username,
-      full_name: userFullName,
-      email: user.email,
-      role: user.role,
-      discom_name: user.discom_name,
-      designation: user.designation,
-      mobile: user.mobile,
-      assigned_districts: user.assigned_districts || ''
+    let match = bcrypt.compareSync(password, user.password_hash);
+    if (!match) {
+      // Support simplified/smaller passwords for standard roles, as well as legacy passwords
+      const standardShortPasswords = {
+        admin: ['admin123', 'admin', 'uppcl123', 'Admin@UPPCL2026', 'Admin@123', 'Admin123'],
+        smc_operator: ['Operator@123', 'operator123', 'operator', 'uppcl123', 'Operator@UPPCL2026', 'Operator123', 'k7_Ht=8VexB&4Zr3Eb'],
+        operator: ['Operator@123', 'operator123', 'operator', 'uppcl123', 'Operator@UPPCL2026', 'Operator123', 'k7_Ht=8VexB&4Zr3Eb'],
+        operator2: ['operator123', 'operator', 'uppcl123', 'Operator@UPPCL2026', 'Operator@123', 'Operator123'],
+        supervisor: ['supervisor123', 'supervisor', 'uppcl123', 'Supervisor@UPPCL2026', 'Supervisor@123', 'Supervisor123'],
+        reviewer: ['reviewer123', 'reviewer', 'uppcl123', 'Reviewer@UPPCL2026', 'Reviewer@123', 'Reviewer123']
+      };
+      const validFallbacks = standardShortPasswords[user.username.toLowerCase()] || 
+        (user.username.toLowerCase().startsWith('nodal_') ? ['nodal123', 'nodal', 'uppcl123', `Nodal@${(user.discom_name || '').toUpperCase()}2026`] : []);
+        
+      if (validFallbacks.includes(password)) {
+        match = true;
+      }
     }
-  });
+
+    if (!match) {
+      attempts.count++;
+      attempts.lastTime = Date.now();
+      loginAttempts.set(throttleKey, attempts);
+      logAudit(req, user, 'LOGIN_FAILED', 'USER', user.id, 'Incorrect password');
+      if (attempts.count >= 10 && Date.now() - attempts.lastTime < 60000) {
+        return res.status(429).json({ error: 'Too many failed login attempts. Please wait 1 minute before trying again.' });
+      }
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+
+    // Clear throttle on success
+    loginAttempts.delete(throttleKey);
+
+    const token = jwt.sign(
+      { id: user.id, username: user.username, role: user.role, discom_name: user.discom_name },
+      JWT_SECRET,
+      { expiresIn: '12h' }
+    );
+
+    logAudit(req, user, 'LOGIN_SUCCESS', 'USER', user.id, `User logged in from ${clientIp}`);
+
+    const userFullName = (user.username === 'operator' || user.id === 2 || (user.full_name && user.full_name.includes('Rajesh Verma')))
+      ? 'SMC-Operator'
+      : user.full_name;
+
+    res.json({
+      token,
+      user: {
+        id: user.id,
+        username: user.username,
+        full_name: userFullName,
+        email: user.email,
+        role: user.role,
+        discom_name: user.discom_name,
+        designation: user.designation,
+        mobile: user.mobile,
+        assigned_districts: user.assigned_districts || ''
+      }
+    });
+  } catch (err) {
+    console.error('[Auth] Login error:', err);
+    res.status(500).json({ error: 'An unexpected internal error occurred during login. Please try again.' });
+  }
 });
 
 app.get('/api/auth/me', authMiddleware, (req, res) => {

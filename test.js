@@ -1741,6 +1741,50 @@ async function runTests() {
     assert.ok(appJs.includes('id="btn-sync-sheet"'), 'Sync sheet button defined');
   });
 
+  await itAsync('8. POST /api/auth/login endpoint authenticates both admin and operator with 200 OK without errors', async () => {
+    const { app } = require('./server');
+    const http = require('http');
+    await new Promise((resolve, reject) => {
+      const server = app.listen(0, async () => {
+        const port = server.address().port;
+        const tryLogin = (u, p) => new Promise(resLogin => {
+          const postData = JSON.stringify({ username: u, password: p });
+          const req = http.request({
+            hostname: '127.0.0.1',
+            port,
+            path: '/api/auth/login',
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Content-Length': postData.length }
+          }, res => {
+            let body = '';
+            res.on('data', c => body += c);
+            res.on('end', () => resLogin({ status: res.statusCode, data: JSON.parse(body) }));
+          });
+          req.on('error', reject);
+          req.write(postData);
+          req.end();
+        });
+
+        try {
+          const adminRes = await tryLogin('admin', 'admin123');
+          assert.strictEqual(adminRes.status, 200, 'admin login must return 200');
+          assert.ok(adminRes.data.token, 'admin login must return token');
+
+          const opRes = await tryLogin('smc_operator', 'Operator@123');
+          assert.strictEqual(opRes.status, 200, 'smc_operator login must return 200');
+          assert.ok(opRes.data.token, 'smc_operator login must return token');
+
+          const opRes2 = await tryLogin('smc_operator', 'operator123');
+          assert.strictEqual(opRes2.status, 200, 'smc_operator fallback password must return 200');
+
+          server.close(() => resolve());
+        } catch (e) {
+          server.close(() => reject(e));
+        }
+      });
+    });
+  });
+
   console.log('\n[27. Working Sheet Delete Complaint & Download Excel Suite]');
   it('1. Operator full_name is authoritatively "SMC-Operator" in database and seed', () => {
     const opUser = db.get("SELECT id, username, full_name, role FROM users WHERE username = 'operator';");
