@@ -1682,12 +1682,14 @@ function startBackgroundSync(intervalMinutes = 5) {
   const ms = Math.max(intervalMinutes, 1) * 60 * 1000;
   console.log(`[GoogleSheetsSync] Periodic sync configured: every ${intervalMinutes} minutes (${ms}ms)`);
 
-  // Initial sync immediately
-  syncGoogleSheets(false).then(res => {
-    console.log(`[GoogleSheetsSync] Initial sync completed: ${res.status} (${res.lastSyncInfo.recordCount} records)`);
-  }).catch(e => {
-    console.warn(`[GoogleSheetsSync] Initial sync warning: ${e.message}`);
-  });
+  // Delay initial sync by 10s so Express starts up instantly and responds to Render health checks
+  setTimeout(() => {
+    syncGoogleSheets(false).then(res => {
+      console.log(`[GoogleSheetsSync] Initial sync completed: ${res.status} (${res.lastSyncInfo.recordCount} records)`);
+    }).catch(e => {
+      console.warn(`[GoogleSheetsSync] Initial sync warning: ${e.message}`);
+    });
+  }, 10000);
 
   syncTimer = setInterval(() => {
     syncGoogleSheets(false).catch(err => {

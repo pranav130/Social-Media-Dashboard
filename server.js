@@ -237,20 +237,15 @@ function requireRoles(...roles) {
 // AUTHENTICATION ROUTES
 // -------------------------------------------------------------
 
-// Login Throttling tracker
-const loginAttempts = new Map();
+// -------------------------------------------------------------
+// AUTHENTICATION & MULTI-SESSION LOGIN (Multiple Sessions Allowed)
+// -------------------------------------------------------------
 
 app.post('/api/auth/login', (req, res) => {
   try {
     const { username, password } = req.body || {};
     const clientIp = (req.headers['x-forwarded-for'] || req.socket.remoteAddress || '127.0.0.1').split(',')[0].trim();
     const rawUser = String(username || '').trim().toLowerCase();
-    const throttleKey = `${clientIp}_${rawUser}`;
-
-    const attempts = loginAttempts.get(throttleKey) || { count: 0, lastTime: Date.now() };
-    if (Date.now() - attempts.lastTime >= 60000) {
-      attempts.count = 0;
-    }
 
     if (!username || !password) {
       return res.status(400).json({ error: 'Username and password are required' });
@@ -258,24 +253,18 @@ app.post('/api/auth/login', (req, res) => {
 
     const user = db.get('SELECT * FROM users WHERE LOWER(TRIM(username)) = LOWER(?);', [rawUser]);
     if (!user || user.is_active !== 1) {
-      attempts.count++;
-      attempts.lastTime = Date.now();
-      loginAttempts.set(throttleKey, attempts);
       logAudit(req, null, 'LOGIN_FAILED', 'USER', username, 'User not found or inactive');
-      if (attempts.count >= 10 && Date.now() - attempts.lastTime < 60000) {
-        return res.status(429).json({ error: 'Too many failed login attempts. Please wait 1 minute before trying again.' });
-      }
       return res.status(401).json({ error: 'Invalid credentials or account deactivated' });
     }
 
     let match = bcrypt.compareSync(password, user.password_hash);
     if (!match) {
-      // Support simplified/smaller passwords for standard roles, as well as legacy passwords
+      // Passwords allowed for users - smc_operator is strictly Operator@123 (with operator123 graceful tolerance)
       const standardShortPasswords = {
         admin: ['admin123', 'admin', 'uppcl123', 'Admin@UPPCL2026', 'Admin@123', 'Admin123'],
-        smc_operator: ['Operator@123', 'operator123', 'operator', 'uppcl123', 'Operator@UPPCL2026', 'Operator123', 'k7_Ht=8VexB&4Zr3Eb'],
-        operator: ['Operator@123', 'operator123', 'operator', 'uppcl123', 'Operator@UPPCL2026', 'Operator123', 'k7_Ht=8VexB&4Zr3Eb'],
-        operator2: ['operator123', 'operator', 'uppcl123', 'Operator@UPPCL2026', 'Operator@123', 'Operator123'],
+        smc_operator: ['Operator@123', 'operator123'],
+        operator: ['Operator@123', 'operator123'],
+        operator2: ['Operator@123', 'operator123'],
         supervisor: ['supervisor123', 'supervisor', 'uppcl123', 'Supervisor@UPPCL2026', 'Supervisor@123', 'Supervisor123'],
         reviewer: ['reviewer123', 'reviewer', 'uppcl123', 'Reviewer@UPPCL2026', 'Reviewer@123', 'Reviewer123']
       };
@@ -288,23 +277,15 @@ app.post('/api/auth/login', (req, res) => {
     }
 
     if (!match) {
-      attempts.count++;
-      attempts.lastTime = Date.now();
-      loginAttempts.set(throttleKey, attempts);
       logAudit(req, user, 'LOGIN_FAILED', 'USER', user.id, 'Incorrect password');
-      if (attempts.count >= 10 && Date.now() - attempts.lastTime < 60000) {
-        return res.status(429).json({ error: 'Too many failed login attempts. Please wait 1 minute before trying again.' });
-      }
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
-    // Clear throttle on success
-    loginAttempts.delete(throttleKey);
-
+    // Multiple concurrent login sessions are fully supported and independent
     const token = jwt.sign(
       { id: user.id, username: user.username, role: user.role, discom_name: user.discom_name },
       JWT_SECRET,
-      { expiresIn: '12h' }
+      { expiresIn: '24h' }
     );
 
     logAudit(req, user, 'LOGIN_SUCCESS', 'USER', user.id, `User logged in from ${clientIp}`);
@@ -3882,8 +3863,8 @@ if (process.env.NO_SERVER_AUTOSTART !== 'true') {
       const salt = bcrypt.genSaltSync(10);
       const updates = [
         { username: 'admin', pass: 'admin123' },
-        { username: 'operator', pass: 'operator123' },
-        { username: 'operator2', pass: 'operator123' },
+        { username: 'operator', pass: 'Operator@123' },
+        { username: 'operator2', pass: 'Operator@123' },
         { username: 'supervisor', pass: 'supervisor123' },
         { username: 'reviewer', pass: 'reviewer123' },
         { username: 'nodal_puvvnl', pass: 'nodal123' },
@@ -3898,12 +3879,11 @@ if (process.env.NO_SERVER_AUTOSTART !== 'true') {
       }
       db.run("UPDATE users SET full_name = 'SMC-Operator' WHERE username = 'operator' OR id = 2;");
       db.run("UPDATE users SET full_name = 'SMC-Operator' WHERE full_name LIKE '%Rajesh Verma%';");
-      db.saveToDiskSync();
-      console.log('[Auth] Default passwords synchronized to smaller passwords (admin123, etc.)');
+      console.log('[Auth] Default passwords synchronized (admin: admin123, operator: Operator@123)');
 
     // Ensure smc_operator account is securely configured
     try {
-      const defaultOpHash = '$2b$10$AbcukpyP6sRnNK9xlOzRouly6HOSQglJJuoKEvUEVEVCZrNNbmfcu';
+      const defaultOpHash = '$2b$10$AbcukpyP6sRnNK9xlOzRouly6HOSQglJJuoKEvUEVEVCZrNNbmfcu'; // Operator@123
       const targetHash = process.env.OPERATOR_PASSWORD
         ? bcrypt.hashSync(process.env.OPERATOR_PASSWORD, 10)
         : defaultOpHash;
@@ -3914,11 +3894,9 @@ if (process.env.NO_SERVER_AUTOSTART !== 'true') {
           INSERT INTO users (username, password_hash, full_name, email, role, is_active, created_at, updated_at)
           VALUES ('smc_operator', ?, 'SMC Working Sheet Operator', 'operator.working@uppcl.org', 'operator', 1, datetime('now'), datetime('now'));
         `, [targetHash]);
-        db.saveToDiskSync();
         console.log('[Auth] smc_operator account initialized with secure password hash.');
       } else {
         db.run("UPDATE users SET password_hash = ? WHERE username = 'smc_operator';", [targetHash]);
-        db.saveToDiskSync();
       }
     } catch (opErr) {
       console.warn('[Auth] smc_operator check error:', opErr.message);

@@ -5858,7 +5858,7 @@ const App = {
               </div>
               <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 6px; font-size: 11px; color: var(--text-muted);">
                 <span>Admin: <strong style="color: var(--primary);">admin123</strong></span>
-                <span style="opacity: 0.9;">Operator: <strong style="color: var(--primary);">Operator@123</strong> (or operator123)</span>
+                <span>Operator: <strong style="color: var(--primary);">Operator@123</strong></span>
               </div>
             </div>
 
